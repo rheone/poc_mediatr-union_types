@@ -10,16 +10,22 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 
 /// <summary>
 /// Everything an "update" command can come back as: no payload on success, a missing entity,
-/// invalid input, or an unexpected error. Unlike <see cref="Create.CreateProductResult"/>, this
-/// union has no DTO case at all — a successful update returns <see cref="Success"/>, not the
-/// updated <see cref="Common.ProductDto"/>.
+/// invalid input, a caller who doesn't own the product, or an unexpected error. Unlike
+/// <see cref="Create.CreateProductResult"/>, this union has no DTO case at all — a successful
+/// update returns <see cref="Success"/>, not the updated <see cref="Common.ProductDto"/>.
 /// </summary>
 [DebuggerDisplay("{Value}")]
-public union UpdateProductResult(Success, NotFound<ProductId>, ValidationErrors, Error)
-    : IValidatable<UpdateProductResult>, ITransactionOutcome<UpdateProductResult>
+public union UpdateProductResult(Success, NotFound<ProductId>, ValidationErrors, Error, NotAuthorized)
+    : IValidatable<UpdateProductResult>,
+        ITransactionOutcome<UpdateProductResult>,
+        IAuthorizable<UpdateProductResult>
 {
     /// <inheritdoc/>
     public static UpdateProductResult FromValidationErrors(ValidationErrors errors) => errors;
+
+    /// <inheritdoc/>
+    public static UpdateProductResult FromNotAuthorized(NotAuthorized notAuthorized) =>
+        notAuthorized;
 
     /// <inheritdoc/>
     /// <remarks>Exhaustive over this union's own cases only — see <see cref="Create.CreateProductResult.ShouldCommit"/> for why that matters.</remarks>
@@ -29,5 +35,6 @@ public union UpdateProductResult(Success, NotFound<ProductId>, ValidationErrors,
         NotFound<ProductId> => false,
         ValidationErrors => false,
         Error => false,
+        NotAuthorized => false,
     };
 }

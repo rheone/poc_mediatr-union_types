@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FluentValidation.TestHelper;
 using MediatrUnionPoc.Application.Features.Products.Update;
 
@@ -7,12 +8,15 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 public class UpdateProductValidatorTests
 {
     private readonly UpdateProductValidator _sut = new();
+    private static readonly ClaimsPrincipal AnonymousPrincipal = new(new ClaimsIdentity());
 
     /// <summary>Verifies an empty id fails validation.</summary>
     [Fact]
     public void Id_must_not_be_empty()
     {
-        var result = _sut.TestValidate(new UpdateProductCommand(Guid.Empty, "Widget", 10m));
+        var result = _sut.TestValidate(
+            new UpdateProductCommand(Guid.Empty, "Widget", 10m, AnonymousPrincipal)
+        );
 
         result.ShouldHaveValidationErrorFor(x => x.Id);
     }
@@ -24,7 +28,9 @@ public class UpdateProductValidatorTests
     [InlineData("   ")]
     public void Name_must_not_be_empty_or_whitespace(string name)
     {
-        var result = _sut.TestValidate(new UpdateProductCommand(Guid.NewGuid(), name, 10m));
+        var result = _sut.TestValidate(
+            new UpdateProductCommand(Guid.NewGuid(), name, 10m, AnonymousPrincipal)
+        );
 
         result.ShouldHaveValidationErrorFor(x => x.Name);
     }
@@ -36,7 +42,9 @@ public class UpdateProductValidatorTests
     [InlineData(-1000)]
     public void Price_must_not_be_negative(decimal price)
     {
-        var result = _sut.TestValidate(new UpdateProductCommand(Guid.NewGuid(), "Widget", price));
+        var result = _sut.TestValidate(
+            new UpdateProductCommand(Guid.NewGuid(), "Widget", price, AnonymousPrincipal)
+        );
 
         result.ShouldHaveValidationErrorFor(x => x.Price);
     }
@@ -45,7 +53,9 @@ public class UpdateProductValidatorTests
     [Fact]
     public void Valid_commands_produce_no_errors()
     {
-        var result = _sut.TestValidate(new UpdateProductCommand(Guid.NewGuid(), "Widget", 10m));
+        var result = _sut.TestValidate(
+            new UpdateProductCommand(Guid.NewGuid(), "Widget", 10m, AnonymousPrincipal)
+        );
 
         result.ShouldNotHaveAnyValidationErrors();
     }

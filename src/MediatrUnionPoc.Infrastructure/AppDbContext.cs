@@ -25,6 +25,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.Property(p => p.Id).HasConversion(new ProductIdValueConverter());
             builder.Property(p => p.Name).IsRequired().HasMaxLength(200);
             builder.Property(p => p.Price).HasConversion(new MoneyValueConverter());
+            builder.Property(p => p.OwnerId).IsRequired().HasMaxLength(200);
         });
     }
 }

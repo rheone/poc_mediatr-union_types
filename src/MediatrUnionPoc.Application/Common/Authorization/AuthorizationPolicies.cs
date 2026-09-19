@@ -10,4 +10,15 @@ public static class AuthorizationPolicies
     /// <see cref="Abstractions.IRequiresAuthorization.PolicyName"/>.
     /// </summary>
     public const string Administrator = "Administrator";
+
+    /// <summary>
+    /// Requires the caller to own the resource being acted on — evaluated by
+    /// <see cref="OwnerAuthorizationHandler{TResource}"/> against an
+    /// <see cref="Microsoft.AspNetCore.Authorization.Infrastructure.OperationAuthorizationRequirement"/>,
+    /// called explicitly from inside a handler via <see cref="ResourceAuthorizationService"/> once
+    /// the resource has been loaded — unlike <see cref="Administrator"/>, this is never checked by
+    /// <see cref="Behaviors.AuthorizationBehavior{TRequest,TResponse}"/>, since that pipeline
+    /// behavior runs before any resource is loaded.
+    /// </summary>
+    public const string ProductOwner = "ProductOwner";
 }

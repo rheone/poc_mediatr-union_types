@@ -3,7 +3,9 @@ using FluentValidation;
 using MediatR;
 using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Behaviors;
+using MediatrUnionPoc.Application.Features.Products.Common;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace MediatrUnionPoc.Application;
@@ -15,8 +17,10 @@ public static class DependencyInjection
     public static readonly Assembly AssemblyReference = typeof(DependencyInjection).Assembly;
 
     /// <summary>
-    /// Registers MediatR, all FluentValidation validators, the <c>Administrator</c> authorization
-    /// policy, and the <see cref="LoggingBehavior{TRequest,TResponse}"/> →
+    /// Registers MediatR, all FluentValidation validators, the role-based <c>Administrator</c> and
+    /// resource-based <c>ProductOwner</c> authorization policies (plus the
+    /// <see cref="ResourceAuthorizationService"/> the latter is checked through from inside a
+    /// handler), and the <see cref="LoggingBehavior{TRequest,TResponse}"/> →
     /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> → <see cref="ValidationBehavior{TRequest,TResponse}"/>
     /// → <see cref="TransactionBehavior{TRequest,TResponse}"/> pipeline, in that execution order.
     /// </summary>
@@ -28,12 +32,25 @@ public static class DependencyInjection
         services.AddValidatorsFromAssembly(AssemblyReference);
 
         services.AddAuthorizationCore(options =>
+        {
             options.AddPolicy(
                 AuthorizationPolicies.Administrator,
                 policy => policy.Requirements.Add(new AdministratorRequirement("Administrator"))
-            )
-        );
+            );
+            options.AddPolicy(
+                AuthorizationPolicies.ProductOwner,
+                policy =>
+                    policy.Requirements.Add(
+                        new OperationAuthorizationRequirement { Name = "Update" }
+                    )
+            );
+        });
         services.AddSingleton<IAuthorizationHandler, AdministratorAuthorizationHandler>();
+        services.AddSingleton<
+            IAuthorizationHandler,
+            OwnerAuthorizationHandler<OwnedProductResource>
+        >();
+        services.AddScoped<ResourceAuthorizationService>();
 
         // Order matters: log the whole pipeline, then authorize, then validate, then (for
         // commands) manage the transaction — check who's calling before checking whether their

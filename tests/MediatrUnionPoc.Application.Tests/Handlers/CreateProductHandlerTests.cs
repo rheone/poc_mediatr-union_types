@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.Create;
 using MediatrUnionPoc.Domain;
@@ -30,5 +31,46 @@ public class CreateProductHandlerTests
         await repository
             .Received(1)
             .AddAsync(Arg.Is<Product>(p => p.Name == "Widget"), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Verifies a product created without a <see cref="CreateProductCommand.Principal"/> gets an empty owner id.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Assigns_an_empty_owner_id_when_no_principal_is_given()
+    {
+        var repository = Substitute.For<IProductRepository>();
+        var handler = new CreateProductHandler(repository);
+
+        await handler.Handle(new CreateProductCommand("Widget", 9.99m), CancellationToken.None);
+
+        await repository
+            .Received(1)
+            .AddAsync(
+                Arg.Is<Product>(p => p.OwnerId == string.Empty),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    /// <summary>Verifies a product created with a principal carrying a name identifier claim is owned by that claim's value.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Assigns_the_principals_name_identifier_claim_as_the_owner_id()
+    {
+        var repository = Substitute.For<IProductRepository>();
+        var handler = new CreateProductHandler(repository);
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "owner-1")],
+            authenticationType: "Test"
+        );
+        var principal = new ClaimsPrincipal(identity);
+
+        await handler.Handle(
+            new CreateProductCommand("Widget", 9.99m, principal),
+            CancellationToken.None
+        );
+
+        await repository
+            .Received(1)
+            .AddAsync(Arg.Is<Product>(p => p.OwnerId == "owner-1"), Arg.Any<CancellationToken>());
     }
 }

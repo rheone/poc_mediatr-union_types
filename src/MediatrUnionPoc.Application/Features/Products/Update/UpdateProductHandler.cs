@@ -1,5 +1,7 @@
 using MediatR;
+using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
+using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Features.Products.Update;
@@ -8,10 +10,16 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 /// Updates a product's name and price. The <see cref="NotFound{TId}"/> case returned here is what
 /// <see cref="MediatrUnionPoc.Application.Common.Behaviors.TransactionBehavior{TRequest,TResponse}"/>
 /// treats as a rollback signal — no exception is thrown for a missing entity, since that's an
-/// ordinary outcome of an update-by-id request, not a fault.
+/// ordinary outcome of an update-by-id request, not a fault. Once the product is loaded, only its
+/// owner may proceed — checked via <see cref="ResourceAuthorizationService"/>, the resource-based
+/// counterpart to the role-based check <see cref="Delete.DeleteProductHandler"/>'s command has
+/// already passed through the pipeline before its own handler runs (see
+/// <see cref="UpdateProductCommand.Principal"/> for why this one runs here instead).
 /// </summary>
-public sealed class UpdateProductHandler(IProductRepository repository)
-    : IRequestHandler<UpdateProductCommand, UpdateProductResult>
+public sealed class UpdateProductHandler(
+    IProductRepository repository,
+    ResourceAuthorizationService resourceAuthorizationService
+) : IRequestHandler<UpdateProductCommand, UpdateProductResult>
 {
     /// <inheritdoc/>
     public async Task<UpdateProductResult> Handle(
@@ -25,6 +33,18 @@ public sealed class UpdateProductHandler(IProductRepository repository)
         if (product is null)
         {
             return new NotFound<ProductId>(productId);
+        }
+
+        var notAuthorized = await resourceAuthorizationService.AuthorizeAsync(
+            request.Principal,
+            OwnedProductResource.FromDomain(product),
+            AuthorizationPolicies.ProductOwner,
+            cancellationToken
+        );
+
+        if (notAuthorized is not null)
+        {
+            return UpdateProductResult.FromNotAuthorized(notAuthorized);
         }
 
         product.UpdateDetails(request.Name, Money.From(request.Price));

@@ -29,8 +29,23 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// </summary>
     public const string AdminHeaderName = "X-Admin";
 
-    /// <summary>Creates a product.</summary>
+    /// <summary>
+    /// The request header this POC accepts as proof of caller identity, in place of real
+    /// authentication. Its value becomes the caller's <see cref="ClaimTypes.NameIdentifier"/>
+    /// claim — the identity <see cref="Application.Common.Authorization.OwnerAuthorizationHandler{TResource}"/>
+    /// compares against a resource's owner, e.g. <see cref="Domain.Product.OwnerId"/>. A caller
+    /// who created a product with a given <see cref="CallerIdHeaderName"/> value must present the
+    /// same value to update it.
+    /// </summary>
+    public const string CallerIdHeaderName = "X-Caller-Id";
+
+    /// <summary>
+    /// Creates a product. The caller becomes the product's owner by presenting the
+    /// <see cref="CallerIdHeaderName"/> header — see that constant, and
+    /// <see cref="Domain.Product.OwnerId"/> for what ownership then gates.
+    /// </summary>
     /// <param name="request">The product to create.</param>
+    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
     /// 201 with the created <see cref="ProductDto"/>; 400 with per-field errors if <paramref name="request"/>
@@ -42,11 +57,16 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> CreateAsync(
         CreateProductRequest request,
+        [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
         CancellationToken cancellationToken = default
     )
     {
         var result = await sender.Send(
-            new CreateProductCommand(request.Name, request.Price),
+            new CreateProductCommand(
+                request.Name,
+                request.Price,
+                CallerPrincipal(adminHeader: null, callerIdHeader)
+            ),
             cancellationToken
         );
 
@@ -121,24 +141,40 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         };
     }
 
-    /// <summary>Replaces a product's name and price.</summary>
+    /// <summary>
+    /// Replaces a product's name and price. Only the product's owner may update it — this POC has
+    /// no real authentication, so the caller proves identity by sending an
+    /// <see cref="CallerIdHeaderName"/> header whose value must match the value presented when the
+    /// product was created; see <see cref="CallerIdHeaderName"/>.
+    /// </summary>
     /// <param name="id">The product's identity.</param>
     /// <param name="request">The new name and price.</param>
+    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
-    /// <returns>204 on success; 404 if the product doesn't exist; 400 on validation failure; 500 for any other <see cref="Error"/> case.</returns>
+    /// <returns>
+    /// 204 on success; 404 if the product doesn't exist; 400 on validation failure; 403 if the
+    /// caller doesn't own the product; 500 for any other <see cref="Error"/> case.
+    /// </returns>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemPayload), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdateAsync(
         Guid id,
         UpdateProductRequest request,
+        [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
         CancellationToken cancellationToken = default
     )
     {
         var result = await sender.Send(
-            new UpdateProductCommand(id, request.Name, request.Price),
+            new UpdateProductCommand(
+                id,
+                request.Name,
+                request.Price,
+                CallerPrincipal(adminHeader: null, callerIdHeader)
+            ),
             cancellationToken
         );
 
@@ -149,6 +185,11 @@ public sealed class ProductsController(ISender sender) : ControllerBase
                 new ProblemPayload($"Product '{notFound.Id}' was not found.", "NOT_FOUND")
             ),
             ValidationErrors errors => ValidationProblemFrom(errors),
+            NotAuthorized notAuthorized => Problem(
+                detail: string.Join("; ", notAuthorized.Reasons),
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Forbidden"
+            ),
             Error error => Problem(
                 detail: error.Message,
                 statusCode: StatusCodes.Status500InternalServerError,
@@ -181,7 +222,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     )
     {
         var result = await sender.Send(
-            new DeleteProductCommand(id, CallerPrincipal(adminHeader)),
+            new DeleteProductCommand(id, CallerPrincipal(adminHeader, callerIdHeader: null)),
             cancellationToken
         );
 
@@ -217,18 +258,28 @@ public sealed class ProductsController(ISender sender) : ControllerBase
 
     /// <summary>
     /// Builds the caller's <see cref="ClaimsPrincipal"/> from the <see cref="AdminHeaderName"/>
-    /// header's bound value — the only identity source this POC has, in place of real
-    /// authentication.
+    /// and <see cref="CallerIdHeaderName"/> headers' bound values — the only identity source this
+    /// POC has, in place of real authentication.
     /// </summary>
     /// <param name="adminHeader">The <see cref="AdminHeaderName"/> header's value, or <see langword="null"/> if absent.</param>
-    /// <returns>A principal with an <c>Administrator</c> role claim when <paramref name="adminHeader"/> is <c>"true"</c>; otherwise an anonymous principal.</returns>
-    private static ClaimsPrincipal CallerPrincipal(string? adminHeader)
+    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> header's value, or <see langword="null"/> if absent.</param>
+    /// <returns>
+    /// A principal with an <c>Administrator</c> role claim when <paramref name="adminHeader"/> is
+    /// <c>"true"</c>, and/or a <see cref="ClaimTypes.NameIdentifier"/> claim when
+    /// <paramref name="callerIdHeader"/> is non-empty; an anonymous principal if neither is present.
+    /// </returns>
+    private static ClaimsPrincipal CallerPrincipal(string? adminHeader, string? callerIdHeader)
     {
         var identity = new ClaimsIdentity(authenticationType: "Header");
 
         if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
         {
             identity.AddClaim(new Claim(ClaimTypes.Role, "Administrator"));
+        }
+
+        if (!string.IsNullOrEmpty(callerIdHeader))
+        {
+            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, callerIdHeader));
         }
 
         return new ClaimsPrincipal(identity);

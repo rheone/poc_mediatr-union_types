@@ -80,16 +80,17 @@ public class UnionTypeTests
 
     /// <summary>
     /// Verifies <c>UpdateProductResult</c>'s different case set (<see cref="Success"/>,
-    /// <see cref="NotFound{TId}"/>, <see cref="ValidationErrors"/>, <see cref="Error"/>) works the same
-    /// way as <c>CreateProductResult</c>'s, proving unions can be mixed-and-matched per endpoint
-    /// rather than sharing one fixed "Result" shape.
+    /// <see cref="NotFound{TId}"/>, <see cref="ValidationErrors"/>, <see cref="Error"/>,
+    /// <see cref="NotAuthorized"/>) works the same way as <c>CreateProductResult</c>'s, proving
+    /// unions can be mixed-and-matched per endpoint rather than sharing one fixed "Result" shape.
     /// </summary>
     [Fact]
     public void Same_union_declaration_supports_a_different_mix_of_case_types()
     {
-        // UpdateProductResult mixes Success/NotFound/ValidationErrors/Error — a different case
-        // set from CreateProductResult's ProductDto/ValidationErrors/Error, proving unions can
-        // be mixed-and-matched per endpoint rather than sharing one fixed "Result" shape.
+        // UpdateProductResult mixes Success/NotFound/ValidationErrors/Error/NotAuthorized — a
+        // different case set from CreateProductResult's ProductDto/ValidationErrors/Error,
+        // proving unions can be mixed-and-matched per endpoint rather than sharing one fixed
+        // "Result" shape.
         UpdateProductResult success = new Success();
         UpdateProductResult notFound = new NotFound<ProductId>(ProductId.New());
 
@@ -102,6 +103,7 @@ public class UnionTypeTests
             NotFound<ProductId> => "missing",
             ValidationErrors => "invalid",
             Error => "error",
+            NotAuthorized => "unauthorized",
         };
 
         Assert.Equal("ok", successDescription);

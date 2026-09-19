@@ -109,10 +109,69 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Verifies an update returns 204 and its changes are visible to a subsequent GetById.</summary>
+    /// <summary>Verifies an owner's update returns 204 and its changes are visible to a subsequent GetById.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_persists_changes_that_a_subsequent_GetById_can_see()
+    public async Task Update_by_the_owner_persists_changes_that_a_subsequent_GetById_can_see()
+    {
+        using var created = await PostAsCallerAsync("owner-1");
+        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
+
+        using var updateResponse = await PutAsCallerAsync(
+            $"/api/products/{dto!.Id.Value}",
+            "owner-1"
+        );
+        Assert.Equal(HttpStatusCode.NoContent, updateResponse.StatusCode);
+
+        var fetched = await _client.GetFromJsonAsync<ProductDto>($"/api/products/{dto.Id.Value}");
+        Assert.Equal("Widget Pro", fetched!.Name);
+        Assert.Equal(19.99m, fetched.Price);
+    }
+
+    /// <summary>Verifies a non-owner's update returns 403 and leaves the product untouched.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Update_by_a_non_owner_returns_403_and_leaves_the_product_untouched()
+    {
+        using var created = await PostAsCallerAsync("owner-1");
+        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
+
+        using var updateResponse = await PutAsCallerAsync(
+            $"/api/products/{dto!.Id.Value}",
+            "owner-2"
+        );
+        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
+
+        var fetched = await _client.GetFromJsonAsync<ProductDto>($"/api/products/{dto.Id.Value}");
+        Assert.Equal("Widget", fetched!.Name);
+        Assert.Equal(9.99m, fetched.Price);
+    }
+
+    /// <summary>Verifies an update with no caller identity at all returns 403, since an anonymous caller never matches any product's owner.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Update_without_any_caller_id_header_returns_403()
+    {
+        using var created = await PostAsCallerAsync("owner-1");
+        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
+
+        using var updateResponse = await _client.PutAsJsonAsync(
+            $"/api/products/{dto!.Id.Value}",
+            new UpdateProductRequest("Widget Pro", 19.99m)
+        );
+
+        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
+    }
+
+    /// <summary>
+    /// Verifies an anonymous caller updating a product that was itself created without an owner
+    /// (an empty <see cref="Domain.Product.OwnerId"/>) still returns 403 — guards against a
+    /// regression where an absent caller claim and an unowned product's empty owner id could
+    /// compare equal and wrongly authorize.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Update_by_an_anonymous_caller_of_an_unowned_product_returns_403()
     {
         using var created = await _client.PostAsJsonAsync(
             "/api/products",
@@ -124,11 +183,8 @@ public sealed class ProductsControllerTests : IDisposable
             $"/api/products/{dto!.Id.Value}",
             new UpdateProductRequest("Widget Pro", 19.99m)
         );
-        Assert.Equal(HttpStatusCode.NoContent, updateResponse.StatusCode);
 
-        var fetched = await _client.GetFromJsonAsync<ProductDto>($"/api/products/{dto.Id.Value}");
-        Assert.Equal("Widget Pro", fetched!.Name);
-        Assert.Equal(19.99m, fetched.Price);
+        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
     }
 
     /// <summary>Verifies an administrator's delete returns 204 and the product subsequently returns 404 from GetById.</summary>
@@ -184,6 +240,36 @@ public sealed class ProductsControllerTests : IDisposable
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
         request.Headers.Add("X-Admin", "true");
+        return await _client.SendAsync(request);
+    }
+
+    /// <summary>
+    /// Creates a "Widget" product carrying the <c>X-Caller-Id</c> header the API treats as proof
+    /// of caller identity, so the created product's owner is <paramref name="callerId"/>.
+    /// </summary>
+    /// <param name="callerId">The <c>X-Caller-Id</c> header value to present.</param>
+    /// <returns>The response to the request.</returns>
+    private async Task<HttpResponseMessage> PostAsCallerAsync(string callerId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/products")
+        {
+            Content = JsonContent.Create(new CreateProductRequest("Widget", 9.99m)),
+        };
+        request.Headers.Add("X-Caller-Id", callerId);
+        return await _client.SendAsync(request);
+    }
+
+    /// <summary>Sends a PUT request carrying the <c>X-Caller-Id</c> header the API treats as proof of caller identity.</summary>
+    /// <param name="requestUri">The request URI.</param>
+    /// <param name="callerId">The <c>X-Caller-Id</c> header value to present.</param>
+    /// <returns>The response to the request.</returns>
+    private async Task<HttpResponseMessage> PutAsCallerAsync(string requestUri, string callerId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, requestUri)
+        {
+            Content = JsonContent.Create(new UpdateProductRequest("Widget Pro", 19.99m)),
+        };
+        request.Headers.Add("X-Caller-Id", callerId);
         return await _client.SendAsync(request);
     }
 }
