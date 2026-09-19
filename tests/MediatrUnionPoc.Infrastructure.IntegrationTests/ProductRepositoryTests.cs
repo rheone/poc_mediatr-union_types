@@ -6,7 +6,7 @@ namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 /// <summary>
 /// Exercises <see cref="ProductRepository"/> directly against the real EF Core InMemory provider,
 /// covering the query logic <see cref="InMemoryUnitOfWorkTests"/> doesn't: paging's ordering,
-/// skip/take math, and a plain lookup miss. Nothing here substitutes <see cref="AppDbContext"/> —
+/// skip/take math, change-tracking behavior of each read path, and a plain lookup miss. Nothing here substitutes <see cref="AppDbContext"/> —
 /// that's the point of an integration test for a repository.
 /// </summary>
 public class ProductRepositoryTests
@@ -149,5 +149,51 @@ public class ProductRepositoryTests
 
         Assert.Equal(2, page.Items.Count);
         Assert.Equal(3, page.TotalCount);
+    }
+
+    /// <summary>Verifies <see cref="ProductRepository.GetPagedAsync"/> returns untracked entities (read-only path).</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task GetPagedAsync_returns_untracked_entities()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using (var seedContext = CreateContext(databaseName))
+        {
+            await new ProductRepository(seedContext).AddAsync(
+                Product.Create("Widget", Money.From(9.99m)),
+                CancellationToken.None
+            );
+            await seedContext.SaveChangesAsync();
+        }
+
+        await using var dbContext = CreateContext(databaseName);
+        var repository = new ProductRepository(dbContext);
+
+        var page = await repository.GetPagedAsync(1, 10, CancellationToken.None);
+
+        Assert.Single(page.Items);
+        Assert.Empty(dbContext.ChangeTracker.Entries<Product>());
+    }
+
+    /// <summary>Verifies <see cref="ProductRepository.GetByIdAsync"/> returns a tracked entity, so callers can mutate and save it.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task GetByIdAsync_returns_a_tracked_entity()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var product = Product.Create("Widget", Money.From(9.99m));
+        await using (var seedContext = CreateContext(databaseName))
+        {
+            await new ProductRepository(seedContext).AddAsync(product, CancellationToken.None);
+            await seedContext.SaveChangesAsync();
+        }
+
+        await using var dbContext = CreateContext(databaseName);
+        var repository = new ProductRepository(dbContext);
+
+        var result = await repository.GetByIdAsync(product.Id, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(EntityState.Unchanged, dbContext.Entry(result).State);
     }
 }
