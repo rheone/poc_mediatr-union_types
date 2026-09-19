@@ -7,8 +7,9 @@ are explicitly flagged as such — don't treat them as authoritative over the pr
 > [!NOTE]
 > **Changelog:** 2026-09-18 — formatting pass (GitHub alert blocks for flagged/secondary/gotcha
 > callouts, a Mermaid diagram for §3's exhaustiveness diagnostics). No factual content, citations,
-> or Open Questions were changed — see `docs/research/fluentvalidation-vogen-mediatr-research.md`
-> for the companion document this pass also produced.
+> or Open Questions were changed — see [`mediatr-research.md`](mediatr-research.md),
+> [`fluentvalidation-research.md`](fluentvalidation-research.md), and
+> [`vogen-research.md`](vogen-research.md), the three companion documents this pass also produced.
 
 **Primary sources used:**
 

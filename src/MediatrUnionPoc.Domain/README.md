@@ -7,7 +7,10 @@ part of a web API or that persistence happens in memory.
 
 Value objects are declared with [Vogen](https://github.com/SteveDunn/Vogen) rather than hand-rolled
 wrapper structs, so `ProductId`/`Money` get value equality, parsing, and validation from a source
-generator instead of boilerplate.
+generator instead of boilerplate — see the repo root README's
+[Vogen: avoiding primitive obsession](../../README.md#vogen-avoiding-primitive-obsession) for the
+full rationale and its [Glossary](../../README.md#glossary) for any term below that isn't
+self-explanatory.
 
 ## Dependencies
 

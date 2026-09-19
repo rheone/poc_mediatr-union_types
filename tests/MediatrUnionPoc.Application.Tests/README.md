@@ -23,7 +23,9 @@ Unit tests for `MediatrUnionPoc.Application`, organized by what's under test:
 `UpdateProductResult.ShouldCommit` — the two result unions `TransactionBehaviorTests` doesn't
 already exercise via `DeleteProductResult` — since a mistake in either union's own `ShouldCommit`
 switch is exactly the per-union authoring error the whole `ITransactionOutcome` pattern exists to
-isolate.
+isolate (see the repo root README's
+[Shared case types are meaning-free](../../README.md#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
+for why that pattern exists).
 
 None of these tests boot the ASP.NET Core host — that's
 `MediatrUnionPoc.Api.IntegrationTests`'s job.

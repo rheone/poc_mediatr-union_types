@@ -3,7 +3,10 @@
 Four tiny, one-file scratch projects that exist to prove a claim this repo makes in prose
 (`README.md`, `CLAUDE.md`) is actually enforced by the compiler: that a non-exhaustive `switch`
 over a `union` — or over `ITransactionOutcome<TSelf>.ShouldCommit` specifically — is a real
-`CS8509` build error, not just a convention or an analyzer suggestion.
+`CS8509` build error, not just a convention or an analyzer suggestion. See the repo root README's
+[Exhaustiveness checking](../../README.md#c-language-concepts) glossary entry if that term is new,
+and [Shared case types are meaning-free](../../README.md#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
+for why `ShouldCommit` gets the exact same proof as an ordinary `switch`.
 
 ## Why this exists
 

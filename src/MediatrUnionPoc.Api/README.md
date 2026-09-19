@@ -4,7 +4,10 @@ The ASP.NET Core host. One controller, `ProductsController`, whose every action 
 thing: send a command/query via MediatR, then `switch` on the returned union to produce an
 `IActionResult`. That `switch` is the only place in the whole solution where a union outcome gets
 translated into an HTTP status — handlers and validators never touch `IActionResult` or any other
-web concern.
+web concern. See the repo root README's
+[Switch-and-unwrap: why controllers never return the union directly](../../README.md#switch-and-unwrap-why-controllers-never-return-the-union-directly)
+for why, and its [Authorization](../../README.md#authorization) section for how the two
+`X-Admin`/`X-Caller-Id` request headers this controller reads stand in for real authentication.
 
 Uses the `Microsoft.NET.Sdk.Web` SDK (not the plain `Microsoft.NET.Sdk` the other projects use),
 since it's the one project that's actually a runnable web application.

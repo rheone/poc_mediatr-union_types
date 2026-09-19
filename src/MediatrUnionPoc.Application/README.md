@@ -1,7 +1,7 @@
 # MediatrUnionPoc.Application
 
 The core of the proof of concept. Commands, queries, handlers, and validators, organized as
-**vertical slices** under `Features/Products/<Operation>/` (Create, Update, Delete, GetById,
+**[vertical slices](../../README.md#architectural-patterns)** under `Features/Products/<Operation>/` (Create, Update, Delete, GetById,
 GetPaged) rather than by technical layer — everything one operation needs lives in one folder.
 `Common/` holds the shared pipeline machinery: marker interfaces (`ICommand<TResponse>`,
 `ITransactionalCommand<TResponse>`, `IQuery<TResponse>`, `IValidatable<TSelf>`), the MediatR
@@ -10,10 +10,12 @@ meaning-free *shared* case types (`Success`, `NotFound`, `Error`, `ValidationErr
 `NotAuthorized`) that the per-feature result unions compose from alongside their own *bespoke*
 case types (e.g. `ProductDto`).
 
-Every command/query returns a `union` of exactly the outcomes that operation can produce (e.g.
-`union CreateProductResult(ProductDto, ValidationErrors, Error)`) instead of throwing for an
-expected outcome — see the repo root `README.md`'s "Why this matters" section for the full
-rationale.
+Every command/query returns a [`union`](../../README.md#the-c-union-type) of exactly the outcomes
+that operation can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error)`)
+instead of throwing for an expected outcome — see the repo root README's
+["No exceptions for expected outcomes"](../../README.md#no-exceptions-for-expected-outcomes)
+section for the full rationale, and its [Glossary](../../README.md#glossary) for any term below
+that isn't self-explanatory.
 
 ## Dependencies
 

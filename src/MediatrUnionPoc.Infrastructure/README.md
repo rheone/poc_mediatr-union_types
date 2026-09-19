@@ -1,8 +1,10 @@
 # MediatrUnionPoc.Infrastructure
 
 Implements the persistence-facing interfaces `MediatrUnionPoc.Domain` declares:
-`InMemoryUnitOfWork`, `ProductRepository`, and hand-written EF Core `ValueConverter`s for the
-Vogen value objects (`ProductId`, `Money`). The converters are written by hand rather than using
+`InMemoryUnitOfWork` (see the repo root README's
+[Unit of Work: one session, every repository](../../README.md#unit-of-work-one-session-every-repository)
+for what that interface is for), `ProductRepository`, and hand-written EF Core `ValueConverter`s for
+the Vogen value objects (`ProductId`, `Money`). The converters are written by hand rather than using
 Vogen's own generated EF Core converter support specifically so `MediatrUnionPoc.Domain` never
 needs an EF Core package reference.
 

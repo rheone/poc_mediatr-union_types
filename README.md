@@ -1,16 +1,98 @@
 # MediatrUnionPoc
 
-A proof of concept: can C#'s new `union` type serve as the response type for a MediatR/CQRS
-handler, replacing the usual "throw an exception or return null" grab-bag with a closed,
-exhaustively-checked set of outcomes?
+A proof of concept: can C#'s new [`union`](#the-c-union-type) type serve as the response type for a
+[MediatR](#mediatr-vocabulary)[^mediatr-license]/[CQRS](#architectural-patterns) handler, replacing
+the usual "throw an exception or return null" grab-bag with a closed, exhaustively-checked set of
+outcomes?
 
-Short answer: yes, and it composes well with MediatR pipeline behaviors via generic
-constraints on **static abstract interface members**. Details below.
+Short answer: yes, and it composes well with MediatR pipeline behaviors via generic constraints on
+**[static abstract interface members](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen)**.
+Details below.
 
 > [!IMPORTANT]
 > The `union` keyword is a **C# 15** feature — it needs **.NET 11 Preview 5+**.
 > This repo targets `net11.0` with `<LangVersion>preview</LangVersion>` and was built
 > against the .NET 11 RC1 SDK.
+
+> [!NOTE]
+> **This is one opinionated take, not a prescription.** This repo starts from the position that
+> exceptions should be reserved for truly exceptional circumstances — not for ordinary business
+> outcomes like "not found" or "validation failed" — and builds a set of suggested conventions
+> around that position: unions as response types, meaning-free shared case types, and pipeline-based
+> cross-cutting concerns. There are many other defensible ways to solve the same problem — a
+> hand-rolled `Result<T>`, a third-party library, or exceptions used deliberately and consistently
+> could all work for a different team. Treat what follows as "one thing that works," not "the
+> correct answer."
+
+## Table of contents
+
+- [Getting started](#getting-started)
+  - [Project layout](#project-layout)
+- [Motivation](#motivation)
+- [What this pattern provides, and its actual scope](#what-this-pattern-provides-and-its-actual-scope)
+- [Core concepts](#core-concepts)
+  - [The C# `union` type](#the-c-union-type)
+  - [Static abstract interface members: why generic code can build a union it's never seen](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen)
+  - [Case types used here](#case-types-used-here)
+  - [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
+  - [No exceptions for expected outcomes](#no-exceptions-for-expected-outcomes)
+  - [Transactions: what rollback undoes, and why it matters](#transactions-what-rollback-undoes-and-why-it-matters)
+  - [Unit of Work: one session, every repository](#unit-of-work-one-session-every-repository)
+  - [Vogen: avoiding primitive obsession](#vogen-avoiding-primitive-obsession)
+- [Adding a new command or query](#adding-a-new-command-or-query)
+- [Request lifecycle](#request-lifecycle)
+- [Authorization](#authorization)
+  - [Why two different points in the request lifetime](#why-two-different-points-in-the-request-lifetime)
+  - [How the three flows fit together](#how-the-three-flows-fit-together)
+  - [Role-based: `IRequiresAuthorization` + `AuthorizationBehavior`](#role-based-irequiresauthorization-authorizationbehavior)
+  - [Resource-based: `ResourceAuthorizationService` + `OwnerAuthorizationHandler<TResource>`](#resource-based-resourceauthorizationservice-ownerauthorizationhandlertresource)
+  - [Resource-based with a role bypass: `ProductOwnerOrAdministrator`](#resource-based-with-a-role-bypass-productowneroradministrator)
+  - [Zero-to-many handlers, and multiple requirements](#zero-to-many-handlers-and-multiple-requirements)
+  - [Where the identity comes from](#where-the-identity-comes-from)
+  - [Configuring role-based authorization for a new command](#configuring-role-based-authorization-for-a-new-command)
+  - [Configuring resource-based authorization for a new command](#configuring-resource-based-authorization-for-a-new-command)
+  - [Configuring a role bypass for a resource-based command](#configuring-a-role-bypass-for-a-resource-based-command)
+  - [Why not `IAuthorizationRequirementData` attributes](#why-not-iauthorizationrequirementdata-attributes)
+- [Worked example: `UpdateProductCommand`, case by case](#worked-example-updateproductcommand-case-by-case)
+- [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
+- [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index)
+- [Notes and gotchas](#notes-and-gotchas)
+- [Glossary](#glossary)
+- [Footnotes](#footnotes)
+
+## Getting started
+
+```bash
+dotnet build
+dotnet test
+dotnet run --project src/MediatrUnionPoc.Api
+```
+
+`global.json` pins the SDK to the exact `11.0.100-rc.1...` preview build this repo was written
+against. Without it, an IDE's own SDK resolver (Visual Studio in particular) can silently fall
+back to the newest *stable* SDK it finds and fail with `NETSDK1045` ("does not support targeting
+.NET 11.0") — `allowPrerelease: true` is what tells it a preview SDK is expected here, not a
+missing `<TargetFramework>` value. If VS still shows the error after pulling this file, close and
+reopen the solution so it re-resolves.
+
+### Project layout
+
+| Project                          | Responsibility                                                            |
+| --------------------------------- | --------------------------------------------------------------------------- |
+| `MediatrUnionPoc.Domain`          | Entities, [Vogen](#vogen-avoiding-primitive-obsession) [value objects](#vogen-vocabulary) (`ProductId`, `Money`), repository/UoW interfaces |
+| `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors |
+| `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext`, repository + unit-of-work implementations             |
+| `MediatrUnionPoc.Api`             | Controllers that map each union to an `IActionResult`                      |
+| `MediatrUnionPoc.Domain.Tests`    | Unit tests for `Money`, `ProductId`, and `Product`                          |
+| `MediatrUnionPoc.Application.Tests` | xUnit + NSubstitute — union mechanics, pipeline behaviors, handlers, validators |
+| `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core InMemory provider, end to end |
+| `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests           |
+| `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions enforcing the layering above               |
+
+Application code is organized as **[vertical slices](#architectural-patterns)** under
+`Features/Products/<Operation>/` (`Create`, `Update`, `Delete`, `GetById`, `GetPaged`) — everything
+for one operation (command/query, validator, handler, result union) lives together, rather than
+being split across horizontal "Commands/Handlers/Validators" folders.
 
 ## Motivation
 
@@ -22,10 +104,11 @@ Most CQRS handlers end up with a response shape that's either:
   third-party library, because C# had no first-class closed-union type to express
   "exactly one of these N things came back."
 
-`union` gives you option two, built into the language, with compiler-enforced exhaustiveness at
-every `switch`. This project pushes that as far as it reasonably goes: every command and query
-returns a `union` of whatever outcomes are actually possible for that operation — no more, no
-fewer — and nothing in the request pipeline throws for an outcome it expected to see.
+`union` gives you option two, built into the language, with compiler-enforced
+[exhaustiveness](#c-language-concepts) at every [`switch`](#c-language-concepts). This project
+pushes that as far as it reasonably goes: every command and query returns a `union` of whatever
+outcomes are actually possible for that operation — no more, no fewer — and nothing in the request
+pipeline throws for an outcome it expected to see.
 
 ## What this pattern provides, and its actual scope
 
@@ -58,68 +141,39 @@ fewer — and nothing in the request pipeline throws for an outcome it expected 
   implement an interface with a **static abstract member** (`static abstract TSelf
   FromValidationErrors(ValidationErrors errors)`), a fully generic `ValidationBehavior<TRequest,
   TResponse>` can construct the right concrete union's error case without ever naming it — see
-  [`IValidatable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IValidatable.cs).
-
-## Getting started
-
-```bash
-dotnet build
-dotnet test
-dotnet run --project src/MediatrUnionPoc.Api
-```
-
-`global.json` pins the SDK to the exact `11.0.100-rc.1...` preview build this repo was written
-against. Without it, an IDE's own SDK resolver (Visual Studio in particular) can silently fall
-back to the newest *stable* SDK it finds and fail with `NETSDK1045` ("does not support targeting
-.NET 11.0") — `allowPrerelease: true` is what tells it a preview SDK is expected here, not a
-missing `<TargetFramework>` value. If VS still shows the error after pulling this file, close and
-reopen the solution so it re-resolves.
-
-### Project layout
-
-| Project                          | Responsibility                                                            |
-| --------------------------------- | --------------------------------------------------------------------------- |
-| `MediatrUnionPoc.Domain`          | Entities, Vogen value objects (`ProductId`, `Money`), repository/UoW interfaces |
-| `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors |
-| `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext`, repository + unit-of-work implementations             |
-| `MediatrUnionPoc.Api`             | Controllers that map each union to an `IActionResult`                      |
-| `MediatrUnionPoc.Domain.Tests`    | Unit tests for `Money`, `ProductId`, and `Product`                          |
-| `MediatrUnionPoc.Application.Tests` | xUnit + NSubstitute — union mechanics, pipeline behaviors, handlers, validators |
-| `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core InMemory provider, end to end |
-| `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests           |
-| `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions enforcing the layering above               |
-
-Application code is organized as **vertical slices** under `Features/Products/<Operation>/`
-(`Create`, `Update`, `Delete`, `GetById`, `GetPaged`) — everything for one operation
-(command/query, validator, handler, result union) lives together, rather than being split across
-horizontal "Commands/Handlers/Validators" folders.
+  [`IValidatable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IValidatable.cs) and
+  [Static abstract interface members](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen)
+  below.
 
 ## Core concepts
 
-The sections below cover the mechanics and vocabulary the pattern is built on. Read what's
-relevant to what you're doing; the [Glossary](#glossary) at the end is reference material, not
-required front-to-back reading.
+The sections below cover the mechanics and vocabulary the pattern is built on, roughly in the order
+they build on each other. Read what's relevant to what you're doing; the [Glossary](#glossary) at
+the end is reference material, not required front-to-back reading.
 
 ### The C# `union` type
 
+> [!TIP]
 > Deeper, citation-backed research behind this section lives in
 > [`docs/research/csharp-union-type-research.md`](docs/research/csharp-union-type-research.md) —
-> primary sources (language reference, feature spec, LDM issue, compiler bug tracker) for every
-> claim below, plus open questions not yet settled upstream.
+> primary sources (language reference, feature spec, [LDM](#cross-cutting-concepts) issue, compiler
+> bug tracker) for every claim below, plus open questions not yet settled upstream.
 
 ```csharp
 public union CreateProductResult(ProductDto, ValidationErrors, Error);
 ```
 
-This declares a closed set of three **case types**. The compiler generates a struct implementing
-`IUnion { object? Value { get; } }`, plus an implicit conversion from each case type:
+This declares a closed set of three **[case types](#this-repos-own-types)**. The compiler generates
+a [struct](#c-language-concepts) implementing `IUnion { object? Value { get; } }`, plus an implicit
+conversion from each case type:
 
 ```csharp
 CreateProductResult ok = new ProductDto(id, "Widget", 9.99m);   // implicit conversion
 CreateProductResult bad = new Error("boom", "BOOM");            // implicit conversion
 ```
 
-Pattern matching unwraps to the *contained* case, not the union wrapper itself:
+[Pattern matching](#c-language-concepts) unwraps to the *contained* case, not the union wrapper
+itself:
 
 ```csharp
 var response = result switch
@@ -131,9 +185,10 @@ var response = result switch
 };
 ```
 
-Unions can carry a body, including implementing interfaces — which is how this repo gets a union
-to expose a static factory method usable from fully generic code (see `IValidatable<TSelf>`
-above). This only works because C# now allows **static abstract members on interfaces** —
+Unions can carry a body, including implementing [interfaces](#c-language-concepts) — which is how
+this repo gets a union to expose a static factory method usable from fully generic code (see
+[Static abstract interface members](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen)
+below). This only works because C# now allows **static abstract members on interfaces** —
 without that, a generic pipeline behavior would have no way to construct an arbitrary union type
 it has never seen.
 
@@ -150,7 +205,12 @@ Every action in [`ProductsController`](src/MediatrUnionPoc.Api/Controllers/Produ
 > `JsonSerializer.Serialize((CreateProductResult)new ProductDto(...))` produces the exact same
 > bytes as serializing the `ProductDto` directly. See
 > [`UnionJsonSerializationTests`](tests/MediatrUnionPoc.Application.Tests/Unions/UnionJsonSerializationTests.cs)
-> for the proof.
+> for the proof. `System.Text.Json` is simply this repo's own choice of serializer, not a
+> requirement of the union pattern itself — it's what ASP.NET Core defaults to, and it happens to
+> have this `IUnion` awareness in this preview build. A different serializer (`Newtonsoft.Json`,
+> say) or a non-JSON boundary entirely (gRPC, a message queue's binary format) would need its own
+> answer to "how do I represent one of N cases on the wire," or none at all if it never crosses a
+> serialization boundary — nothing about the pattern in this repo *requires* System.Text.Json.
 
 The real reason to switch first has nothing to do with serialization shape:
 
@@ -162,61 +222,60 @@ The real reason to switch first has nothing to do with serialization shape:
   nothing to report" apart from "an unrecognized case was added and I don't know what it means."
 - **Each case still needs boundary-specific context attached.** A `NotFound` needs to become
   HTTP 404, not just "an object shaped like `{"Id": "..."}"`; a `ValidationErrors` needs to become
-  an RFC 7807 problem response with per-field errors. Nothing about serialization does that
-  mapping — only code that inspects which case came back can, which is exactly what the
-  `switch` in every controller action does.
+  an RFC 7807 ([Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc7807) — a
+  standardized JSON shape for HTTP error responses) problem response with per-field errors. Nothing
+  about serialization does that mapping — only code that inspects which case came back can, which
+  is exactly what the `switch` in every controller action does.
 - **The union is for code that's still in-process; the unwrapped result is for anything crossing a
   boundary.** Controller, queue consumer, CLI — whichever boundary the domain outcome meets,
   that's where the `switch` belongs, turning a domain outcome into whatever shape *that* boundary
   actually needs.
 
-### Vogen: avoiding primitive obsession
+### Static abstract interface members: why generic code can build a union it's never seen
 
-> Deeper, citation-backed research behind this section lives in
-> [`docs/research/vogen-research.md`](docs/research/vogen-research.md) — primary sources (Vogen's
-> README and official docs site) for the factory/equality/conversion behavior described below, and
-> the defense-in-depth reasoning behind the EF Core converter choice.
-
-[Vogen](https://github.com/SteveDunn/Vogen) is a source generator that turns a bare primitive
-(`Guid`, `decimal`, `string`, ...) into a distinct, validated value type — so `ProductId` and an
-unrelated `Guid` parameter can never be swapped by mistake, and an invalid value can never be
-constructed in the first place.
+[`IValidatable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IValidatable.cs),
+[`ITransactionOutcome<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/ITransactionOutcome.cs),
+and [`IAuthorizable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IAuthorizable.cs)
+all lean on the same language feature: a **static abstract interface member** — introduced in
+**[C# 11 / .NET 7](https://learn.microsoft.com/dotnet/csharp/whats-new/csharp-11#static-abstract-members-in-interfaces)**
+(November 2022), originally to support generic math (`INumber<T>` and similar interfaces). Before
+it existed, an interface could only require *instance* members: `bool IsValid()` works fine when
+you already have an instance to call it on, but a generic pipeline behavior like
+`ValidationBehavior<TRequest, TResponse>` doesn't have a `TResponse` instance yet when validation
+fails — it needs to *construct* one, generically, for a concrete union type it has never seen and
+will never reference by name.
 
 ```csharp
-[ValueObject<Guid>(conversions: Conversions.SystemTextJson)]
-public readonly partial struct ProductId
+public interface IValidatable<TSelf> where TSelf : IValidatable<TSelf>
 {
-    private static Validation Validate(Guid input) =>
-        input != Guid.Empty ? Validation.Ok : Validation.Invalid("ProductId cannot be an empty guid.");
-
-    public static ProductId New() => From(Guid.NewGuid());
+    static abstract TSelf FromValidationErrors(ValidationErrors errors);
 }
 ```
 
-From this ~6-line declaration, Vogen generates:
+Because `FromValidationErrors` is `static abstract`, every *implementing type* — not every
+instance — must supply it, and it becomes callable through a [generic](#c-language-concepts) type
+parameter constrained to the interface: `TResponse.FromValidationErrors(errors)` compiles and
+dispatches to whichever concrete union `TResponse` actually is at the call site, resolved via the
+generic constraint (`where TResponse : IValidatable<TResponse>`), with no runtime type inspection
+at all.
 
-- **Factory methods** — `ProductId.From(guid)` (throws on invalid input) and `TryFrom(guid, out id)`
-  (doesn't). `Validate` runs inside *every* generated factory, so an empty-guid `ProductId` cannot
-  exist anywhere in the codebase — not just at the API boundary where FluentValidation already
-  checks it.
-- **Structural equality, hashing, and `ToString`** — two `ProductId`s wrapping the same `Guid` are
-  equal; `record`-style value semantics without needing `record` (this has to be a `struct` per
-  Vogen's own constraints, and `readonly partial struct` is the declaration shape it generates
-  into).
-- **Conversions**, opt-in per flag on the attribute. This repo uses `Conversions.SystemTextJson`
-  only, so `ProductId` serializes as a bare GUID string (`"..."`), not as a wrapper object — see
-  [`ProductDto`](src/MediatrUnionPoc.Application/Features/Products/Common/ProductDto.cs) for where
-  that matters on the wire.
+**Before C# 11, none of this could be expressed this cleanly.** The realistic workarounds were:
 
-`Money` ([`Money.cs`](src/MediatrUnionPoc.Domain/Money.cs)) follows the identical pattern over
-`decimal`, rejecting negative amounts.
+- **Reflection** — look up a static method by name/convention (`FromValidationErrors`) via
+  `typeof(TResponse).GetMethod(...)` and invoke it dynamically. This throws away compile-time
+  safety entirely: a typo in the method name, or a union that forgot to implement the convention,
+  fails at runtime instead of at the build. It's also measurably slower than a direct call.
+- **A required base class, or a factory delegate registered per type** — workable, but every new
+  union then needs a line of manual registration somewhere central, and that central registry has
+  to be kept in sync by hand as unions are added — exactly the kind of bookkeeping this pattern is
+  trying to eliminate.
+- **Assuming the shape instead of enforcing it** — trusting every union "just happens" to expose a
+  compatible static method, with nothing checking that assumption until it's already wrong in
+  production.
 
-Two Vogen-specific pitfalls we hit while building this — full detail in
-[Notes and gotchas](#notes-and-gotchas) — are worth knowing about up front if you add your own
-value object: don't set `PrivateAssets="all"` on the `Vogen` package reference, and don't reach
-for Vogen's generated `EfCoreValueConverter` from a persistence-agnostic Domain project (this repo
-hand-writes its EF Core converters in Infrastructure instead — see
-[`ValueConverters.cs`](src/MediatrUnionPoc.Infrastructure/ValueConverters.cs)).
+Static abstract interface members close that gap: the compiler enforces the contract at the
+*implementing type's own declaration*, and generic code calls it with the same safety and
+performance as a resolved instance-method call — no reflection, no registry, no runtime surprises.
 
 ### Case types used here
 
@@ -230,16 +289,18 @@ hand-writes its EF Core converters in Infrastructure instead — see
 | `Failure`          | Shared  | Business-rule failure(s) that aren't input validation           |
 | `NotAuthorized`    | Shared  | The caller isn't allowed to perform this operation              |
 
-Every row but `<Dto>` is a **shared case type** — the same meaning-free record reused across
-unions (see [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)).
-`<Dto>` stands for whatever **bespoke case type** carries that operation's actual payload —
-`ProductDto` for the Products feature. "Bespoke" here means *not meaning-free* — a `ProductDto`
-means exactly one thing, a successfully materialized product — not that it's confined to a single
-union: it's the success case of `CreateProductResult` and `GetProductByIdResult` alike, and appears
-again wrapped as `PagedResult<ProductDto>` inside `GetPagedProductsResult`. That's a third,
-different kind of reuse from a shared case type's — `ProductDto` is reused because every one of
-those operations happens to succeed with the same payload shape, not because its identity is
-deliberately meaning-free the way `Success` or `NotFound`'s is.
+Every row but `<Dto>` is a **[shared case type](#this-repos-own-types)** — the same meaning-free
+record reused across unions (see
+[Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)).
+`<Dto>` stands for whatever **[bespoke case type](#this-repos-own-types)** carries that operation's
+actual payload — `ProductDto` for the Products feature. "Bespoke" here means *not meaning-free* —
+a `ProductDto` means exactly one thing, a successfully materialized product — not that it's
+confined to a single union: it's the success case of `CreateProductResult` and
+`GetProductByIdResult` alike, and appears again wrapped as `PagedResult<ProductDto>` inside
+`GetPagedProductsResult`. That's a third, different kind of reuse from a shared case type's —
+`ProductDto` is reused because every one of those operations happens to succeed with the same
+payload shape, not because its identity is deliberately meaning-free the way `Success` or
+`NotFound`'s is.
 
 Each union in this repo declares only the subset of cases that operation can actually produce —
 see `CreateProductResult` vs `UpdateProductResult` vs `GetProductByIdResult` for three different
@@ -432,75 +493,128 @@ flowchart TB
   `catch` still exists, but only for genuinely unexpected exceptions, and it rolls back and
   rethrows rather than swallowing anything into a result. See
   [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
-  for why this isn't a hardcoded list of "which case types mean error."
+  for why this isn't a hardcoded list of "which case types mean error," and
+  [Transactions: what rollback undoes, and why it matters](#transactions-what-rollback-undoes-and-why-it-matters)
+  below for what "rollback" actually does.
 
-### Glossary
+### Transactions: what rollback undoes, and why it matters
 
-This project sits at the intersection of a few architectural patterns, MediatR's own vocabulary,
-one third-party library (Vogen), and a brand-new language feature. This is reference material —
-read what you need when a term above is unfamiliar; it isn't required front-to-back reading before
-the rest of this document makes sense.
+A database transaction groups a set of writes so they succeed or fail *together*. `TransactionBehavior`
+opens one before a [transactional command's](#mediatr-vocabulary) handler runs, and decides after the
+handler returns whether to **commit** (make every write inside it permanent) or **rollback** (undo
+every write inside it, as if none of them had ever happened).
 
-#### Architectural patterns
+**Where this matters**: a handler that touches more than one repository, or writes to an entity
+across more than one step, would otherwise risk a *partial write* — succeeding at step one and
+failing at step two, leaving the database in a state no business rule ever intended to exist. A
+transaction turns "did some of this succeed?" into a question that never needs asking: either the
+whole unit of work happened, or none of it did.
 
-| Term | Meaning |
-| --- | --- |
-| **CQRS** (Command Query Responsibility Segregation) | Splits every operation into a **command** (changes state, returns little more than "did it work") or a **query** (reads state, never changes it). Each side can be reasoned about, validated, and optimized independently instead of one method doing both. |
-| **Mediator pattern** | Callers don't invoke handlers directly; they send a message to a mediator, which finds the one handler registered for it. A controller sending `CreateProductCommand` has no compile-time dependency on `CreateProductHandler` at all. MediatR is the library implementing this pattern here. |
-| **Pipeline (middleware) pattern** | Cross-cutting concerns (logging, validation, transactions) are applied as a chain of wrapping steps every request passes through, instead of being duplicated inside every handler. ASP.NET Core's HTTP middleware pipeline is the same idea one layer up the stack; MediatR's pipeline behaviors are the same idea for in-process messages. |
-| **Vertical slice architecture** | Code is organized by *feature* (`Features/Products/Create/` holds that operation's command, handler, validator, and result together) rather than by *technical layer* (a `Commands/` folder, a `Handlers/` folder, each containing pieces of every feature). Changing one operation touches one folder. |
-| **Repository pattern** | An interface (`IProductRepository`) hiding how entities are actually fetched or persisted behind method calls that read like domain operations (`GetByIdAsync`, `AddAsync`) — the caller doesn't know or care whether that's EF Core, a REST call, or a file. |
-| **Unit of Work pattern** | A single object (`IUnitOfWork`) that tracks everything changed during one logical operation and commits or rolls it all back together, so a handler touching multiple repositories doesn't have to save each one individually and risk a partial write. |
+**What actually gets undone**: everything the underlying `DbContext`'s change tracker recorded
+during the handler's execution but never reached the database via `SaveChangesAsync` — inserts,
+updates, and deletes alike. Nothing about this repo's own handler code has to remember what to
+undo; the database (or, for the InMemory provider used here, `InMemoryUnitOfWork`'s own fallback —
+see [Notes and gotchas](#notes-and-gotchas)) does that bookkeeping.
 
-#### C# language concepts
+**Why this is a benefit, not just a safety net**: it lets a handler write code that assumes success
+and bail out cleanly on any unexpected outcome, without manually tracking "what have I already done
+that I'd need to compensate for." Compare a hypothetical handler with no transaction: if it updated
+one row, then failed validating a second write, undoing the first row's change would need to be
+written by hand, remembered, and tested — a whole category of bugs a transaction eliminates by
+construction.
 
-| Term | Meaning |
-| --- | --- |
-| **Generics** | Writing code once against a type parameter (`T`, `TRequest`, `TResponse`) instead of once per concrete type. `IRequestHandler<TRequest, TResponse>` is generic so one interface serves every command and query without duplication. |
-| **Interface** | A contract listing members a type must implement, without providing its own implementation. `IProductRepository`, MediatR's `IRequestHandler<,>`, and this repo's own `IValidatable<TSelf>` are all interfaces. |
-| **Static abstract interface member** *(C# 11+)* | An interface member marked `static abstract`: every *implementing type* — not every instance — must supply it, and it's callable through a generic type parameter constrained to that interface (`where TSelf : IValidatable<TSelf>`). This is what lets fully generic pipeline code construct or query a concrete union type it has never seen, by calling `TResponse.FromValidationErrors(...)` or `TResponse.ShouldCommit(...)` — impossible with an ordinary instance member, since there's no instance to call it on yet. |
-| **Record** | A type (`record`, or `record struct`) with compiler-generated structural equality (same property values ⇒ `==`), a generated `ToString()`, and non-destructive mutation via `with`. Used here for immutable shapes like `ProductDto` and every command/query. |
-| **Struct vs. class** | A `struct` is a value type — copied by value, usually stack-allocated, not nullable by default. A `class` is a reference type — copied by reference, heap-allocated, nullable by default. A `union` compiles down to a `struct` (see below), which is part of why it carries no boxing tax for the common case. |
-| **Pattern matching / `switch` expression** | `switch` used as an *expression* producing a value (`var x = input switch { ... }`) rather than a statement that just branches. Every case is tested against the switched value's shape or type, and — for a closed set of possibilities like a union — the compiler can prove every case was handled. |
-| **Union type** *(C# 15 preview — the concept this whole repo tests)* | A closed set of "case types" declared as `union Name(CaseA, CaseB, CaseC)`. A value of that type is always exactly one of the listed cases, never null, never anything outside the list. See [The C# `union` type](#the-c-union-type) for the full mechanics. |
-| **Exhaustiveness checking** | The compiler verifying that a `switch` over a closed set of possibilities (a union, or an enum with no `default`) handles every member of that set, refusing to compile (`CS8509`) if one is missing. This is what turns "forgot to handle a new case" into a build failure instead of a runtime gap. |
-| **Source generator** | A compiler plugin that generates additional C# source at build time, usually driven by an attribute. Vogen uses one to turn a six-line `ValueObject<Guid>` declaration into a full value type with factories, equality, and serialization support — see [Vogen: avoiding primitive obsession](#vogen-avoiding-primitive-obsession). |
+This repo decides commit-vs-rollback by asking the union itself
+(`ITransactionOutcome<TSelf>.ShouldCommit`, [above](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means))
+rather than by catching an exception — so rolling back a transaction is just as available for an
+*expected*, successfully-returned outcome (`NotFound`, `ValidationErrors`) as it is for a genuine
+fault, with no `catch` block required to trigger it. See
+[Commit vs. rollback, message by message](#commit-vs-rollback-message-by-message) below for this
+traced through a concrete request.
 
-#### MediatR vocabulary
+### Unit of Work: one session, every repository
 
-| Term | Meaning |
-| --- | --- |
-| **`IRequest<TResponse>`** | MediatR's marker interface for "this message expects a `TResponse` back." Every command and query here implements it indirectly through this repo's own `ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>` (below). |
-| **`IRequestHandler<TRequest, TResponse>`** | MediatR's interface for "the one place that knows how to handle a `TRequest` and produce a `TResponse`." MediatR resolves and calls exactly one registered handler per request type. |
-| **`IPipelineBehavior<TRequest, TResponse>`** | MediatR's interface for a pipeline step wrapping every request's handling: it receives the request plus a delegate to call the *next* step (another behavior, or the handler itself). `LoggingBehavior`, `ValidationBehavior`, and `TransactionBehavior` all implement this, and run in the order they're registered. |
-| **`ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>`** *(this repo's own marker interfaces — not part of MediatR)* | Sit between `IRequest<TResponse>` and a concrete request to say which pipeline behaviors apply: `IQuery<TResponse>` never runs `TransactionBehavior`; `ICommand<TResponse>` may mutate state with no transaction assumption; `ITransactionalCommand<TResponse>` additionally requires its `TResponse` implement `ITransactionOutcome<TResponse>`. See [`Messages.cs`](src/MediatrUnionPoc.Application/Common/Abstractions/Messages.cs). |
+[`IUnitOfWork`](src/MediatrUnionPoc.Domain/IUnitOfWork.cs) is registered once per request (a scoped
+[dependency injection](#cross-cutting-concepts) lifetime) and handed to every repository and
+handler that needs it during that request — which means every repository sharing that same
+`IUnitOfWork` is also sharing the same underlying `DbContext`/change-tracking session. A handler
+that needs `IProductRepository` *and* a hypothetical `IOrderRepository` in the same operation gets
+both backed by the same session automatically, purely from how dependency injection resolves scoped
+services — no extra wiring required to keep them consistent with each other.
 
-#### Vogen vocabulary
+This is what lets `IUnitOfWork.CommitAsync()`/`RollbackAsync()` cover *every* repository touched
+during the request with one call, instead of each repository having to save (or undo) its own
+changes independently. That's the specific gap a **standalone repository or domain service method**
+doesn't close on its own: a repository's own save method only knows about *its* entities —
+coordinating a write that spans two repositories would need either the repositories to reference
+each other (leaking persistence details across an otherwise clean boundary) or some other component
+to explicitly own "did both succeed." [Unit of Work](#architectural-patterns) is that "other
+component" — it doesn't replace repositories or domain services, and a simple operation touching
+exactly one repository doesn't need to reach for it: a `Product`-only handler here still calls
+`IProductRepository` directly, with `IUnitOfWork` only mattering for its transaction boundary, not
+as a required intermediary for every read or write.
 
-| Term | Meaning |
-| --- | --- |
-| **Value object** | A type identified by *what it holds*, not by identity, and typically immutable — two `Money` instances wrapping `9.99m` are the same value. Contrast with an *entity* (`Product`), which keeps its identity even as its other properties change. |
-| **Primitive obsession** | A code smell where domain concepts (a product ID, a monetary amount) are represented directly by a bare primitive (`Guid`, `decimal`) instead of their own type — letting an arbitrary `Guid` be passed where a `ProductId` was meant, or a negative `decimal` be accepted where a `Money` should never have been constructible at all. Vogen exists to eliminate this at compile time with almost no boilerplate. |
-| **`[ValueObject<T>]`** *(Vogen-specific)* | Vogen's attribute; placed on a `partial struct`, it triggers the source generator to build that value type's factories, equality, and (per selected `Conversions`) serialization/EF Core support around the wrapped primitive `T`. |
+### Vogen: avoiding primitive obsession
 
-#### This repo's own types
+> [!TIP]
+> Deeper, citation-backed research behind this section lives in
+> [`docs/research/vogen-research.md`](docs/research/vogen-research.md) — primary sources (Vogen's
+> README and official docs site) for the factory/equality/conversion behavior described below, and
+> the defense-in-depth reasoning behind the EF Core converter choice.
 
-| Term | Meaning |
-| --- | --- |
-| **`IValidatable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can build that union's own validation-failure case generically, without ever naming the concrete union type. |
-| **`ITransactionOutcome<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract bool ShouldCommit(TSelf)`) so `TransactionBehavior` can ask the union itself whether to commit or roll back, without inspecting which case type came back by name. See [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means). |
-| **Case type** *(C# spec term)* | Any one of the types listed in a union's declaration (`union Name(CaseA, CaseB, CaseC)` — `CaseA`, `CaseB`, and `CaseC` are all case types of `Name`). This repo further splits case types into two roles it names itself — **shared** and **bespoke**, below — because the spec term alone doesn't distinguish them. |
-| **Shared case type** *(project-specific)* | A plain, meaning-free record (`Success`, `NotFound`, `Error`, ...) reused across many unions. A shared case type's identity never implies what it means for commit/rollback or anything else — only the union that declares it decides that; see [Case types used here](#case-types-used-here). |
-| **Bespoke case type** *(project-specific)* | A case type carrying one operation's actual payload (`ProductDto`, a hypothetical `PongDto`) rather than a meaning-free shared record. It can still appear in more than one union — `ProductDto` is the success case of both `CreateProductResult` and `GetProductByIdResult`, and again wrapped in `PagedResult<ProductDto>` inside `GetPagedProductsResult` — but unlike a shared case type, that reuse is because those operations happen to succeed with the same payload shape, not because its identity is deliberately meaning-free. |
+[Vogen](https://github.com/SteveDunn/Vogen) is a [source generator](#c-language-concepts) that
+turns a bare primitive (`Guid`, `decimal`, `string`, ...) into a distinct, validated
+[value type](#vogen-vocabulary) — so `ProductId` and an unrelated `Guid` parameter can never be
+swapped by mistake, and an invalid value can never be constructed in the first place. This section
+covers a supporting library this repo happens to use for that concern, not a language feature the
+union pattern itself depends on — a different implementation could use plain primitives, a
+different value-object library, or hand-rolled wrapper types instead.
+
+```csharp
+[ValueObject<Guid>(conversions: Conversions.SystemTextJson)]
+public readonly partial struct ProductId
+{
+    private static Validation Validate(Guid input) =>
+        input != Guid.Empty ? Validation.Ok : Validation.Invalid("ProductId cannot be an empty guid.");
+
+    public static ProductId New() => From(Guid.NewGuid());
+}
+```
+
+From this ~6-line declaration, Vogen generates:
+
+- **Factory methods** — `ProductId.From(guid)` (throws on invalid input) and `TryFrom(guid, out id)`
+  (doesn't). `Validate` runs inside *every* generated factory, so an empty-guid `ProductId` cannot
+  exist anywhere in the codebase — not just at the API boundary where FluentValidation already
+  checks it.
+- **Structural equality, hashing, and `ToString`** — two `ProductId`s wrapping the same `Guid` are
+  equal; [`record`](#c-language-concepts)-style value semantics without needing `record` (this has
+  to be a `struct` per Vogen's own constraints, and `readonly partial struct` is the declaration
+  shape it generates into).
+- **Conversions**, opt-in per flag on the attribute. This repo uses `Conversions.SystemTextJson`
+  only, so `ProductId` serializes as a bare GUID string (`"..."`), not as a wrapper object — see
+  [`ProductDto`](src/MediatrUnionPoc.Application/Features/Products/Common/ProductDto.cs) for where
+  that matters on the wire.
+
+`Money` ([`Money.cs`](src/MediatrUnionPoc.Domain/Money.cs)) follows the identical pattern over
+`decimal`, rejecting negative amounts.
+
+Two Vogen-specific pitfalls we hit while building this — full detail in
+[Notes and gotchas](#notes-and-gotchas) — are worth knowing about up front if you add your own
+value object: don't set `PrivateAssets="all"` on the `Vogen` package reference, and don't reach
+for Vogen's generated `EfCoreValueConverter` from a persistence-agnostic Domain project (this repo
+hand-writes its EF Core converters in Infrastructure instead — see
+[`ValueConverters.cs`](src/MediatrUnionPoc.Infrastructure/ValueConverters.cs)).
 
 ## Adding a new command or query
 
-MediatR is an in-process mediator: instead of a controller calling a service directly, it sends a
-message object and MediatR routes it to exactly one handler. This is what makes CQRS's
-"Commands write, Queries read" split easy to enforce — commands and queries are just different
-message types, and cross-cutting concerns (logging, validation, transactions) wrap around all of
-them uniformly via **pipeline behaviors**, the MediatR equivalent of ASP.NET Core middleware.
+MediatR is an in-process [mediator](#architectural-patterns): instead of a controller calling a
+service directly, it sends a message object and MediatR routes it to exactly one handler. This is
+what makes CQRS's "Commands write, Queries read" split easy to enforce — commands and queries are
+just different message types, and cross-cutting concerns (logging, validation, transactions) wrap
+around all of them uniformly via **[pipeline behaviors](#architectural-patterns)**, the MediatR
+equivalent of ASP.NET Core middleware.
 
+> [!TIP]
 > Deeper, citation-backed research behind MediatR's pipeline mechanics lives in
 > [`docs/research/mediatr-research.md`](docs/research/mediatr-research.md) — primary sources
 > (MediatR's own repo and release notes), plus a worked sequence diagram tracing
@@ -540,9 +654,12 @@ public sealed record PingQuery(string Message) : IQuery<PingResult>;
 validator** — picked up automatically by assembly scanning, no manual registration needed.
 FluentValidation is this POC's illustrative choice for wiring validation, not a prescription — any
 approach that can short-circuit into the response union via `IValidatable<TSelf>` fits the pattern
-equally well. Deeper, citation-backed research on FluentValidation's async/cascade/DI behavior in
-this pipeline lives in
-[`docs/research/fluentvalidation-research.md`](docs/research/fluentvalidation-research.md):
+equally well.
+
+> [!TIP]
+> Deeper, citation-backed research on FluentValidation's async/cascade/DI behavior in this
+> pipeline lives in
+> [`docs/research/fluentvalidation-research.md`](docs/research/fluentvalidation-research.md).
 
 ```csharp
 public sealed class PingValidator : AbstractValidator<PingQuery>
@@ -647,21 +764,26 @@ the handler returned.
 
 ## Authorization
 
-This POC demonstrates two authorization styles side by side, both built from **standard ASP.NET
+This POC demonstrates three authorization shapes side by side, all built from **standard ASP.NET
 Core authorization primitives** (`IAuthorizationService`, `IAuthorizationRequirement`,
-`IAuthorizationHandler`, named policies) and both converging on the same union-based outcome —
+`IAuthorizationHandler`, named policies) and all converging on the same union-based outcome —
 `NotAuthorized` as just another case, never an exception:
 
-- **Role/policy-based**, checked *before* a handler runs, by a MediatR pipeline behavior. Demoed
-  by `DeleteProductCommand`'s `Administrator` policy.
+- **Role/policy-based**, checked *before* a handler runs, by a MediatR pipeline behavior — nothing
+  about the request's payload matters, only who's calling.
 - **Resource-based**, checked *inside* a handler, once it has loaded the specific resource being
-  acted on. Demoed by `UpdateProductCommand`'s `ProductOwner` policy.
+  acted on. Demoed by `UpdateProductCommand`'s `ProductOwner` policy: only the product's owner may
+  update it.
+- **Resource-based with a role bypass**, also checked inside a handler, but backed by *two*
+  independently-registered handlers answering the same policy instead of one. Demoed by
+  `DeleteProductCommand`'s `ProductOwnerOrAdministrator` policy: the product's owner **or** an
+  administrator may delete it — with no `||` anywhere in application code expressing that "or".
 
 > [!NOTE]
-> Both are *example configurations* of a general mechanism, not the only valid way to wire
-> authorization and not a prescription that every command needs one or the other — a different
-> project might gate different operations, use different policies, combine both styles on the
-> same command, or skip authorization entirely for commands that don't need it.
+> All three are *example configurations* of a general mechanism, not the only valid way to wire
+> authorization and not a prescription that every command needs one of them — a different project
+> might gate different operations, use different policies, combine styles differently, or skip
+> authorization entirely for commands that don't need it.
 
 ### Why two different points in the request lifetime
 
@@ -676,18 +798,20 @@ are necessarily imperative, called from inside the code that already has the res
 rather than declared ahead of time the way `[Authorize]` or a pipeline behavior can. This isn't a
 gap in this repo's pipeline; it's why `ResourceAuthorizationService` exists as something a handler
 calls explicitly instead of something wired into `AddTransient(typeof(IPipelineBehavior<,>), ...)`
-alongside the other behaviors.
+alongside the other behaviors. It's also why the third pattern below — "owner OR administrator" —
+has to live at the same in-handler point as ownership alone: the moment *either* half of an "or"
+needs the loaded resource, the whole check has to wait for it.
 
-### How both flows fit together
+### How the three flows fit together
 
 ```mermaid
 flowchart TD
-    subgraph RoleBased["Role-based — pre-handler"]
+    subgraph RoleBased["Role-based — pre-handler (the mechanism; no production command uses it alone today, see note below)"]
         direction LR
-        C1["Controller"] -->|"sender.Send(DeleteProductCommand)"| L1[LoggingBehavior]
-        L1 --> A1{"AuthorizationBehavior:\nAdministrator policy?"}
+        C1["Controller"] -->|"sender.Send(request)"| L1[LoggingBehavior]
+        L1 --> A1{"AuthorizationBehavior:\nnamed policy?"}
         A1 -->|No| N1["TResponse.FromNotAuthorized(...)"]
-        A1 -->|Yes| V1[ValidationBehavior] --> T1[TransactionBehavior] --> H1[DeleteProductHandler]
+        A1 -->|Yes| V1[ValidationBehavior] --> T1[TransactionBehavior] --> H1[Handler]
     end
 
     subgraph ResourceBased["Resource-based — inside the handler"]
@@ -700,30 +824,39 @@ flowchart TD
         R2 -->|Yes| U2["product.UpdateDetails(...)"]
     end
 
+    subgraph ResourceBypass["Resource-based with a role bypass — inside the handler"]
+        direction LR
+        C3["Controller"] -->|"sender.Send(DeleteProductCommand)"| L3[LoggingBehavior]
+        L3 --> V3[ValidationBehavior] --> T3[TransactionBehavior] --> H3["DeleteProductHandler"]
+        H3 --> G3{"repository.GetByIdAsync(id)"}
+        G3 -->|"found"| R3{"ResourceAuthorizationService.AuthorizeAsync:\nProductOwnerOrAdministrator policy?"}
+        R3 -->|"owner handler OR admin-bypass handler succeeds"| D3["repository.Remove(product)"]
+        R3 -->|"neither handler succeeds"| N3["DeleteProductResult.FromNotAuthorized(...)"]
+    end
+
     N1 --> Conv(["IAuthorizable&lt;TSelf&gt;.FromNotAuthorized(NotAuthorized)"])
     N2 --> Conv
+    N3 --> Conv
     Conv --> Map{"Controller switches on\nthe union result"}
     Map -->|NotAuthorized| Forbidden403[403 Forbidden]
 ```
 
-Both paths call `IAuthorizationService` under the hood and both end up asking the response
-union's `IAuthorizable<TSelf>.FromNotAuthorized(...)` to build the same shared `NotAuthorized`
-case — only *where* in the request's lifetime that call happens differs, driven entirely by
-whether the thing being checked exists yet.
+Every path calls `IAuthorizationService` under the hood and ends up asking the response union's
+`IAuthorizable<TSelf>.FromNotAuthorized(...)` to build the same shared `NotAuthorized` case — only
+*where* in the request's lifetime that call happens, and *how many handlers* get a vote, differs.
 
 ### Role-based: `IRequiresAuthorization` + `AuthorizationBehavior`
 
 1. **[`IRequiresAuthorization`](src/MediatrUnionPoc.Application/Common/Abstractions/IRequiresAuthorization.cs)**
    — a request implements this, exposing `ClaimsPrincipal Principal` and a `string PolicyName` to
-   evaluate it against, to opt into `AuthorizationBehavior`. `DeleteProductCommand` is the only
-   request that does today, naming the `Administrator` policy. A request that doesn't implement it
+   evaluate it against, to opt into `AuthorizationBehavior`. A request that doesn't implement it
    simply doesn't match the behavior's generic constraints and skips this check entirely — the
    same opt-in pattern `ITransactionalCommand` uses for `TransactionBehavior`.
 2. **[`IAuthorizable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IAuthorizable.cs)**
    — a response union implements this (`static abstract TSelf FromNotAuthorized(NotAuthorized)`)
    so the behavior can build the union's `NotAuthorized` case generically, the same role
-   `IValidatable<TSelf>` plays for `ValidationErrors`. Both authorization styles rely on this same
-   interface.
+   `IValidatable<TSelf>` plays for `ValidationErrors`. All three authorization patterns here rely
+   on this same interface.
 3. **[`AuthorizationBehavior<TRequest,TResponse>`](src/MediatrUnionPoc.Application/Common/Behaviors/AuthorizationBehavior.cs)**
    — calls `IAuthorizationService.AuthorizeAsync(request.Principal, request.PolicyName)` (the
    policy-only, two-argument overload), reading the policy name generically off the request rather
@@ -751,6 +884,15 @@ whether the thing being checked exists yet.
    attribute/middleware machinery, which this POC has no use for — `AuthorizationBehavior` calls
    `IAuthorizationService` directly instead of relying on an HTTP-pipeline gate.
 
+> [!NOTE]
+> This policy and its handler are fully wired and tested (see
+> [`AuthorizationBehaviorTests`](tests/MediatrUnionPoc.Application.Tests/Behaviors/AuthorizationBehaviorTests.cs)'s
+> `ArbitraryAdminCommand` fixture), but as of this writing no *production* command uses this pure
+> pre-handler path on its own — `DeleteProductCommand` moved to the resource-based-with-bypass
+> pattern below once "owner OR administrator" required the resource to be loaded for the ownership
+> half. The mechanism remains ready for a future command that needs a role check with no resource
+> dimension at all.
+
 ### Resource-based: `ResourceAuthorizationService` + `OwnerAuthorizationHandler<TResource>`
 
 1. **[`IOwnedResource`](src/MediatrUnionPoc.Application/Common/Authorization/IOwnedResource.cs)**
@@ -763,9 +905,9 @@ whether the thing being checked exists yet.
    `AuthorizationHandler<TRequirement, TResource>` form (which receives the loaded resource
    directly), unlike the one-generic-parameter form the role-based handler above uses. It succeeds
    an `OperationAuthorizationRequirement` when the caller's `ClaimTypes.NameIdentifier` claim
-   matches the resource's `OwnerId`. Because `OperationAuthorizationRequirement` is reused as-is
-   (parameterized by a `Name` like `"Update"`), the same handler instance can answer every
-   CRUD-shaped operation for `TResource` without a bespoke requirement type per operation.
+   matches the resource's `OwnerId`, ignoring the requirement's `Name` entirely — so the same
+   registered handler instance can answer every CRUD-shaped operation for `TResource` without a
+   bespoke requirement type per operation.
 3. **[`ResourceAuthorizationService`](src/MediatrUnionPoc.Application/Common/Authorization/ResourceAuthorizationService.cs)**
    — the resource-based counterpart to `AuthorizationBehavior`, callable from inside a handler
    once it has loaded the resource. It calls `IAuthorizationService`'s resource-aware
@@ -800,11 +942,59 @@ whether the thing being checked exists yet.
 > scoped EF Core services aren't safe to share across requests the way a singleton would; register
 > a handler like that scoped or transient instead.
 
+### Resource-based with a role bypass: `ProductOwnerOrAdministrator`
+
+`DeleteProductCommand` needs a check the previous two patterns can't express alone: **either** the
+caller owns the product **or** they're an administrator. The owner half needs the loaded resource
+(so it can't run pre-handler, as [above](#why-two-different-points-in-the-request-lifetime)); the
+"or an administrator" half doesn't need the resource at all. Rather than writing that `||` in
+application code, this is expressed as **two independently-registered handlers competing for the
+same requirement** — a mechanism ASP.NET Core's own `IAuthorizationService` already provides (see
+[Zero-to-many handlers, and multiple requirements](#zero-to-many-handlers-and-multiple-requirements)
+below).
+
+1. **A distinct policy**, [`AuthorizationPolicies.ProductOwnerOrAdministrator`](src/MediatrUnionPoc.Application/Common/Authorization/AuthorizationPolicies.cs),
+   backed by its own `OperationAuthorizationRequirement { Name = "Delete" }` — a *different*
+   requirement instance from `ProductOwner`'s `Name = "Update"`, even though both share the same
+   requirement *type*. That distinction in `Name` is what lets the next handler apply to Delete
+   without also silently loosening Update.
+2. **[`OwnerAuthorizationHandler<OwnedProductResource>`](src/MediatrUnionPoc.Application/Common/Authorization/OwnerAuthorizationHandler.cs)**
+   — the exact same registered singleton `ProductOwner` already uses. It ignores `Name`, so it
+   answers *both* policies without any special-casing of its own.
+3. **[`AdministratorResourceOverrideAuthorizationHandler<TResource>`](src/MediatrUnionPoc.Application/Common/Authorization/AdministratorResourceOverrideAuthorizationHandler.cs)**
+   — a second handler registered only for this requirement type, constructed with `"Delete"` as its
+   one allowed operation name. It succeeds when the caller is in the `Administrator` role **and**
+   `requirement.Name == "Delete"` — so it never fires for `ProductOwner`'s `"Update"` requirement,
+   leaving `UpdateProductCommand` exactly as ownership-only as before. It's intentionally
+   unconstrained on `TResource` — it never inspects the resource itself, only the caller's role and
+   the requirement's `Name` — so the same handler type can back a bypass for any future
+   resource-based policy, not just products.
+4. **[`DeleteProductHandler`](src/MediatrUnionPoc.Application/Features/Products/Delete/DeleteProductHandler.cs)**
+   — loads the product, then calls
+   `resourceAuthorizationService.AuthorizeAsync(request.Principal, OwnedProductResource.FromDomain(product), AuthorizationPolicies.ProductOwnerOrAdministrator, cancellationToken)`,
+   returning `DeleteProductResult.FromNotAuthorized(notAuthorized)` on failure — structurally
+   identical to `UpdateProductHandler`'s call, just naming a different policy. Like
+   `UpdateProductCommand`, `DeleteProductCommand` does **not** implement `IRequiresAuthorization` —
+   the ownership half of this check can't run pre-handler, so neither can the whole check.
+5. **Registration**, in the same `AddApplication()`:
+
+   ```csharp
+   options.AddPolicy(
+       AuthorizationPolicies.ProductOwnerOrAdministrator,
+       policy => policy.Requirements.Add(new OperationAuthorizationRequirement { Name = "Delete" }));
+   services.AddSingleton<IAuthorizationHandler, OwnerAuthorizationHandler<OwnedProductResource>>();
+   services.AddSingleton<IAuthorizationHandler>(
+       _ => new AdministratorResourceOverrideAuthorizationHandler<OwnedProductResource>("Delete"));
+   ```
+
+Nowhere in `DeleteProductHandler`, `ResourceAuthorizationService`, or either registered handler is
+there an `if`/`else` or `||` weighing "is owner" against "is administrator" — the OR is entirely
+ASP.NET Core's own per-requirement evaluation, described next.
+
 ### Zero-to-many handlers, and multiple requirements
 
-Both policies above happen to have exactly one requirement and one handler, but neither of those
-counts is special-cased by this repo — they're native ASP.NET Core `IAuthorizationService`
-behavior:
+None of the policies above are special-cased by this repo — every behavior described here is
+native `IAuthorizationService` behavior:
 
 - A policy can hold **multiple requirements**; `AuthorizeAsync` only succeeds if *every*
   requirement succeeds (AND across requirements).
@@ -812,7 +1002,9 @@ behavior:
   1:1 requirement-to-handler constraint); a requirement succeeds if *any one* of its handlers
   calls `context.Succeed(requirement)` (OR across handlers) — the same "any match is enough"
   shape `AdministratorAuthorizationHandler` already applies *within* a single handler across
-  multiple allowed roles, just one level up, across handlers.
+  multiple allowed roles, just one level up, across handlers. This is exactly the mechanism
+  [`ProductOwnerOrAdministrator`](#resource-based-with-a-role-bypass-productowneroradministrator)
+  relies on.
 
 [`ResourceAuthorizationOrAcrossHandlersTests`](tests/MediatrUnionPoc.Application.Tests/Authorization/ResourceAuthorizationOrAcrossHandlersTests.cs)
 exercises this generically (multiple handlers registered for the same requirement type, only one
@@ -825,11 +1017,12 @@ This POC has no real authentication — no login, no JWTs, no cookies. Instead,
 [`ProductsController`](src/MediatrUnionPoc.Api/Controllers/ProductsController.cs) builds a
 `ClaimsPrincipal` from two request headers:
 
-- **`X-Admin`** — a value of `"true"` (case-insensitive) adds an `Administrator` role claim,
-  read by `DeleteAsync` for the role-based check.
+- **`X-Admin`** — a value of `"true"` (case-insensitive) adds an `Administrator` role claim, read
+  by `DeleteAsync` as one of the two ways to satisfy the `ProductOwnerOrAdministrator` policy.
 - **`X-Caller-Id`** — its value becomes the caller's `ClaimTypes.NameIdentifier` claim, read by
-  `CreateAsync` (to set the new product's owner) and `UpdateAsync` (to prove ownership) for the
-  resource-based check.
+  `CreateAsync` (to set the new product's owner), `UpdateAsync` (to prove ownership), and
+  `DeleteAsync` (the other way to satisfy `ProductOwnerOrAdministrator`, by proving ownership
+  instead of an administrator role).
 
 ```csharp
 private static ClaimsPrincipal CallerPrincipal(string? adminHeader, string? callerIdHeader)
@@ -853,16 +1046,6 @@ private static ClaimsPrincipal CallerPrincipal(string? adminHeader, string? call
 Try both against a running instance (`dotnet run --project src/MediatrUnionPoc.Api`):
 
 ```bash
-# Role-based (DeleteProductCommand, Administrator policy)
-
-# 403 Forbidden — no proof of administrator identity
-curl -i -X DELETE https://localhost:<port>/api/products/<id>
-
-# 204 No Content — caller claims Administrator
-curl -i -X DELETE https://localhost:<port>/api/products/<id> -H "X-Admin: true"
-```
-
-```bash
 # Resource-based (UpdateProductCommand, ProductOwner policy)
 
 # Create as caller "alice" — she becomes the product's owner
@@ -881,6 +1064,20 @@ curl -i -X PUT https://localhost:<port>/api/products/<id> \
   -d '{"name":"Widget v2","price":12.99}'
 ```
 
+```bash
+# Resource-based with a role bypass (DeleteProductCommand, ProductOwnerOrAdministrator policy)
+
+# 403 Forbidden — no proof of ownership or administrator identity
+curl -i -X DELETE https://localhost:<port>/api/products/<id>
+
+# 204 No Content — "alice" owns this product
+curl -i -X DELETE https://localhost:<port>/api/products/<id> -H "X-Caller-Id: alice"
+
+# 204 No Content — "bob" doesn't own it, but claims Administrator
+curl -i -X DELETE https://localhost:<port>/api/products/<id> \
+  -H "X-Caller-Id: bob" -H "X-Admin: true"
+```
+
 > [!WARNING]
 > `X-Admin` and `X-Caller-Id` are stand-ins for real authentication, appropriate only for this
 > POC. A real deployment would replace `CallerPrincipal(...)` with `HttpContext.User` — populated
@@ -891,7 +1088,9 @@ curl -i -X PUT https://localhost:<port>/api/products/<id> \
 
 ### Configuring role-based authorization for a new command
 
-To gate another command the same way `DeleteProductCommand` is gated:
+To gate another command purely by role, the way `AuthorizationBehavior` supports today (see the
+note in [Role-based](#role-based-irequiresauthorization-authorizationbehavior) above about no
+current production command using it alone):
 
 1. Add `ClaimsPrincipal Principal` to the command and implement `IRequiresAuthorization`,
    returning the name of whichever registered policy should gate it from `PolicyName`
@@ -915,7 +1114,7 @@ any-one-matches check, so a single policy can also gate on more than one role
 
 ### Configuring resource-based authorization for a new command
 
-To gate another command the way `UpdateProductCommand` is gated:
+To gate another command the way `UpdateProductCommand` is gated (ownership-only, no bypass):
 
 1. Add `ClaimsPrincipal Principal` to the command, but do **not** implement `IRequiresAuthorization`
    on it — the check happens inside the handler, not the pipeline.
@@ -929,8 +1128,35 @@ To gate another command the way `UpdateProductCommand` is gated:
    `AuthorizeAsync(request.Principal, resource, policyName, cancellationToken)` and return
    `TResponse.FromNotAuthorized(notAuthorized)` when it comes back non-null.
 5. Add `NotAuthorized` to the response union's case list and implement `IAuthorizable<TSelf>`, the
-   same as the role-based case above — both styles converge on this same interface.
+   same as the role-based case above — both patterns converge on this same interface.
 6. Add a `NotAuthorized` arm to the controller's `switch`, mapping it to `403 Forbidden`.
+
+For an owner-*or*-role variant instead of ownership-only, see the next section.
+
+### Configuring a role bypass for a resource-based command
+
+To let a role (like `Administrator`) bypass an existing resource-based check the way
+`DeleteProductCommand` does, without loosening a *different* resource-based command
+(`UpdateProductCommand`) that should stay ownership-only:
+
+1. Register a **new** named policy backed by an `OperationAuthorizationRequirement` with its own
+   `Name` (e.g. `"Delete"`) distinct from the one the ownership-only policy uses (e.g. `"Update"`) —
+   the `Name` is what lets a role-bypass handler apply to one operation and not the other, since both
+   policies otherwise share the same requirement *type*.
+2. Register `OwnerAuthorizationHandler<TResource>` for it, the same as any ownership-only policy —
+   it ignores `Name` entirely, so it participates in every policy using this requirement type
+   regardless.
+3. Register a new `AdministratorResourceOverrideAuthorizationHandler<TResource>`, constructed with
+   the operation name(s) it should bypass for (`"Delete"` here) — it succeeds when the caller is an
+   `Administrator` *and* the requirement's `Name` is one it was configured for, leaving every other
+   policy using the same requirement type (like `ProductOwner`'s `"Update"`) untouched.
+4. From the handler, call `ResourceAuthorizationService.AuthorizeAsync(...)` against the new policy
+   name, exactly as for an ownership-only check — the handler itself contains **no `||`, no
+   if/else between "is admin" and "is owner."** ASP.NET Core's own per-requirement evaluation
+   already succeeds as soon as either registered handler does (see
+   [Zero-to-many handlers, and multiple requirements](#zero-to-many-handlers-and-multiple-requirements)).
+5. Add a `NotAuthorized` arm to the controller's `switch`, mapping it to `403 Forbidden`, same as
+   any other authorization pattern.
 
 ### Why not `IAuthorizationRequirementData` attributes
 
@@ -1040,13 +1266,13 @@ operation:
 | Case                                    | Meaning                                                                 |
 | ----------------------------------------- | -------------------------------------------------------------------------- |
 | `Accepted(jobId)`                        | Work was queued/deferred, not completed synchronously                     |
-| `Conflict(currentVersion)`               | Optimistic-concurrency version mismatch on update                         |
-| `Locked(heldBy)`                         | Resource is pessimistically locked by another process                    |
+| `Conflict(currentVersion)`               | [Optimistic-concurrency](#cross-cutting-concepts) version mismatch on update |
+| `Locked(heldBy)`                         | Resource is [pessimistically locked](#cross-cutting-concepts) by another process |
 | `RateLimited(retryAfter)`                | Caller hit a throttling limit                                             |
 | `Timeout(dependency)`                    | A downstream dependency didn't respond in time                           |
 | `QuotaExceeded(limit, current)`          | A business quota (not a rate limit) was exceeded                          |
 | `PartialSuccess(succeeded, failed)`      | A batch operation partially completed                                     |
-| `AlreadyProcessed(idempotencyKey)`       | A duplicate request was detected and safely ignored                       |
+| `AlreadyProcessed(idempotencyKey)`       | A duplicate request was detected and safely [ignored](#cross-cutting-concepts) — see **Idempotency** |
 | `RequiresConfirmation(prompt)`           | The action needs an explicit second confirmation before proceeding        |
 | `Stale(asOf)`                            | Data was served from a cache/read-replica and may be out of date          |
 | `Deprecated(replacement)`                | The operation still works but callers should migrate                      |
@@ -1054,6 +1280,67 @@ operation:
 A queue consumer, a scheduled job, and an HTTP controller could all share the exact same
 `Conflict`/`Locked`/`AlreadyProcessed` cases and each map them to something completely different
 in their own boundary code.
+
+## Extending the pattern: syncing a search index
+
+Not implemented in this repo, but a natural extension once every command already reports its
+outcome as a union: keeping a search index (Elasticsearch, in this example) in sync with the write
+model whenever a product is created, updated, or deleted — without threading Elasticsearch calls
+through every handler's own business logic.
+
+**The mechanism**: MediatR is also a **notification** publisher, not just a request/response
+mediator — `IPublisher.Publish(new ProductCreated(id))` fans a message out to *every* registered
+`INotificationHandler<ProductCreated>`, zero-or-many, none of them able to affect the original
+command's own result. That's the right shape here: syncing a search index is a side effect of a
+successful write, not part of *deciding* whether the write succeeded, so it shouldn't be able to
+turn a `Success` into anything else.
+
+1. **Publish after `TransactionBehavior` commits, not from inside the handler.** A notification
+   raised from inside `CreateProductHandler`, before the transaction commits, could fire for a
+   write that later rolls back — the search index would then reference a product the database
+   never actually kept. Publishing needs to happen only on the `Success` branch, after
+   `CommitAsync()`.
+2. **Add a `Success`-shaped [domain event](#cross-cutting-concepts) per operation** —
+   `ProductCreated(ProductId, Name, Price)`, `ProductUpdated(ProductId, Name, Price)`,
+   `ProductDeleted(ProductId)` — each just data, no behavior.
+3. **A dedicated `INotificationHandler<ProductCreated>` (etc.) owns the Elasticsearch write** —
+   indexing a new document, updating an existing one, or deleting one, entirely separate from
+   `CreateProductHandler`/`UpdateProductHandler`/`DeleteProductHandler`, which never need to know a
+   search index exists at all.
+
+```mermaid
+sequenceDiagram
+    participant C as Controller
+    participant P as Pipeline (incl. TransactionBehavior)
+    participant H as CreateProductHandler
+    participant U as IUnitOfWork
+    participant M as IPublisher
+    participant S as ProductCreated handler
+    participant ES as Elasticsearch
+
+    C->>P: Send(CreateProductCommand)
+    P->>H: Handle(command)
+    H-->>P: CreateProductResult(ProductDto)
+    P->>U: CommitAsync()
+    U-->>P: committed
+    P->>M: Publish(new ProductCreated(id, name, price))
+    P-->>C: CreateProductResult
+    M->>S: Handle(ProductCreated)
+    S->>ES: Index document
+```
+
+Note the last two arrows happen *after* the controller already has its response — indexing is
+fire-and-forget from the caller's point of view, and a slow or even temporarily-failing
+Elasticsearch write never adds latency to the product-creation request itself, nor can it change
+the `201 Created` the caller already received. That's an intentional trade: the search index
+becomes eventually consistent[^eventual-consistency] with the write model rather than immediately
+consistent — the right trade for a search index, and the wrong one for, say, an inventory count a
+checkout flow depends on.
+
+> [!TIP]
+> This same shape generalizes to any side effect that shouldn't block or influence a command's own
+> result — an audit log, a cache invalidation, an outbound webhook, an email notification. Add a
+> notification, publish it after commit, and let as many independent handlers subscribe as needed.
 
 ## Notes and gotchas
 
@@ -1077,9 +1364,6 @@ in their own boundary code.
   concrete value object instance instead of `Arg.Any<T>()` for at least one of the arguments.
 - **Central Package Management** (`Directory.Packages.props`) pins every package version once at
   the solution root; individual `.csproj` files reference packages without a `Version` attribute.
-- **MediatR's license changed** starting with v10+ — free for individuals and small
-  organizations, commercial licensing applies above a revenue threshold. Worth checking before
-  using it in anything beyond a POC.
 - **Async naming convention:** every async method this repo owns the signature of ends in `Async`
   and takes a `CancellationToken cancellationToken = default` — required in the sense that callers
   who have a token should pass it, defaulted so call sites that don't (tests, REPL-style usage)
@@ -1104,3 +1388,92 @@ in their own boundary code.
   (`CS8509`), using the exact installed SDK compiler rather than an in-process Roslyn NuGet
   package — the latter could easily predate this brand-new preview language feature and silently
   fail to reproduce the behavior being tested.
+
+## Glossary
+
+This project sits at the intersection of a few architectural patterns, MediatR's own vocabulary,
+one third-party library (Vogen), and a brand-new language feature. This is reference material —
+read what you need when a term above is unfamiliar; it isn't required front-to-back reading before
+the rest of this document makes sense. Where a term is a general C#/.NET/HTTP concept rather than
+something specific to this repo, its entry links to the official documentation.
+
+### Architectural patterns
+
+| Term | Meaning |
+| --- | --- |
+| **CQRS** (Command Query Responsibility Segregation) | Splits every operation into a **command** (changes state, returns little more than "did it work") or a **query** (reads state, never changes it). Each side can be reasoned about, validated, and optimized independently instead of one method doing both. |
+| **Mediator pattern** | Callers don't invoke handlers directly; they send a message to a mediator, which finds the one handler registered for it. A controller sending `CreateProductCommand` has no compile-time dependency on `CreateProductHandler` at all. MediatR is the library implementing this pattern here. |
+| **Pipeline (middleware) pattern** | Cross-cutting concerns (logging, validation, transactions) are applied as a chain of wrapping steps every request passes through, instead of being duplicated inside every handler. ASP.NET Core's HTTP middleware pipeline is the same idea one layer up the stack; MediatR's pipeline behaviors are the same idea for in-process messages. |
+| **Vertical slice architecture** | Code is organized by *feature* (`Features/Products/Create/` holds that operation's command, handler, validator, and result together) rather than by *technical layer* (a `Commands/` folder, a `Handlers/` folder, each containing pieces of every feature). Changing one operation touches one folder. |
+| **Repository pattern** | An interface (`IProductRepository`) hiding how entities are actually fetched or persisted behind method calls that read like domain operations (`GetByIdAsync`, `AddAsync`) — the caller doesn't know or care whether that's EF Core, a REST call, or a file. |
+| **Unit of Work pattern** | A single object (`IUnitOfWork`) that tracks everything changed during one logical operation and commits or rolls it all back together, so a handler touching multiple repositories doesn't have to save each one individually and risk a partial write. See [Unit of Work: one session, every repository](#unit-of-work-one-session-every-repository) for the fuller walkthrough. |
+
+### C# language concepts
+
+| Term | Meaning |
+| --- | --- |
+| **[Generics](https://learn.microsoft.com/dotnet/csharp/fundamentals/types/generics)** | Writing code once against a type parameter (`T`, `TRequest`, `TResponse`) instead of once per concrete type. `IRequestHandler<TRequest, TResponse>` is generic so one interface serves every command and query without duplication. |
+| **[Interface](https://learn.microsoft.com/dotnet/csharp/fundamentals/types/interfaces)** | A contract listing members a type must implement, without providing its own implementation. `IProductRepository`, MediatR's `IRequestHandler<,>`, and this repo's own `IValidatable<TSelf>` are all interfaces. |
+| **[Static abstract interface member](https://learn.microsoft.com/dotnet/csharp/whats-new/csharp-11#static-abstract-members-in-interfaces)** *(C# 11+)* | An interface member marked `static abstract`: every *implementing type* — not every instance — must supply it, and it's callable through a generic type parameter constrained to that interface (`where TSelf : IValidatable<TSelf>`). This is what lets fully generic pipeline code construct or query a concrete union type it has never seen, by calling `TResponse.FromValidationErrors(...)` or `TResponse.ShouldCommit(...)` — impossible with an ordinary instance member, since there's no instance to call it on yet. See [Static abstract interface members](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen) above for why this wasn't cleanly possible before C# 11. |
+| **[Record](https://learn.microsoft.com/dotnet/csharp/fundamentals/types/records)** | A type (`record`, or `record struct`) with compiler-generated structural equality (same property values ⇒ `==`), a generated `ToString()`, and non-destructive mutation via `with`. Used here for immutable shapes like `ProductDto` and every command/query. |
+| **Struct vs. class** ([value types](https://learn.microsoft.com/dotnet/csharp/fundamentals/types/value-types) vs. [reference types](https://learn.microsoft.com/dotnet/csharp/fundamentals/types/reference-types)) | A `struct` is a value type — copied by value, usually stack-allocated, not nullable by default. A `class` is a reference type — copied by reference, heap-allocated, nullable by default. A `union` compiles down to a `struct` (see below), which is part of why it carries no boxing tax for the common case. |
+| **[Pattern matching / `switch` expression](https://learn.microsoft.com/dotnet/csharp/language-reference/operators/switch-expression)** | `switch` used as an *expression* producing a value (`var x = input switch { ... }`) rather than a statement that just branches. Every case is tested against the switched value's shape or type, and — for a closed set of possibilities like a union — the compiler can prove every case was handled. |
+| **Union type** *(C# 15 preview — the concept this whole repo tests; see the [discriminated unions proposal](https://github.com/dotnet/csharplang/blob/main/proposals/discriminated-unions.md) and [champion issue #9662](https://github.com/dotnet/csharplang/issues/9662), since no stable Learn docs exist yet)* | A closed set of "case types" declared as `union Name(CaseA, CaseB, CaseC)`. A value of that type is always exactly one of the listed cases, never null, never anything outside the list. See [The C# `union` type](#the-c-union-type) for the full mechanics. |
+| **Exhaustiveness checking** | The compiler verifying that a `switch` over a closed set of possibilities (a union, or an enum with no `default`) handles every member of that set, refusing to compile (`CS8509`) if one is missing. This is what turns "forgot to handle a new case" into a build failure instead of a runtime gap. |
+| **[Source generator](https://learn.microsoft.com/dotnet/csharp/roslyn-sdk/source-generators-overview)** | A compiler plugin that generates additional C# source at build time, usually driven by an attribute. Vogen uses one to turn a six-line `ValueObject<Guid>` declaration into a full value type with factories, equality, and serialization support — see [Vogen: avoiding primitive obsession](#vogen-avoiding-primitive-obsession). |
+
+### MediatR vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| **`IRequest<TResponse>`** | MediatR's marker interface for "this message expects a `TResponse` back." Every command and query here implements it indirectly through this repo's own `ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>` (below). |
+| **`IRequestHandler<TRequest, TResponse>`** | MediatR's interface for "the one place that knows how to handle a `TRequest` and produce a `TResponse`." MediatR resolves and calls exactly one registered handler per request type. |
+| **`IPipelineBehavior<TRequest, TResponse>`** | MediatR's interface for a pipeline step wrapping every request's handling: it receives the request plus a delegate to call the *next* step (another behavior, or the handler itself). `LoggingBehavior`, `ValidationBehavior`, `AuthorizationBehavior`, and `TransactionBehavior` all implement this, and run in the order they're registered. |
+| **`ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>`** *(this repo's own marker interfaces — not part of MediatR)* | Sit between `IRequest<TResponse>` and a concrete request to say which pipeline behaviors apply: `IQuery<TResponse>` never runs `TransactionBehavior`; `ICommand<TResponse>` may mutate state with no transaction assumption; `ITransactionalCommand<TResponse>` additionally requires its `TResponse` implement `ITransactionOutcome<TResponse>`. See [`Messages.cs`](src/MediatrUnionPoc.Application/Common/Abstractions/Messages.cs). |
+| **`INotification` / `INotificationHandler<TNotification>` / `IPublisher`** | MediatR's *other* messaging shape, distinct from request/response: `IPublisher.Publish(notification)` fans a message out to zero-or-many `INotificationHandler<TNotification>` subscribers, none of which can return a value back or affect one another. Not used by this repo's Products feature today, but the mechanism [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index) sketches. |
+
+### Vogen vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| **Value object** | A type identified by *what it holds*, not by identity, and typically immutable — two `Money` instances wrapping `9.99m` are the same value. Contrast with an *entity* (`Product`), which keeps its identity even as its other properties change. |
+| **Primitive obsession** | A code smell where domain concepts (a product ID, a monetary amount) are represented directly by a bare primitive (`Guid`, `decimal`) instead of their own type — letting an arbitrary `Guid` be passed where a `ProductId` was meant, or a negative `decimal` be accepted where a `Money` should never have been constructible at all. Vogen exists to eliminate this at compile time with almost no boilerplate. |
+| **`[ValueObject<T>]`** *(Vogen-specific)* | Vogen's attribute; placed on a `partial struct`, it triggers the source generator to build that value type's factories, equality, and (per selected `Conversions`) serialization/EF Core support around the wrapped primitive `T`. |
+
+### This repo's own types
+
+| Term | Meaning |
+| --- | --- |
+| **`IValidatable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can build that union's own validation-failure case generically, without ever naming the concrete union type. See [Static abstract interface members](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen). |
+| **`ITransactionOutcome<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract bool ShouldCommit(TSelf)`) so `TransactionBehavior` can ask the union itself whether to commit or roll back, without inspecting which case type came back by name. See [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means). |
+| **`IAuthorizable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromNotAuthorized(NotAuthorized)`) so either authorization pattern can build that union's own `NotAuthorized` case generically. See [Authorization](#authorization). |
+| **Case type** *(C# spec term)* | Any one of the types listed in a union's declaration (`union Name(CaseA, CaseB, CaseC)` — `CaseA`, `CaseB`, and `CaseC` are all case types of `Name`). This repo further splits case types into two roles it names itself — **shared** and **bespoke**, below — because the spec term alone doesn't distinguish them. |
+| **Shared case type** *(project-specific)* | A plain, meaning-free record (`Success`, `NotFound`, `Error`, ...) reused across many unions. A shared case type's identity never implies what it means for commit/rollback or anything else — only the union that declares it decides that; see [Case types used here](#case-types-used-here). |
+| **Bespoke case type** *(project-specific)* | A case type carrying one operation's actual payload (`ProductDto`, a hypothetical `PongDto`) rather than a meaning-free shared record. It can still appear in more than one union — `ProductDto` is the success case of both `CreateProductResult` and `GetProductByIdResult`, and again wrapped in `PagedResult<ProductDto>` inside `GetPagedProductsResult` — but unlike a shared case type, that reuse is because those operations happen to succeed with the same payload shape, not because its identity is deliberately meaning-free. |
+
+### Cross-cutting concepts
+
+| Term | Meaning |
+| --- | --- |
+| **[Dependency Injection (DI)](https://learn.microsoft.com/dotnet/core/extensions/dependency-injection)** | A pattern where a type declares what it needs via constructor parameters (`IProductRepository repository`) instead of constructing its own dependencies, and a container (ASP.NET Core's built-in one, here) supplies them at runtime based on how they were registered (`AddScoped`, `AddSingleton`, `AddTransient`). This is what lets `IUnitOfWork` and every repository sharing it come from the same request scope automatically — see [Unit of Work: one session, every repository](#unit-of-work-one-session-every-repository). |
+| **RFC 7807** ([Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc7807)) | A standardized JSON shape (`type`, `title`, `status`, `detail`, plus per-field `errors`) for describing an HTTP API error response, instead of every API inventing its own error format. ASP.NET Core's `ProblemDetails`/`ValidationProblemDetails` types, which this repo's controllers return directly, implement it. |
+| **LDM (Language Design Meeting)** | The C# language design team's recurring meeting where proposals — like `union` itself — are discussed and decided. Publicly tracked as "champion" issues and meeting notes in the [`dotnet/csharplang`](https://github.com/dotnet/csharplang) repository; [issue #9662](https://github.com/dotnet/csharplang/issues/9662) is the champion/tracking issue for this feature. |
+| **Idempotency** | An operation that produces the same end state no matter how many times it's applied. Deleting an already-deleted product and getting `NotFound` both times is idempotent *in effect* — the end state is identical either way — even though `DeleteProductCommand` isn't idempotent *in result*: the first call returns `Success`, a repeat returns `NotFound`, two different case types for the same eventual state. |
+| **Domain event** | A record of something meaningful that happened in the domain (`ProductCreated`, `OrderShipped`), raised by the code that caused it and handled by other code reacting to it, decoupled from the operation that raised it. This repo doesn't implement domain events itself, but [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index) sketches the closely related idea using MediatR notifications directly. |
+| **Eventual consistency** | A guarantee that two copies of data (here, the write-model database and a search index) will agree *eventually*, not immediately — as opposed to *strong*/*immediate* consistency, where every reader sees every write the instant it commits. Acceptable when a brief window of staleness is harmless (a search index); unacceptable when it isn't (an inventory count a checkout flow depends on). |
+| **Optimistic concurrency** | Detecting a conflicting concurrent update *after the fact*, typically by comparing a version/timestamp at save time and rejecting the write if it's stale — "assume no conflict, verify before committing." The speculative `Conflict(currentVersion)` case type in [Speculative shared case types](#speculative-shared-case-types-for-a-larger-api) is what an optimistic-concurrency failure would report. |
+| **Pessimistic concurrency** | Preventing a conflicting concurrent update *before it can happen*, typically by holding a lock for the duration of an operation — "assume conflict, block others until done." The speculative `Locked(heldBy)` case type is what this would report when it blocks a caller. |
+
+## Footnotes
+
+[^eventual-consistency]: The search index and the write-model database briefly disagree between the
+    write committing and the notification handler finishing its Elasticsearch call — typically
+    milliseconds, but not zero. See **Eventual consistency** in the
+    [Glossary](#cross-cutting-concepts) for the general concept this trades against *immediate*
+    consistency.
+
+[^mediatr-license]: MediatR's own license changed starting with v10 — free for individuals and
+    small organizations, commercial licensing applies above a revenue threshold. See
+    [MediatR's licensing page](https://github.com/jbogard/MediatR/blob/master/LICENSE.md#other-licenses)
+    for current terms before adopting it in anything beyond a POC; they've changed before and may
+    change again.
