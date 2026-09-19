@@ -645,60 +645,88 @@ the handler returned.
 
 ## Authorization
 
-`DeleteProductCommand` is the one operation in this POC gated behind an authorization check —
-only an administrator may delete a product. It's built entirely from **standard ASP.NET Core
-authorization primitives** (`IAuthorizationService`, a custom `IAuthorizationHandler`, and a
-named policy), wired into the MediatR pipeline the same way `ValidationBehavior` and
-`TransactionBehavior` already are: a marker interface on the request, a marker interface on the
-response union, and a pipeline behavior that short-circuits generically without knowing either
-concrete type.
+This POC demonstrates two authorization styles side by side, both built from **standard ASP.NET
+Core authorization primitives** (`IAuthorizationService`, `IAuthorizationRequirement`,
+`IAuthorizationHandler`, named policies) and both converging on the same union-based outcome —
+`NotAuthorized` as just another case, never an exception:
+
+- **Role/policy-based**, checked *before* a handler runs, by a MediatR pipeline behavior. Demoed
+  by `DeleteProductCommand`'s `Administrator` policy.
+- **Resource-based**, checked *inside* a handler, once it has loaded the specific resource being
+  acted on. Demoed by `UpdateProductCommand`'s `ProductOwner` policy.
 
 > [!NOTE]
-> What follows is *an example configuration* of the authorization mechanism, not the only valid
-> way to wire it — a different project might gate different operations, use different policies, or
-> skip authorization entirely for commands that don't need it. This section is revisited with a
-> deeper pass once resource-based authorization exists in this repo; for now it only documents the
-> `Administrator`-policy example built here.
+> Both are *example configurations* of a general mechanism, not the only valid way to wire
+> authorization and not a prescription that every command needs one or the other — a different
+> project might gate different operations, use different policies, combine both styles on the
+> same command, or skip authorization entirely for commands that don't need it.
 
-### How it fits the pipeline
+### Why two different points in the request lifetime
+
+A role/policy check like "is this caller an administrator?" only needs the caller's
+`ClaimsPrincipal` — nothing about the request's payload matters, so it can run generically in a
+pipeline behavior before the handler, the same way `ValidationBehavior` runs before the handler.
+
+A resource-based check like "does this caller own *this* product?" can't run that early: there is
+no product to check ownership against until a handler has loaded it from the repository. ASP.NET
+Core's own resource-based authorization guidance is explicit about this — resource-based checks
+are necessarily imperative, called from inside the code that already has the resource in hand,
+rather than declared ahead of time the way `[Authorize]` or a pipeline behavior can. This isn't a
+gap in this repo's pipeline; it's why `ResourceAuthorizationService` exists as something a handler
+calls explicitly instead of something wired into `AddTransient(typeof(IPipelineBehavior<,>), ...)`
+alongside the other behaviors.
+
+### How both flows fit together
 
 ```mermaid
-flowchart LR
-    Controller -->|"sender.Send(DeleteProductCommand)"| Logging[LoggingBehavior]
-    Logging --> Auth{AuthorizationBehavior:\nAdministrator policy?}
-    Auth -->|No| NotAuth["TResponse.FromNotAuthorized(...)"]
-    Auth -->|Yes| Validation[ValidationBehavior]
-    Validation --> Transaction[TransactionBehavior]
-    Transaction --> Handler[DeleteProductHandler]
-    NotAuth --> ReturnUp[Union response]
-    Handler --> ReturnUp
-    ReturnUp --> Map{"Controller switches on\nDeleteProductResult"}
+flowchart TD
+    subgraph RoleBased["Role-based — pre-handler"]
+        direction LR
+        C1["Controller"] -->|"sender.Send(DeleteProductCommand)"| L1[LoggingBehavior]
+        L1 --> A1{"AuthorizationBehavior:\nAdministrator policy?"}
+        A1 -->|No| N1["TResponse.FromNotAuthorized(...)"]
+        A1 -->|Yes| V1[ValidationBehavior] --> T1[TransactionBehavior] --> H1[DeleteProductHandler]
+    end
+
+    subgraph ResourceBased["Resource-based — inside the handler"]
+        direction LR
+        C2["Controller"] -->|"sender.Send(UpdateProductCommand)"| L2[LoggingBehavior]
+        L2 --> V2[ValidationBehavior] --> T2[TransactionBehavior] --> H2["UpdateProductHandler"]
+        H2 --> G2{"repository.GetByIdAsync(id)"}
+        G2 -->|"found"| R2{"ResourceAuthorizationService.AuthorizeAsync:\nProductOwner policy?"}
+        R2 -->|No| N2["UpdateProductResult.FromNotAuthorized(...)"]
+        R2 -->|Yes| U2["product.UpdateDetails(...)"]
+    end
+
+    N1 --> Conv(["IAuthorizable&lt;TSelf&gt;.FromNotAuthorized(NotAuthorized)"])
+    N2 --> Conv
+    Conv --> Map{"Controller switches on\nthe union result"}
     Map -->|NotAuthorized| Forbidden403[403 Forbidden]
 ```
 
-`AuthorizationBehavior` runs immediately after `LoggingBehavior` and before `ValidationBehavior` —
-check who's calling before checking whether their input is well-formed, so an unauthorized caller
-never learns anything about the shape of a request they were never allowed to make in the first
-place.
+Both paths call `IAuthorizationService` under the hood and both end up asking the response
+union's `IAuthorizable<TSelf>.FromNotAuthorized(...)` to build the same shared `NotAuthorized`
+case — only *where* in the request's lifetime that call happens differs, driven entirely by
+whether the thing being checked exists yet.
 
-### The pieces
+### Role-based: `IRequiresAuthorization` + `AuthorizationBehavior`
 
 1. **[`IRequiresAuthorization`](src/MediatrUnionPoc.Application/Common/Abstractions/IRequiresAuthorization.cs)**
    — a request implements this, exposing `ClaimsPrincipal Principal` and a `string PolicyName` to
    evaluate it against, to opt into `AuthorizationBehavior`. `DeleteProductCommand` is the only
    request that does today, naming the `Administrator` policy. A request that doesn't implement it
-   (every other command/query) simply doesn't match the behavior's generic constraints and skips
-   authorization entirely — the same opt-in pattern `ITransactionalCommand` uses for
-   `TransactionBehavior`.
+   simply doesn't match the behavior's generic constraints and skips this check entirely — the
+   same opt-in pattern `ITransactionalCommand` uses for `TransactionBehavior`.
 2. **[`IAuthorizable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IAuthorizable.cs)**
    — a response union implements this (`static abstract TSelf FromNotAuthorized(NotAuthorized)`)
    so the behavior can build the union's `NotAuthorized` case generically, the same role
-   `IValidatable<TSelf>` plays for `ValidationErrors`.
+   `IValidatable<TSelf>` plays for `ValidationErrors`. Both authorization styles rely on this same
+   interface.
 3. **[`AuthorizationBehavior<TRequest,TResponse>`](src/MediatrUnionPoc.Application/Common/Behaviors/AuthorizationBehavior.cs)**
-   — calls `IAuthorizationService.AuthorizeAsync(request.Principal, request.PolicyName)`, reading
-   the policy name generically off the request rather than hardcoding one. On failure, it
-   short-circuits to `TResponse.FromNotAuthorized(...)` without ever calling the handler — same as
-   an unauthorized caller is simply another outcome, never an exception.
+   — calls `IAuthorizationService.AuthorizeAsync(request.Principal, request.PolicyName)` (the
+   policy-only, two-argument overload), reading the policy name generically off the request rather
+   than hardcoding one. On failure, it short-circuits to `TResponse.FromNotAuthorized(...)`
+   without ever calling the handler.
 4. **[`AdministratorRequirement`](src/MediatrUnionPoc.Application/Common/Authorization/AdministratorRequirement.cs)
    and [`AdministratorAuthorizationHandler`](src/MediatrUnionPoc.Application/Common/Authorization/AdministratorAuthorizationHandler.cs)**
    — a real `IAuthorizationRequirement`/`IAuthorizationHandler<TRequirement>` pair, modeled
@@ -721,30 +749,110 @@ place.
    attribute/middleware machinery, which this POC has no use for — `AuthorizationBehavior` calls
    `IAuthorizationService` directly instead of relying on an HTTP-pipeline gate.
 
+### Resource-based: `ResourceAuthorizationService` + `OwnerAuthorizationHandler<TResource>`
+
+1. **[`IOwnedResource`](src/MediatrUnionPoc.Application/Common/Authorization/IOwnedResource.cs)**
+   — any resource shape exposing `string OwnerId`, independent of the resource's own domain type.
+   [`OwnedProductResource`](src/MediatrUnionPoc.Application/Features/Products/Common/OwnedProductResource.cs)
+   adapts an already-loaded `Product` to it — `Product` itself can't implement `IOwnedResource`
+   directly, since Domain must not depend on Application.
+2. **[`OwnerAuthorizationHandler<TResource>`](src/MediatrUnionPoc.Application/Common/Authorization/OwnerAuthorizationHandler.cs)**
+   — generic over any `IOwnedResource`, registered against the two-generic-parameter
+   `AuthorizationHandler<TRequirement, TResource>` form (which receives the loaded resource
+   directly), unlike the one-generic-parameter form the role-based handler above uses. It succeeds
+   an `OperationAuthorizationRequirement` when the caller's `ClaimTypes.NameIdentifier` claim
+   matches the resource's `OwnerId`. Because `OperationAuthorizationRequirement` is reused as-is
+   (parameterized by a `Name` like `"Update"`), the same handler instance can answer every
+   CRUD-shaped operation for `TResource` without a bespoke requirement type per operation.
+3. **[`ResourceAuthorizationService`](src/MediatrUnionPoc.Application/Common/Authorization/ResourceAuthorizationService.cs)**
+   — the resource-based counterpart to `AuthorizationBehavior`, callable from inside a handler
+   once it has loaded the resource. It calls `IAuthorizationService`'s resource-aware
+   three-argument `AuthorizeAsync(principal, resource, policyName)` overload — not the
+   policy-only overload `AuthorizationBehavior` uses. It deliberately stops short of building the
+   union's `NotAuthorized` case itself (that needs `IAuthorizable<TSelf>` and the concrete union
+   type, which only the calling handler knows); it returns a plain `NotAuthorized?` instead, for
+   the handler to pass straight to `TResponse.FromNotAuthorized(...)`.
+4. **[`UpdateProductHandler`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductHandler.cs)**
+   — loads the product, then calls
+   `resourceAuthorizationService.AuthorizeAsync(request.Principal, OwnedProductResource.FromDomain(product), AuthorizationPolicies.ProductOwner, cancellationToken)`,
+   returning `UpdateProductResult.FromNotAuthorized(notAuthorized)` on failure before ever calling
+   `product.UpdateDetails(...)`. `UpdateProductCommand` deliberately does **not** implement
+   `IRequiresAuthorization` — that pipeline path runs before any resource is loaded, too early for
+   an ownership check.
+5. **Registration**, in the same `AddApplication()`:
+
+   ```csharp
+   options.AddPolicy(
+       AuthorizationPolicies.ProductOwner,
+       policy => policy.Requirements.Add(new OperationAuthorizationRequirement { Name = "Update" }));
+   services.AddSingleton<IAuthorizationHandler, OwnerAuthorizationHandler<OwnedProductResource>>();
+   services.AddScoped<ResourceAuthorizationService>();
+   ```
+
+> [!WARNING]
+> `OwnerAuthorizationHandler<OwnedProductResource>` is registered as a **singleton** because it
+> has no dependency of its own — it only reads claims off the `ClaimsPrincipal` and compares a
+> string. That registration is only safe *because* of that. A resource handler that instead needs
+> to depend on EF Core (say, to re-check an owner against the database rather than trusting the
+> already-loaded resource) must **not** be registered as a singleton — `DbContext` and other
+> scoped EF Core services aren't safe to share across requests the way a singleton would; register
+> a handler like that scoped or transient instead.
+
+### Zero-to-many handlers, and multiple requirements
+
+Both policies above happen to have exactly one requirement and one handler, but neither of those
+counts is special-cased by this repo — they're native ASP.NET Core `IAuthorizationService`
+behavior:
+
+- A policy can hold **multiple requirements**; `AuthorizeAsync` only succeeds if *every*
+  requirement succeeds (AND across requirements).
+- A single requirement type can have **zero, one, or many registered handlers** (there is no
+  1:1 requirement-to-handler constraint); a requirement succeeds if *any one* of its handlers
+  calls `context.Succeed(requirement)` (OR across handlers) — the same "any match is enough"
+  shape `AdministratorAuthorizationHandler` already applies *within* a single handler across
+  multiple allowed roles, just one level up, across handlers.
+
+[`ResourceAuthorizationOrAcrossHandlersTests`](tests/MediatrUnionPoc.Application.Tests/Authorization/ResourceAuthorizationOrAcrossHandlersTests.cs)
+exercises this generically (multiple handlers registered for the same requirement type, only one
+of which succeeds) to prove it's real `IAuthorizationService` behavior this repo relies on, not
+something reimplemented here.
+
 ### Where the identity comes from
 
 This POC has no real authentication — no login, no JWTs, no cookies. Instead,
-[`ProductsController.DeleteAsync`](src/MediatrUnionPoc.Api/Controllers/ProductsController.cs)
-builds a `ClaimsPrincipal` directly from an `X-Admin` request header and passes it on the command:
+[`ProductsController`](src/MediatrUnionPoc.Api/Controllers/ProductsController.cs) builds a
+`ClaimsPrincipal` from two request headers:
+
+- **`X-Admin`** — a value of `"true"` (case-insensitive) adds an `Administrator` role claim,
+  read by `DeleteAsync` for the role-based check.
+- **`X-Caller-Id`** — its value becomes the caller's `ClaimTypes.NameIdentifier` claim, read by
+  `CreateAsync` (to set the new product's owner) and `UpdateAsync` (to prove ownership) for the
+  resource-based check.
 
 ```csharp
-[HttpDelete("{id:guid}")]
-public async Task<IActionResult> DeleteAsync(
-    Guid id,
-    [FromHeader(Name = AdminHeaderName)] string? adminHeader,
-    CancellationToken cancellationToken = default)
+private static ClaimsPrincipal CallerPrincipal(string? adminHeader, string? callerIdHeader)
 {
-    var result = await sender.Send(new DeleteProductCommand(id, CallerPrincipal(adminHeader)), cancellationToken);
-    // ...
+    var identity = new ClaimsIdentity(authenticationType: "Header");
+
+    if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
+    {
+        identity.AddClaim(new Claim(ClaimTypes.Role, "Administrator"));
+    }
+
+    if (!string.IsNullOrEmpty(callerIdHeader))
+    {
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, callerIdHeader));
+    }
+
+    return new ClaimsPrincipal(identity);
 }
 ```
 
-Sending `X-Admin: true` adds an `Administrator` role claim to the `ClaimsIdentity`; any other
-value (or no header at all) produces an anonymous principal with no roles, which
-`AdministratorAuthorizationHandler` then denies. Try it against a running instance
-(`dotnet run --project src/MediatrUnionPoc.Api`):
+Try both against a running instance (`dotnet run --project src/MediatrUnionPoc.Api`):
 
 ```bash
+# Role-based (DeleteProductCommand, Administrator policy)
+
 # 403 Forbidden — no proof of administrator identity
 curl -i -X DELETE https://localhost:<port>/api/products/<id>
 
@@ -752,15 +860,34 @@ curl -i -X DELETE https://localhost:<port>/api/products/<id>
 curl -i -X DELETE https://localhost:<port>/api/products/<id> -H "X-Admin: true"
 ```
 
-> [!WARNING]
-> The `X-Admin` header is a stand-in for real authentication, appropriate only for this POC.
-> A real deployment would replace the controller's `CallerPrincipal(adminHeader)` call with
-> `HttpContext.User` — populated by an actual authentication scheme (cookies, JWT bearer, etc.)
-> via `app.UseAuthentication()` — and delete the header-reading code entirely.
-> `AuthorizationBehavior`, `IRequiresAuthorization`, and `IAuthorizable<TSelf>` wouldn't need to
-> change at all: they only ever see a `ClaimsPrincipal`, never how it was constructed.
+```bash
+# Resource-based (UpdateProductCommand, ProductOwner policy)
 
-### Configuring authorization for a new command
+# Create as caller "alice" — she becomes the product's owner
+curl -i -X POST https://localhost:<port>/api/products \
+  -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
+  -d '{"name":"Widget","price":9.99}'
+
+# 403 Forbidden — "bob" didn't create this product
+curl -i -X PUT https://localhost:<port>/api/products/<id> \
+  -H "X-Caller-Id: bob" -H "Content-Type: application/json" \
+  -d '{"name":"Widget v2","price":12.99}'
+
+# 204 No Content — "alice" owns this product
+curl -i -X PUT https://localhost:<port>/api/products/<id> \
+  -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
+  -d '{"name":"Widget v2","price":12.99}'
+```
+
+> [!WARNING]
+> `X-Admin` and `X-Caller-Id` are stand-ins for real authentication, appropriate only for this
+> POC. A real deployment would replace `CallerPrincipal(...)` with `HttpContext.User` — populated
+> by an actual authentication scheme (cookies, JWT bearer, etc.) via `app.UseAuthentication()` —
+> and delete the header-reading code entirely. `AuthorizationBehavior`, `ResourceAuthorizationService`,
+> `IRequiresAuthorization`, and `IAuthorizable<TSelf>` wouldn't need to change at all: they only
+> ever see a `ClaimsPrincipal`, never how it was constructed.
+
+### Configuring role-based authorization for a new command
 
 To gate another command the same way `DeleteProductCommand` is gated:
 
@@ -783,6 +910,37 @@ care which policy a request names, only that one is registered under that name. 
 requirement/handler pair already supports multiple allowed roles per policy and an
 any-one-matches check, so a single policy can also gate on more than one role
 (`new AdministratorRequirement("Administrator", "SuperUser")`) without a new handler.
+
+### Configuring resource-based authorization for a new command
+
+To gate another command the way `UpdateProductCommand` is gated:
+
+1. Add `ClaimsPrincipal Principal` to the command, but do **not** implement `IRequiresAuthorization`
+   on it — the check happens inside the handler, not the pipeline.
+2. Make sure the resource being acted on implements (or is adapted to, the way
+   `OwnedProductResource` adapts `Product`) `IOwnedResource`, or define a new resource-marker
+   interface if the check isn't ownership-shaped.
+3. Register a policy backed by an `OperationAuthorizationRequirement` (or a custom requirement),
+   and a handler for it — `OwnerAuthorizationHandler<TResource>` can be reused directly if the
+   resource already implements `IOwnedResource`.
+4. Inject `ResourceAuthorizationService` into the handler; after loading the resource, call
+   `AuthorizeAsync(request.Principal, resource, policyName, cancellationToken)` and return
+   `TResponse.FromNotAuthorized(notAuthorized)` when it comes back non-null.
+5. Add `NotAuthorized` to the response union's case list and implement `IAuthorizable<TSelf>`, the
+   same as the role-based case above — both styles converge on this same interface.
+6. Add a `NotAuthorized` arm to the controller's `switch`, mapping it to `403 Forbidden`.
+
+### Why not `IAuthorizationRequirementData` attributes
+
+.NET 11 widens `IAuthorizationRequirementData`-backed attribute authorization (declaring
+requirements via attributes ASP.NET Core discovers automatically) to cover MVC controllers, not
+just Minimal APIs — and `ProductsController` is an MVC controller. This repo doesn't use it
+because that feature is *declarative*, discovered at the HTTP endpoint layer (an attribute on an
+action or controller drives the check before the action body runs). This repo's authorization runs
+one layer down, in the Application layer: `AuthorizationBehavior` is a MediatR pipeline behavior
+keyed off the request type, and `ResourceAuthorizationService` is called directly from inside a
+handler. Neither has an HTTP action to attach a discoverable attribute to — there's no
+endpoint-attribute-discovery step in this repo's authorization path for that feature to plug into.
 
 ## Worked example: `UpdateProductCommand`, case by case
 
