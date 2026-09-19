@@ -36,8 +36,9 @@ public class NonTransactionalCommandTests
 {
     /// <summary>Verifies the resolved pipeline for <see cref="NotifyCommand"/> contains only <see cref="LoggingBehavior{TRequest,TResponse}"/>, with neither <see cref="ValidationBehavior{TRequest,TResponse}"/> nor <see cref="TransactionBehavior{TRequest,TResponse}"/> present.</summary>
     [Fact]
-    public void TransactionBehavior_is_absent_from_a_plain_commands_pipeline()
+    public void GetServices_plain_command_pipeline_excludes_TransactionBehavior()
     {
+        // Arrange
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
@@ -45,10 +46,12 @@ public class NonTransactionalCommandTests
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
 
+        // Act
         var behaviors = scope.ServiceProvider
             .GetServices<IPipelineBehavior<NotifyCommand, NotifyResult>>()
             .ToList();
 
+        // Assert
         // LoggingBehavior applies to every request; ValidationBehavior needs IValidatable<TSelf>
         // (NotifyResult has neither), and TransactionBehavior needs ITransactionalCommand<TResponse>
         // (NotifyCommand is a plain ICommand<TResponse>) — so only Logging remains.

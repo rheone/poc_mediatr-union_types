@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Application.Tests.TestData;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,6 +45,8 @@ public sealed class OverrideClaimAuthorizationHandler<TResource>
 public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
 {
     private const string PolicyName = "TestResourceUpdate";
+    private const string OwnerId = "user-1";
+    private const string OtherUserId = "user-2";
 
     private readonly ServiceProvider _provider;
     private readonly IAuthorizationService _authorizationService;
@@ -77,52 +80,56 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     /// <summary>Verifies ownership alone, via <see cref="OwnerAuthorizationHandler{TResource}"/>, is enough to succeed.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Owning_caller_succeeds_without_the_override_claim()
+    public async Task AuthorizeAsync_owning_caller_without_override_claim_succeeds()
     {
-        var resource = new TestResource("user-1");
-        var principal = PrincipalWithId("user-1");
+        // Arrange
+        var resource = new TestResource(OwnerId);
+        var principal = PrincipalMother.WithId(OwnerId);
 
+        // Act
         var result = await _authorizationService.AuthorizeAsync(principal, resource, PolicyName);
 
+        // Assert
         Assert.True(result.Succeeded);
     }
 
     /// <summary>Verifies the override claim alone, via <see cref="OverrideClaimAuthorizationHandler{TResource}"/>, is enough to succeed even for a non-owner.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Caller_with_the_override_claim_succeeds_without_owning_the_resource()
+    public async Task AuthorizeAsync_non_owner_with_override_claim_succeeds()
     {
-        var resource = new TestResource("user-1");
-        var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, "user-2"), new Claim("SupportOverride", "true")],
-            authenticationType: "Test"
+        // Arrange
+        var resource = new TestResource(OwnerId);
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, OtherUserId),
+                    new Claim("SupportOverride", "true"),
+                ],
+                authenticationType: "Test"
+            )
         );
-        var principal = new ClaimsPrincipal(identity);
 
+        // Act
         var result = await _authorizationService.AuthorizeAsync(principal, resource, PolicyName);
 
+        // Assert
         Assert.True(result.Succeeded);
     }
 
     /// <summary>Verifies the policy fails when neither handler succeeds.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Caller_with_neither_ownership_nor_the_override_claim_fails_authorization()
+    public async Task AuthorizeAsync_non_owner_without_override_claim_fails()
     {
-        var resource = new TestResource("user-1");
-        var principal = PrincipalWithId("user-2");
+        // Arrange
+        var resource = new TestResource(OwnerId);
+        var principal = PrincipalMother.WithId(OtherUserId);
 
+        // Act
         var result = await _authorizationService.AuthorizeAsync(principal, resource, PolicyName);
 
+        // Assert
         Assert.False(result.Succeeded);
-    }
-
-    private static ClaimsPrincipal PrincipalWithId(string id)
-    {
-        var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, id)],
-            authenticationType: "Test"
-        );
-        return new ClaimsPrincipal(identity);
     }
 }

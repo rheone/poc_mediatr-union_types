@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Application.Tests.TestData;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 
@@ -20,60 +21,77 @@ public sealed record TestResource(string OwnerId) : IOwnedResource;
 /// </summary>
 public sealed class OwnerAuthorizationHandlerTests
 {
+    private const string OwnerId = "user-1";
+    private const string OtherUserId = "user-2";
+    private const string UpdateOperation = "Update";
+
     private readonly OwnerAuthorizationHandler<TestResource> _sut = new();
 
-    /// <summary>
-    /// Verifies the requirement succeeds only when the caller's identifier claim matches the
-    /// resource's owner exactly.
-    /// </summary>
-    /// <param name="callerId">The <see cref="ClaimTypes.NameIdentifier"/> claim value of the simulated caller.</param>
-    /// <param name="expectedSuccess">Whether the requirement is expected to succeed for this caller.</param>
+    /// <summary>Verifies the requirement succeeds when the caller's identifier claim equals the resource's owner.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
-    [Theory]
-    [InlineData("user-1", true)]
-    [InlineData("user-2", false)]
-    public async Task Ownership_match_determines_authorization_result(
-        string callerId,
-        bool expectedSuccess
-    )
+    [Fact]
+    public async Task HandleAsync_caller_is_owner_succeeds()
     {
-        var requirement = new OperationAuthorizationRequirement { Name = "Update" };
-        var resource = new TestResource(OwnerId: "user-1");
-        var context = new AuthorizationHandlerContext(
-            [requirement],
-            PrincipalWithId(callerId),
-            resource
-        );
+        // Arrange
+        var context = ContextFor(PrincipalMother.WithId(OwnerId));
 
+        // Act
         await _sut.HandleAsync(context);
 
-        Assert.Equal(expectedSuccess, context.HasSucceeded);
+        // Assert
+        Assert.True(context.HasSucceeded);
+    }
+
+    /// <summary>Verifies the requirement does not succeed when the caller's identifier claim differs from the resource's owner.</summary>
+    /// <returns>A task that completes when the assertion runs.</returns>
+    [Fact]
+    public async Task HandleAsync_caller_is_not_owner_fails()
+    {
+        // Arrange
+        var context = ContextFor(PrincipalMother.WithId(OtherUserId));
+
+        // Act
+        await _sut.HandleAsync(context);
+
+        // Assert
+        Assert.False(context.HasSucceeded);
     }
 
     /// <summary>Verifies the requirement fails, rather than throwing, when the caller has no identifier claim at all.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Caller_with_no_identifier_claim_fails_authorization()
+    public async Task HandleAsync_caller_without_identifier_claim_fails()
     {
-        var requirement = new OperationAuthorizationRequirement { Name = "Update" };
-        var resource = new TestResource(OwnerId: "user-1");
-        var context = new AuthorizationHandlerContext(
-            [requirement],
-            new ClaimsPrincipal(new ClaimsIdentity()),
-            resource
-        );
+        // Arrange
+        var context = ContextFor(PrincipalMother.Anonymous());
 
+        // Act
         await _sut.HandleAsync(context);
 
+        // Assert
         Assert.False(context.HasSucceeded);
     }
 
-    private static ClaimsPrincipal PrincipalWithId(string id)
+    // Auto Generated, verify expected behavior:
+    /// <summary>Verifies ownership is compared case-sensitively — an identifier differing from the owner only by case is not the owner.</summary>
+    /// <returns>A task that completes when the assertion runs.</returns>
+    [Fact]
+    public async Task HandleAsync_owner_id_differing_only_by_case_fails()
     {
-        var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, id)],
-            authenticationType: "Test"
-        );
-        return new ClaimsPrincipal(identity);
+        // Arrange
+        var context = ContextFor(PrincipalMother.WithId(OwnerId.ToUpperInvariant()));
+
+        // Act
+        await _sut.HandleAsync(context);
+
+        // Assert
+        Assert.False(context.HasSucceeded);
     }
+
+    private static AuthorizationHandlerContext ContextFor(ClaimsPrincipal caller) =>
+        new(
+            [new OperationAuthorizationRequirement { Name = UpdateOperation }],
+            caller,
+            new TestResource(OwnerId)
+        );
 }

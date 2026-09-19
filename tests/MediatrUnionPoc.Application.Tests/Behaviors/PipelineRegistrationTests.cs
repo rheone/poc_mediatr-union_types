@@ -21,8 +21,9 @@ public class PipelineRegistrationTests
 {
     /// <summary>Verifies the resolved pipeline behaviors run in Logging, then Validation, then Transaction order.</summary>
     [Fact]
-    public void Behaviors_resolve_in_Logging_then_Validation_then_Transaction_order()
+    public void GetServices_create_command_resolves_Logging_then_Validation_then_Transaction()
     {
+        // Arrange
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
@@ -30,12 +31,14 @@ public class PipelineRegistrationTests
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
 
+        // Act
         var behaviors = scope
             .ServiceProvider.GetServices<
                 IPipelineBehavior<CreateProductCommand, CreateProductResult>
             >()
             .ToList();
 
+        // Assert
         Assert.Collection(
             behaviors,
             b => Assert.IsType<LoggingBehavior<CreateProductCommand, CreateProductResult>>(b),
@@ -57,8 +60,9 @@ public class PipelineRegistrationTests
     /// gated request.
     /// </summary>
     [Fact]
-    public void Behaviors_resolve_in_Logging_then_Validation_then_Transaction_order_for_resource_based_commands()
+    public void GetServices_delete_command_resolves_Logging_then_Validation_then_Transaction()
     {
+        // Arrange
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
@@ -66,12 +70,14 @@ public class PipelineRegistrationTests
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
 
+        // Act
         var behaviors = scope
             .ServiceProvider.GetServices<
                 IPipelineBehavior<DeleteProductCommand, DeleteProductResult>
             >()
             .ToList();
 
+        // Assert
         Assert.Collection(
             behaviors,
             b => Assert.IsType<LoggingBehavior<DeleteProductCommand, DeleteProductResult>>(b),

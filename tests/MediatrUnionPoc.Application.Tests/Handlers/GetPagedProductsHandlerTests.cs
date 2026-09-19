@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.GetPaged;
 using MediatrUnionPoc.Domain;
@@ -12,15 +13,21 @@ namespace MediatrUnionPoc.Application.Tests.Handlers;
 /// </summary>
 public class GetPagedProductsHandlerTests
 {
+    private readonly IProductRepository _repository = Substitute.For<IProductRepository>();
+    private readonly GetPagedProductsHandler _sut;
+
+    /// <summary>Wires up <see cref="_sut"/> against the substituted <see cref="_repository"/>.</summary>
+    public GetPagedProductsHandlerTests() => _sut = new GetPagedProductsHandler(_repository);
+
     /// <summary>Verifies the handler projects each repository-returned product to a <see cref="ProductDto"/>, preserving order.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Projects_each_product_to_a_dto_in_the_repositorys_order()
+    public async Task Handle_products_returned_projects_each_to_a_dto_in_the_repositorys_order()
     {
-        var repository = Substitute.For<IProductRepository>();
+        // Arrange
         var first = Product.Create("Widget", Money.From(9.99m));
         var second = Product.Create("Gadget", Money.From(19.99m));
-        repository
+        _repository
             .GetPagedAsync(1, 10, Arg.Any<CancellationToken>())
             .Returns(
                 new PagedResult<Product>(
@@ -30,39 +37,41 @@ public class GetPagedProductsHandlerTests
                     TotalCount: 2
                 )
             );
-        var handler = new GetPagedProductsHandler(repository);
 
-        var result = await handler.Handle(new GetPagedProductsQuery(1, 10), CancellationToken.None);
+        // Act
+        var result = await _sut.Handle(new GetPagedProductsQuery(1, 10), CancellationToken.None);
 
-        var page = Assert.IsType<PagedResult<ProductDto>>(
-            ((System.Runtime.CompilerServices.IUnion)result).Value
-        );
+        // Assert
+        var page = Assert.IsType<PagedResult<ProductDto>>(((IUnion)result).Value);
         Assert.Collection(
             page.Items,
-            dto => Assert.Equal("Widget", dto.Name),
-            dto => Assert.Equal("Gadget", dto.Name)
+            dto => Assert.Equal(first.Id, dto.Id),
+            dto => Assert.Equal(second.Id, dto.Id)
         );
+        Assert.Equal(["Widget", "Gadget"], page.Items.Select(dto => dto.Name));
+        Assert.Equal([9.99m, 19.99m], page.Items.Select(dto => dto.Price));
     }
 
     /// <summary>Verifies the handler passes the repository's paging metadata through unchanged.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Passes_paging_metadata_through_unchanged()
+    public async Task Handle_empty_page_passes_paging_metadata_through_unchanged()
     {
-        var repository = Substitute.For<IProductRepository>();
-        repository
+        // Arrange
+        _repository
             .GetPagedAsync(2, 5, Arg.Any<CancellationToken>())
             .Returns(new PagedResult<Product>([], PageNumber: 2, PageSize: 5, TotalCount: 12));
-        var handler = new GetPagedProductsHandler(repository);
 
-        var result = await handler.Handle(new GetPagedProductsQuery(2, 5), CancellationToken.None);
+        // Act
+        var result = await _sut.Handle(new GetPagedProductsQuery(2, 5), CancellationToken.None);
 
-        var page = Assert.IsType<PagedResult<ProductDto>>(
-            ((System.Runtime.CompilerServices.IUnion)result).Value
+        // Assert
+        var page = Assert.IsType<PagedResult<ProductDto>>(((IUnion)result).Value);
+        Assert.Multiple(
+            () => Assert.Equal(2, page.PageNumber),
+            () => Assert.Equal(5, page.PageSize),
+            () => Assert.Equal(12, page.TotalCount),
+            () => Assert.Empty(page.Items)
         );
-        Assert.Equal(2, page.PageNumber);
-        Assert.Equal(5, page.PageSize);
-        Assert.Equal(12, page.TotalCount);
-        Assert.Empty(page.Items);
     }
 }

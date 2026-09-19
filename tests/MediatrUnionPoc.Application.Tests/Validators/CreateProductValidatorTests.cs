@@ -10,27 +10,61 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 /// </summary>
 public class CreateProductValidatorTests
 {
+    private const string ValidName = "Widget";
+    private const decimal ValidPrice = 10m;
+    private const int MaxNameLength = 200;
+
     private readonly CreateProductValidator _sut = new();
 
-    /// <summary>Verifies an empty or whitespace-only name fails validation.</summary>
-    /// <param name="name">An empty or whitespace-only name value that should fail validation.</param>
+    /// <summary>Verifies a null, empty, or whitespace-only name fails validation.</summary>
+    /// <param name="name">A null, empty, or whitespace-only name value that should fail validation.</param>
     [Theory]
+    [InlineData(null)]
     [InlineData("")]
+    [InlineData(" ")]
     [InlineData("   ")]
-    public void Empty_or_whitespace_name_fails_validation(string name)
+    [InlineData("\t")]
+    [InlineData("\n")]
+    [InlineData("\r")]
+    public void Validate_null_empty_or_whitespace_name_fails(string? name)
     {
-        var result = _sut.TestValidate(new CreateProductCommand(name, 10m));
+        // Arrange
+        var command = new CreateProductCommand(name!, ValidPrice);
 
+        // Act
+        var result = _sut.TestValidate(command);
+
+        // Assert
         result.ShouldHaveValidationErrorFor(x => x.Name);
     }
 
     /// <summary>Verifies a name over 200 characters fails validation.</summary>
     [Fact]
-    public void Name_over_200_characters_fails_validation()
+    public void Validate_name_over_200_characters_fails()
     {
-        var result = _sut.TestValidate(new CreateProductCommand(new string('a', 201), 10m));
+        // Arrange
+        var command = new CreateProductCommand(new string('a', MaxNameLength + 1), ValidPrice);
 
+        // Act
+        var result = _sut.TestValidate(command);
+
+        // Assert
         result.ShouldHaveValidationErrorFor(x => x.Name);
+    }
+
+    // Auto Generated, verify expected behavior:
+    /// <summary>Verifies a name of exactly 200 characters is accepted — the upper boundary of the length rule.</summary>
+    [Fact]
+    public void Validate_name_of_exactly_200_characters_passes()
+    {
+        // Arrange
+        var command = new CreateProductCommand(new string('a', MaxNameLength), ValidPrice);
+
+        // Act
+        var result = _sut.TestValidate(command);
+
+        // Assert
+        result.ShouldNotHaveValidationErrorFor(x => x.Name);
     }
 
     /// <summary>Verifies a negative price fails validation.</summary>
@@ -38,10 +72,15 @@ public class CreateProductValidatorTests
     [Theory]
     [InlineData(-0.01)]
     [InlineData(-1000)]
-    public void Negative_price_fails_validation(decimal price)
+    public void Validate_negative_price_fails(decimal price)
     {
-        var result = _sut.TestValidate(new CreateProductCommand("Widget", price));
+        // Arrange
+        var command = new CreateProductCommand(ValidName, price);
 
+        // Act
+        var result = _sut.TestValidate(command);
+
+        // Assert
         result.ShouldHaveValidationErrorFor(x => x.Price);
     }
 
@@ -51,10 +90,15 @@ public class CreateProductValidatorTests
     [InlineData(0)]
     [InlineData(0.01)]
     [InlineData(9999.99)]
-    public void Valid_commands_produce_no_errors(decimal price)
+    public void Validate_valid_command_produces_no_errors(decimal price)
     {
-        var result = _sut.TestValidate(new CreateProductCommand("Widget", price));
+        // Arrange
+        var command = new CreateProductCommand(ValidName, price);
 
+        // Act
+        var result = _sut.TestValidate(command);
+
+        // Assert
         result.ShouldNotHaveAnyValidationErrors();
     }
 }

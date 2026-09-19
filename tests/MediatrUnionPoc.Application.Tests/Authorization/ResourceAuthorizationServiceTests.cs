@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Application.Tests.TestData;
 using Microsoft.AspNetCore.Authorization;
 using NSubstitute;
 
@@ -28,32 +29,38 @@ public sealed class ResourceAuthorizationServiceTests
     /// <summary>Verifies a successful authorization result yields <see langword="null"/> rather than a <c>NotAuthorized</c>.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Successful_authorization_returns_null()
+    public async Task AuthorizeAsync_successful_authorization_returns_null()
     {
-        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        // Arrange
+        var principal = PrincipalMother.Anonymous();
         var resource = new TestResource("user-1");
         _authorizationService
             .AuthorizeAsync(principal, resource, PolicyName)
             .Returns(AuthorizationResult.Success());
 
+        // Act
         var result = await _sut.AuthorizeAsync(principal, resource, PolicyName);
 
+        // Assert
         Assert.Null(result);
     }
 
     /// <summary>Verifies a failed authorization result yields a <c>NotAuthorized</c> naming the policy that was checked.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Failed_authorization_returns_a_NotAuthorized_case()
+    public async Task AuthorizeAsync_failed_authorization_returns_NotAuthorized_naming_the_policy()
     {
-        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        // Arrange
+        var principal = PrincipalMother.Anonymous();
         var resource = new TestResource("user-1");
         _authorizationService
             .AuthorizeAsync(principal, resource, PolicyName)
             .Returns(AuthorizationResult.Failed());
 
+        // Act
         var result = await _sut.AuthorizeAsync(principal, resource, PolicyName);
 
+        // Assert
         Assert.NotNull(result);
         Assert.Contains(PolicyName, result.Reasons.Single());
     }
@@ -61,16 +68,19 @@ public sealed class ResourceAuthorizationServiceTests
     /// <summary>Verifies the resource-aware three-argument overload is called with exactly the given principal, resource, and policy.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task AuthorizeAsync_calls_the_resource_aware_overload_with_the_given_arguments()
+    public async Task AuthorizeAsync_delegates_to_the_resource_aware_overload_with_the_given_arguments()
     {
-        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        // Arrange
+        var principal = PrincipalMother.Anonymous();
         var resource = new TestResource("user-1");
         _authorizationService
             .AuthorizeAsync(principal, resource, PolicyName)
             .Returns(AuthorizationResult.Success());
 
+        // Act
         await _sut.AuthorizeAsync(principal, resource, PolicyName);
 
+        // Assert
         await _authorizationService.Received(1).AuthorizeAsync(principal, resource, PolicyName);
     }
 }

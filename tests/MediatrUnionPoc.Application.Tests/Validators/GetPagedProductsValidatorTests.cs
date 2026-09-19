@@ -6,6 +6,9 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 /// <summary>Exercises <see cref="GetPagedProductsValidator"/>'s validation rules directly.</summary>
 public class GetPagedProductsValidatorTests
 {
+    private const int ValidPageNumber = 1;
+    private const int ValidPageSize = 10;
+
     private readonly GetPagedProductsValidator _sut = new();
 
     /// <summary>Verifies a page number below 1 fails validation.</summary>
@@ -13,10 +16,15 @@ public class GetPagedProductsValidatorTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void PageNumber_below_1_fails_validation(int pageNumber)
+    public void Validate_page_number_below_1_fails(int pageNumber)
     {
-        var result = _sut.TestValidate(new GetPagedProductsQuery(pageNumber, 10));
+        // Arrange
+        var query = new GetPagedProductsQuery(pageNumber, ValidPageSize);
 
+        // Act
+        var result = _sut.TestValidate(query);
+
+        // Assert
         result.ShouldHaveValidationErrorFor(x => x.PageNumber);
     }
 
@@ -24,11 +32,17 @@ public class GetPagedProductsValidatorTests
     /// <param name="pageSize">A page size value that should fail validation.</param>
     [Theory]
     [InlineData(0)]
+    [InlineData(-1)]
     [InlineData(101)]
-    public void PageSize_outside_1_to_100_range_fails_validation(int pageSize)
+    public void Validate_page_size_outside_1_to_100_range_fails(int pageSize)
     {
-        var result = _sut.TestValidate(new GetPagedProductsQuery(1, pageSize));
+        // Arrange
+        var query = new GetPagedProductsQuery(ValidPageNumber, pageSize);
 
+        // Act
+        var result = _sut.TestValidate(query);
+
+        // Assert
         result.ShouldHaveValidationErrorFor(x => x.PageSize);
     }
 
@@ -39,10 +53,15 @@ public class GetPagedProductsValidatorTests
     [InlineData(1, 1)]
     [InlineData(1, 100)]
     [InlineData(5, 50)]
-    public void Valid_paging_parameters_produce_no_errors(int pageNumber, int pageSize)
+    public void Validate_valid_paging_parameters_produce_no_errors(int pageNumber, int pageSize)
     {
-        var result = _sut.TestValidate(new GetPagedProductsQuery(pageNumber, pageSize));
+        // Arrange
+        var query = new GetPagedProductsQuery(pageNumber, pageSize);
 
+        // Act
+        var result = _sut.TestValidate(query);
+
+        // Assert
         result.ShouldNotHaveAnyValidationErrors();
     }
 }

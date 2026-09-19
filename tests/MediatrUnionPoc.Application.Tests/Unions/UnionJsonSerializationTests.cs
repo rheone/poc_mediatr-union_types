@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
@@ -18,20 +19,25 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// </summary>
 public class UnionJsonSerializationTests
 {
+    private static readonly ProductId SomeProductId = ProductId.From(
+        Guid.Parse("88888888-8888-8888-8888-888888888888")
+    );
+
     /// <summary>
     /// Verifies serializing the union directly produces byte-identical JSON to serializing the
     /// boxed case type on its own, with no <c>{"Value": {...}}</c> wrapper around it.
     /// </summary>
     [Fact]
-    public void Serializing_the_raw_union_flattens_to_the_boxed_cases_own_shape_with_no_wrapper()
+    public void Serialize_raw_union_flattens_to_the_boxed_cases_own_shape_with_no_wrapper()
     {
-        CreateProductResult result = new ProductDto(ProductId.New(), "Widget", 9.99m);
+        // Arrange
+        CreateProductResult result = new ProductDto(SomeProductId, "Widget", 9.99m);
 
+        // Act
         var unionJson = JsonSerializer.Serialize(result);
-        var dtoJson = JsonSerializer.Serialize(
-            ((System.Runtime.CompilerServices.IUnion)result).Value
-        );
+        var dtoJson = JsonSerializer.Serialize(((IUnion)result).Value);
 
+        // Assert
         // Serializing the union directly produces byte-identical JSON to serializing the
         // unwrapped ProductDto — there is no {"Value": {...}} wrapper, unlike a plain struct
         // whose only public member happens to be named "Value".
@@ -47,12 +53,21 @@ public class UnionJsonSerializationTests
     /// returning anything, rather than letting callers infer the case from field shapes.
     /// </summary>
     [Fact]
-    public void Different_cases_of_the_same_union_carry_no_shared_case_discriminator()
+    public void Serialize_different_cases_of_the_same_union_carries_no_shared_case_discriminator()
     {
-        // Two cases with genuinely no fields in common serialize to genuinely different shapes...
-        CreateProductResult productDto = new ProductDto(ProductId.New(), "Widget", 9.99m);
+        // Arrange
+        CreateProductResult productDto = new ProductDto(SomeProductId, "Widget", 9.99m);
         CreateProductResult error = new Error("boom", "BOOM");
-        Assert.NotEqual(JsonSerializer.Serialize(productDto), JsonSerializer.Serialize(error));
+        UpdateProductResult success = new Success();
+
+        // Act
+        var productJson = JsonSerializer.Serialize(productDto);
+        var errorJson = JsonSerializer.Serialize(error);
+        var successJson = JsonSerializer.Serialize(success);
+
+        // Assert
+        // Two cases with genuinely no fields in common serialize to genuinely different shapes...
+        Assert.NotEqual(productJson, errorJson);
 
         // ...but neither carries a "case"/"$type" tag identifying which one it is, and an empty
         // case type serializes to a completely uninformative "{}" — a consumer who receives just
@@ -62,12 +77,10 @@ public class UnionJsonSerializationTests
         // this repo still switches on the union before returning anything: to attach that missing
         // context (a status code, a route, a header) explicitly, per case, rather than relying on
         // the caller to infer it from field shapes.
-        UpdateProductResult success = new Success();
-        var successJson = JsonSerializer.Serialize(success);
         Assert.Equal("{}", successJson);
 
-        using var productDocument = JsonDocument.Parse(JsonSerializer.Serialize(productDto));
-        using var errorDocument = JsonDocument.Parse(JsonSerializer.Serialize(error));
+        using var productDocument = JsonDocument.Parse(productJson);
+        using var errorDocument = JsonDocument.Parse(errorJson);
         Assert.False(productDocument.RootElement.TryGetProperty("case", out _));
         Assert.False(errorDocument.RootElement.TryGetProperty("case", out _));
     }

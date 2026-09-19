@@ -37,30 +37,40 @@ public class ExhaustivenessTests
     /// </summary>
     /// <returns>A task that completes when the scratch build finishes and the assertions run.</returns>
     [Fact]
-    public async Task Non_exhaustive_switch_over_a_union_fails_to_compile()
+    public async Task Build_non_exhaustive_switch_over_a_union_fails_with_CS8509()
     {
-        var (exitCode, output) = await BuildScratchProjectAsync("NonExhaustive");
+        // Arrange
+        const string project = "NonExhaustive";
 
+        // Act
+        var (exitCode, output) = await BuildScratchProjectAsync(project, CancellationToken.None);
+
+        // Assert
         Assert.NotEqual(0, exitCode);
         Assert.Contains("CS8509", output);
     }
 
     /// <summary>
-    /// Proves the exhaustive counterpart of <see cref="Non_exhaustive_switch_over_a_union_fails_to_compile"/>
+    /// Proves the exhaustive counterpart of <see cref="Build_non_exhaustive_switch_over_a_union_fails_with_CS8509"/>
     /// — the same union, switched over with every case covered — compiles with no CS8509.
     /// </summary>
     /// <returns>A task that completes when the scratch build finishes and the assertions run.</returns>
     [Fact]
-    public async Task Exhaustive_switch_over_the_same_union_compiles_cleanly()
+    public async Task Build_exhaustive_switch_over_the_same_union_succeeds()
     {
-        var (exitCode, output) = await BuildScratchProjectAsync("Exhaustive");
+        // Arrange
+        const string project = "Exhaustive";
 
+        // Act
+        var (exitCode, output) = await BuildScratchProjectAsync(project, CancellationToken.None);
+
+        // Assert
         Assert.Equal(0, exitCode);
         Assert.DoesNotContain("CS8509", output);
     }
 
     /// <summary>
-    /// The same proof as <see cref="Non_exhaustive_switch_over_a_union_fails_to_compile"/>, but for
+    /// The same proof as <see cref="Build_non_exhaustive_switch_over_a_union_fails_with_CS8509"/>, but for
     /// <c>ITransactionOutcome&lt;TSelf&gt;.ShouldCommit</c> specifically — this is what guarantees
     /// commit/rollback can't silently misclassify an arbitrary, previously-unseen case type: the
     /// case must be declared on the union, and the union's own <c>ShouldCommit</c> switch must
@@ -68,25 +78,35 @@ public class ExhaustivenessTests
     /// </summary>
     /// <returns>A task that completes when the scratch build finishes and the assertions run.</returns>
     [Fact]
-    public async Task Non_exhaustive_ShouldCommit_switch_fails_to_compile()
+    public async Task Build_non_exhaustive_ShouldCommit_switch_fails_with_CS8509()
     {
-        var (exitCode, output) = await BuildScratchProjectAsync("ShouldCommitNonExhaustive");
+        // Arrange
+        const string project = "ShouldCommitNonExhaustive";
 
+        // Act
+        var (exitCode, output) = await BuildScratchProjectAsync(project, CancellationToken.None);
+
+        // Assert
         Assert.NotEqual(0, exitCode);
         Assert.Contains("CS8509", output);
     }
 
     /// <summary>
     /// Proves the exhaustive counterpart of
-    /// <see cref="Non_exhaustive_ShouldCommit_switch_fails_to_compile"/> — every case classified in
+    /// <see cref="Build_non_exhaustive_ShouldCommit_switch_fails_with_CS8509"/> — every case classified in
     /// <c>ShouldCommit</c> — compiles with no CS8509.
     /// </summary>
     /// <returns>A task that completes when the scratch build finishes and the assertions run.</returns>
     [Fact]
-    public async Task Exhaustive_ShouldCommit_switch_compiles_cleanly()
+    public async Task Build_exhaustive_ShouldCommit_switch_succeeds()
     {
-        var (exitCode, output) = await BuildScratchProjectAsync("ShouldCommitExhaustive");
+        // Arrange
+        const string project = "ShouldCommitExhaustive";
 
+        // Act
+        var (exitCode, output) = await BuildScratchProjectAsync(project, CancellationToken.None);
+
+        // Assert
         Assert.Equal(0, exitCode);
         Assert.DoesNotContain("CS8509", output);
     }

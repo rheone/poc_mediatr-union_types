@@ -1,6 +1,7 @@
 // TODO: excluded from CSharpier via .csharpierignore (union declarations crash CSharpier 1.3.0's
 // parser). To reverse: remove this file's entry from .csharpierignore, run
 // `dotnet csharpier check .`, and delete this comment if it passes.
+using System.Runtime.CompilerServices;
 using MediatrUnionPoc.Application.Common.Abstractions;
 using MediatrUnionPoc.Application.Common.Results;
 
@@ -43,12 +44,17 @@ public class FailureAndNotAuthorizedCaseTypeTests
     /// matching exactly like any other declared case type.
     /// </summary>
     [Fact]
-    public void Failure_implicitly_converts_and_pattern_matches_like_any_other_case()
+    public void Failure_converts_implicitly_into_the_union_and_unwraps()
     {
-        AdminActionResult result = new Failure(["insufficient stock", "product discontinued"]);
+        // Arrange
+        var expectedReasons = new[] { "insufficient stock", "product discontinued" };
 
-        var reasons = Assert.IsType<Failure>(((System.Runtime.CompilerServices.IUnion)result).Value).Reasons;
-        Assert.Equal(["insufficient stock", "product discontinued"], reasons);
+        // Act
+        AdminActionResult result = new Failure(expectedReasons);
+
+        // Assert
+        var reasons = Assert.IsType<Failure>(((IUnion)result).Value).Reasons;
+        Assert.Equal(expectedReasons, reasons);
     }
 
     /// <summary>
@@ -56,43 +62,60 @@ public class FailureAndNotAuthorizedCaseTypeTests
     /// pattern matching exactly like any other declared case type.
     /// </summary>
     [Fact]
-    public void NotAuthorized_implicitly_converts_and_pattern_matches_like_any_other_case()
+    public void NotAuthorized_converts_implicitly_into_the_union_and_unwraps()
     {
-        AdminActionResult result = new NotAuthorized(["missing admin role"]);
+        // Arrange
+        var expectedReasons = new[] { "missing admin role" };
 
-        var reasons = Assert.IsType<NotAuthorized>(((System.Runtime.CompilerServices.IUnion)result).Value).Reasons;
-        Assert.Equal(["missing admin role"], reasons);
+        // Act
+        AdminActionResult result = new NotAuthorized(expectedReasons);
+
+        // Assert
+        var reasons = Assert.IsType<NotAuthorized>(((IUnion)result).Value).Reasons;
+        Assert.Equal(expectedReasons, reasons);
     }
 
-    /// <summary>
-    /// Verifies both <see cref="Failure"/> and <see cref="NotAuthorized"/> classify as rollback
-    /// via <see cref="AdminActionResult.ShouldCommit"/>, even though they carry different reasons.
-    /// </summary>
-    /// <param name="response">The rollback-case instance under test, supplied by <see cref="RollbackCases"/>.</param>
-    [Theory]
-    [MemberData(nameof(RollbackCases))]
-    public void Failure_and_NotAuthorized_both_classify_as_rollback(AdminActionResult response) => Assert.False(AdminActionResult.ShouldCommit(response));
-
-    /// <summary>
-    /// Supplies the <see cref="Failure"/> and <see cref="NotAuthorized"/> instances exercised by
-    /// <see cref="Failure_and_NotAuthorized_both_classify_as_rollback"/>.
-    /// </summary>
-    /// <returns>The rollback-classifying <see cref="AdminActionResult"/> instances.</returns>
-    public static TheoryData<AdminActionResult> RollbackCases() =>
+    /// <summary>Rows: a <see cref="Failure"/> and a <see cref="NotAuthorized"/> — different case types, both rollback.</summary>
+    public static TheoryData<AdminActionResult> ShouldCommit_rollback_Test_Data =>
         [
             new AdminActionResult(new Failure(["business rule violated"])),
             new AdminActionResult(new NotAuthorized(["missing admin role"])),
         ];
 
     /// <summary>
+    /// Verifies both <see cref="Failure"/> and <see cref="NotAuthorized"/> classify as rollback
+    /// via <see cref="AdminActionResult.ShouldCommit"/>, even though they carry different reasons.
+    /// </summary>
+    /// <param name="response">The rollback-case instance under test.</param>
+    [Theory]
+    [MemberData(nameof(ShouldCommit_rollback_Test_Data))]
+    public void ShouldCommit_Failure_and_NotAuthorized_classify_as_rollback(
+        AdminActionResult response
+    )
+    {
+        // Arrange (response supplied by ShouldCommit_rollback_Test_Data)
+
+        // Act
+        var shouldCommit = AdminActionResult.ShouldCommit(response);
+
+        // Assert
+        Assert.False(shouldCommit);
+    }
+
+    /// <summary>
     /// Verifies <see cref="Success"/> still classifies as commit once <see cref="Failure"/> and
     /// <see cref="NotAuthorized"/> are added to the same union's case set.
     /// </summary>
     [Fact]
-    public void Success_still_classifies_as_commit_alongside_the_new_cases()
+    public void ShouldCommit_Success_classifies_as_commit_alongside_the_other_cases()
     {
+        // Arrange
         AdminActionResult response = new Success();
 
-        Assert.True(AdminActionResult.ShouldCommit(response));
+        // Act
+        var shouldCommit = AdminActionResult.ShouldCommit(response);
+
+        // Assert
+        Assert.True(shouldCommit);
     }
 }

@@ -17,35 +17,71 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// </summary>
 public class ResultShouldCommitTests
 {
-    /// <summary>Verifies <see cref="CreateProductResult.ShouldCommit"/> commits only for its <see cref="ProductDto"/> case.</summary>
-    [Fact]
-    public void CreateProductResult_commits_only_for_the_ProductDto_case()
-    {
-        CreateProductResult dto = new ProductDto(ProductId.New(), "Widget", 9.99m);
-        CreateProductResult validationErrors = new ValidationErrors([
-            new ValidationError("Name", "required"),
-        ]);
-        CreateProductResult error = new Error("boom", "BOOM");
+    private static readonly ProductId SomeProductId = ProductId.From(
+        Guid.Parse("77777777-7777-7777-7777-777777777777")
+    );
 
-        Assert.True(CreateProductResult.ShouldCommit(dto));
-        Assert.False(CreateProductResult.ShouldCommit(validationErrors));
-        Assert.False(CreateProductResult.ShouldCommit(error));
+    /// <summary>Rows: one per <see cref="CreateProductResult"/> case, with whether it should commit — only <see cref="ProductDto"/> does.</summary>
+    public static TheoryData<
+        CreateProductResult,
+        bool
+    > CreateProductResult_ShouldCommit_Test_Data =>
+        new()
+        {
+            { new ProductDto(SomeProductId, "Widget", 9.99m), true },
+            { new ValidationErrors([new ValidationError("Name", "required")]), false },
+            { new Error("boom", "BOOM"), false },
+        };
+
+    /// <summary>Rows: one per <see cref="UpdateProductResult"/> case, with whether it should commit — only <see cref="Success"/> does.</summary>
+    public static TheoryData<
+        UpdateProductResult,
+        bool
+    > UpdateProductResult_ShouldCommit_Test_Data =>
+        new()
+        {
+            { new Success(), true },
+            { new NotFound<ProductId>(SomeProductId), false },
+            { new ValidationErrors([new ValidationError("Price", "must be >= 0")]), false },
+            { new Error("boom", "BOOM"), false },
+            { new NotAuthorized(["not the owner"]), false },
+        };
+
+    /// <summary>Verifies <see cref="CreateProductResult.ShouldCommit"/> commits only for its <see cref="ProductDto"/> case.</summary>
+    /// <param name="response">The union instance to classify.</param>
+    /// <param name="expected">Whether the case is expected to commit.</param>
+    [Theory]
+    [MemberData(nameof(CreateProductResult_ShouldCommit_Test_Data))]
+    public void CreateProductResult_ShouldCommit_commits_only_for_the_ProductDto_case(
+        CreateProductResult response,
+        bool expected
+    )
+    {
+        // Arrange (response supplied by CreateProductResult_ShouldCommit_Test_Data)
+
+        // Act
+        var shouldCommit = CreateProductResult.ShouldCommit(response);
+
+        // Assert
+        Assert.Equal(expected, shouldCommit);
     }
 
     /// <summary>Verifies <see cref="UpdateProductResult.ShouldCommit"/> commits only for its <see cref="Success"/> case.</summary>
-    [Fact]
-    public void UpdateProductResult_commits_only_for_the_Success_case()
+    /// <param name="response">The union instance to classify.</param>
+    /// <param name="expected">Whether the case is expected to commit.</param>
+    [Theory]
+    [MemberData(nameof(UpdateProductResult_ShouldCommit_Test_Data))]
+    public void UpdateProductResult_ShouldCommit_commits_only_for_the_Success_case(
+        UpdateProductResult response,
+        bool expected
+    )
     {
-        UpdateProductResult success = new Success();
-        UpdateProductResult notFound = new NotFound<ProductId>(ProductId.New());
-        UpdateProductResult validationErrors = new ValidationErrors([
-            new ValidationError("Price", "must be >= 0"),
-        ]);
-        UpdateProductResult error = new Error("boom", "BOOM");
+        // Arrange (response supplied by UpdateProductResult_ShouldCommit_Test_Data)
 
-        Assert.True(UpdateProductResult.ShouldCommit(success));
-        Assert.False(UpdateProductResult.ShouldCommit(notFound));
-        Assert.False(UpdateProductResult.ShouldCommit(validationErrors));
-        Assert.False(UpdateProductResult.ShouldCommit(error));
+        // Act
+        var shouldCommit = UpdateProductResult.ShouldCommit(response);
+
+        // Assert
+        Assert.Equal(expected, shouldCommit);
     }
 }

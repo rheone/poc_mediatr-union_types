@@ -1,8 +1,10 @@
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Abstractions;
 using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Behaviors;
 using MediatrUnionPoc.Application.Common.Results;
+using MediatrUnionPoc.Application.Tests.TestData;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -89,28 +91,33 @@ public sealed class AuthorizationBehaviorTests : IDisposable
     /// <summary>Verifies the handler runs and its response passes through unchanged when the caller is an administrator.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Calls_next_and_passes_the_response_through_when_the_caller_is_an_administrator()
+    public async Task Handle_administrator_caller_calls_next_and_passes_the_response_through()
     {
-        var command = new ArbitraryAdminCommand(PrincipalWithRoles("Administrator"));
+        // Arrange
+        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles("Administrator"));
         ArbitraryAdminOutcome expected = new Success();
 
+        // Act
         var result = await _sut.Handle(
             command,
             _ => Task.FromResult(expected),
             CancellationToken.None
         );
 
+        // Assert
         Assert.Equal(expected, result);
     }
 
     /// <summary>Verifies the handler never runs and the response short-circuits to <see cref="NotAuthorized"/> when the caller isn't an administrator.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Short_circuits_to_NotAuthorized_without_calling_next_when_the_caller_is_not_an_administrator()
+    public async Task Handle_non_administrator_caller_short_circuits_to_NotAuthorized_without_calling_next()
     {
-        var command = new ArbitraryAdminCommand(PrincipalWithRoles("Viewer"));
+        // Arrange
+        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles("Viewer"));
         var nextWasCalled = false;
 
+        // Act
         var result = await _sut.Handle(
             command,
             _ =>
@@ -121,17 +128,36 @@ public sealed class AuthorizationBehaviorTests : IDisposable
             CancellationToken.None
         );
 
+        // Assert
         Assert.False(nextWasCalled);
-        Assert.IsType<NotAuthorized>(((System.Runtime.CompilerServices.IUnion)result).Value);
+        var notAuthorized = Assert.IsType<NotAuthorized>(((IUnion)result).Value);
+        Assert.Contains(AuthorizationPolicies.Administrator, Assert.Single(notAuthorized.Reasons));
     }
 
-    private static ClaimsPrincipal PrincipalWithRoles(params string[] roles)
+    // Auto Generated, verify expected behavior:
+    /// <summary>Verifies the caller's cancellation token is forwarded to <c>next</c> rather than replaced.</summary>
+    /// <returns>A task that completes when the assertion runs.</returns>
+    [Fact]
+    public async Task Handle_administrator_caller_forwards_the_cancellation_token_to_next()
     {
-        var identity = new ClaimsIdentity(
-            roles.Select(role => new Claim(ClaimTypes.Role, role)),
-            authenticationType: "Test"
+        // Arrange
+        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles("Administrator"));
+        using var cts = new CancellationTokenSource();
+        CancellationToken? received = null;
+
+        // Act
+        await _sut.Handle(
+            command,
+            token =>
+            {
+                received = token;
+                return Task.FromResult<ArbitraryAdminOutcome>(new Success());
+            },
+            cts.Token
         );
-        return new ClaimsPrincipal(identity);
+
+        // Assert
+        Assert.Equal(cts.Token, received);
     }
 }
 
@@ -164,21 +190,24 @@ public sealed class AuthorizationBehaviorPolicyNameTests
     /// </summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Calls_next_and_passes_the_response_through_when_the_named_policy_succeeds()
+    public async Task Handle_named_policy_succeeds_calls_next_and_passes_the_response_through()
     {
-        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        // Arrange
+        var principal = PrincipalMother.Anonymous();
         var command = new ArbitraryPolicyCommand(principal);
         ArbitraryAdminOutcome expected = new Success();
         _authorizationService
             .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy)
             .Returns(AuthorizationResult.Success());
 
+        // Act
         var result = await _sut.Handle(
             command,
             _ => Task.FromResult(expected),
             CancellationToken.None
         );
 
+        // Assert
         Assert.Equal(expected, result);
         await _authorizationService
             .Received(1)
@@ -192,15 +221,17 @@ public sealed class AuthorizationBehaviorPolicyNameTests
     /// </summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Short_circuits_to_NotAuthorized_without_calling_next_when_the_named_policy_fails()
+    public async Task Handle_named_policy_fails_short_circuits_to_NotAuthorized_without_calling_next()
     {
-        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        // Arrange
+        var principal = PrincipalMother.Anonymous();
         var command = new ArbitraryPolicyCommand(principal);
         var nextWasCalled = false;
         _authorizationService
             .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy)
             .Returns(AuthorizationResult.Failed());
 
+        // Act
         var result = await _sut.Handle(
             command,
             _ =>
@@ -211,8 +242,13 @@ public sealed class AuthorizationBehaviorPolicyNameTests
             CancellationToken.None
         );
 
+        // Assert
         Assert.False(nextWasCalled);
-        Assert.IsType<NotAuthorized>(((System.Runtime.CompilerServices.IUnion)result).Value);
+        var notAuthorized = Assert.IsType<NotAuthorized>(((IUnion)result).Value);
+        Assert.Contains(
+            ArbitraryPolicyCommand.SomeOtherPolicy,
+            Assert.Single(notAuthorized.Reasons)
+        );
         await _authorizationService
             .Received(1)
             .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy);

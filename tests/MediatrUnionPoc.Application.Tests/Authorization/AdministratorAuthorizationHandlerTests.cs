@@ -1,5 +1,5 @@
-using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Application.Tests.TestData;
 using Microsoft.AspNetCore.Authorization;
 
 namespace MediatrUnionPoc.Application.Tests.Authorization;
@@ -12,44 +12,56 @@ namespace MediatrUnionPoc.Application.Tests.Authorization;
 /// </summary>
 public class AdministratorAuthorizationHandlerTests
 {
+    private const string Administrator = "Administrator";
+    private const string SuperUser = "SuperUser";
+    private const string Viewer = "Viewer";
+
     private readonly AdministratorAuthorizationHandler _sut = new();
 
     /// <summary>
+    /// Rows: caller holds the only allowed role (succeeds); caller holds a different role (fails);
+    /// caller holds one of several allowed roles, proving OR-across-roles (succeeds); no allowed
+    /// roles configured (automatically succeeds); allowed roles configured but caller has none
+    /// (fails).
+    /// </summary>
+    public static TheoryData<string[], string[], bool> HandleAsync_role_membership_Test_Data =>
+        new()
+        {
+            { [Administrator], [Administrator], true },
+            { [Administrator], [Viewer], false },
+            { [Administrator, SuperUser], [SuperUser], true },
+            { [], [], true },
+            { [Administrator], [], false },
+        };
+
+    /// <summary>
     /// Verifies role matching is OR-across-roles — any one of the allowed roles is sufficient —
-    /// and that an unconfigured requirement (no allowed roles) is automatically satisfied, the
-    /// same "any match succeeds, no roles means nothing to check" semantics as ASP.NET Core's own
-    /// built-in <c>RolesAuthorizationHandler</c>.
+    /// and that an unconfigured requirement (no allowed roles) is automatically satisfied.
     /// </summary>
     /// <param name="allowedRoles">The requirement's configured <see cref="AdministratorRequirement.AllowedRoles"/>.</param>
     /// <param name="userRoles">The roles claimed by the simulated caller.</param>
     /// <param name="expectedSuccess">Whether the requirement is expected to succeed for this combination.</param>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Theory]
-    [InlineData(new[] { "Administrator" }, new[] { "Administrator" }, true)]
-    [InlineData(new[] { "Administrator" }, new[] { "Viewer" }, false)]
-    [InlineData(new[] { "Administrator", "SuperUser" }, new[] { "SuperUser" }, true)]
-    [InlineData(new string[0], new string[0], true)]
-    public async Task Role_membership_determines_authorization_result(
+    [MemberData(nameof(HandleAsync_role_membership_Test_Data))]
+    public async Task HandleAsync_role_membership_determines_authorization_result(
         string[] allowedRoles,
         string[] userRoles,
         bool expectedSuccess
     )
     {
+        // Arrange
         var requirement = new AdministratorRequirement(allowedRoles);
-        var user = PrincipalWithRoles(userRoles);
-        var context = new AuthorizationHandlerContext([requirement], user, resource: null);
+        var context = new AuthorizationHandlerContext(
+            [requirement],
+            PrincipalMother.WithRoles(userRoles),
+            resource: null
+        );
 
+        // Act
         await _sut.HandleAsync(context);
 
+        // Assert
         Assert.Equal(expectedSuccess, context.HasSucceeded);
-    }
-
-    private static ClaimsPrincipal PrincipalWithRoles(params string[] roles)
-    {
-        var identity = new ClaimsIdentity(
-            roles.Select(role => new Claim(ClaimTypes.Role, role)),
-            authenticationType: "Test"
-        );
-        return new ClaimsPrincipal(identity);
     }
 }

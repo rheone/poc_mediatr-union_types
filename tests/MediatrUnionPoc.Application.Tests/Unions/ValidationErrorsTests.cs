@@ -15,17 +15,19 @@ public class ValidationErrorsTests
     /// "; ".
     /// </summary>
     [Fact]
-    public void ToErrorMessage_joins_every_error_message_with_a_semicolon()
+    public void ToErrorMessage_multiple_errors_joins_messages_with_a_semicolon()
     {
+        // Arrange
         var errors = new ValidationErrors([
             new ValidationError("Name", "must not be empty"),
             new ValidationError("Price", "must be greater than or equal to 0"),
         ]);
 
-        Assert.Equal(
-            "must not be empty; must be greater than or equal to 0",
-            errors.ToErrorMessage()
-        );
+        // Act
+        var message = errors.ToErrorMessage();
+
+        // Assert
+        Assert.Equal("must not be empty; must be greater than or equal to 0", message);
     }
 
     /// <summary>
@@ -33,10 +35,45 @@ public class ValidationErrorsTests
     /// as-is, with no separator applied.
     /// </summary>
     [Fact]
-    public void ToErrorMessage_returns_a_single_message_unchanged()
+    public void ToErrorMessage_single_error_returns_the_message_unchanged()
     {
+        // Arrange
         var errors = new ValidationErrors([new ValidationError("Id", "must not be empty")]);
 
-        Assert.Equal("must not be empty", errors.ToErrorMessage());
+        // Act
+        var message = errors.ToErrorMessage();
+
+        // Assert
+        Assert.Equal("must not be empty", message);
+    }
+
+    // Auto Generated, verify expected behavior:
+    /// <summary>Verifies <see cref="ValidationErrors.ToErrorMessage"/> returns an empty string when there are no errors.</summary>
+    [Fact]
+    public void ToErrorMessage_no_errors_returns_an_empty_string()
+    {
+        // Arrange
+        var errors = new ValidationErrors([]);
+
+        // Act
+        var message = errors.ToErrorMessage();
+
+        // Assert
+        Assert.Equal(string.Empty, message);
+    }
+
+    // Auto Generated, verify expected behavior:
+    /// <summary>Verifies <see cref="ValidationErrors.ToErrorMessage"/> drops property names, keeping only messages.</summary>
+    [Fact]
+    public void ToErrorMessage_omits_property_names()
+    {
+        // Arrange
+        var errors = new ValidationErrors([new ValidationError("Name", "must not be empty")]);
+
+        // Act
+        var message = errors.ToErrorMessage();
+
+        // Assert
+        Assert.DoesNotContain("Name", message);
     }
 }
