@@ -158,10 +158,10 @@ public class ProductRepositoryTests
         var repository = new ProductRepository(dbContext);
 
         // Act
-        var act = () => repository.AddAsync(null!, CancellationToken.None);
-
         // Assert
-        var exception = await Assert.ThrowsAsync<ArgumentNullException>(act);
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            repository.AddAsync(null!, CancellationToken.None)
+        );
         Assert.Equal("product", exception.ParamName);
     }
 

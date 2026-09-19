@@ -226,10 +226,10 @@ public class InMemoryUnitOfWorkTests
         await cancellation.CancelAsync();
 
         // Act
-        var act = () => unitOfWork.CommitAsync(cancellation.Token);
-
         // Assert
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(act);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            unitOfWork.CommitAsync(cancellation.Token)
+        );
         await using var verifyContext = DbContextMother.Create(databaseName);
         Assert.Empty(
             await verifyContext.Products.ToListAsync(TestContext.Current.CancellationToken)
@@ -282,7 +282,7 @@ public class InMemoryUnitOfWorkTests
         var unitOfWork = new InMemoryUnitOfWork(dbContext);
 
         // Act
-        var exception = Record.Exception(unitOfWork.Dispose);
+        var exception = Record.Exception(() => unitOfWork.Dispose());
 
         // Assert
         Assert.Null(exception);
