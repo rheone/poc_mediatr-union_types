@@ -27,65 +27,7 @@ every `switch`. This project pushes that as far as it reasonably goes: every com
 returns a `union` of whatever outcomes are actually possible for that operation — no more, no
 fewer — and nothing in the request pipeline throws for an outcome it expected to see.
 
-## Glossary
-
-This project sits at the intersection of a few architectural patterns, MediatR's own vocabulary,
-one third-party library (Vogen), and a brand-new language feature. If any term below is unfamiliar,
-read this section before the deep-dive sections that follow — they assume it.
-
-### Architectural patterns
-
-| Term | Meaning |
-| --- | --- |
-| **CQRS** (Command Query Responsibility Segregation) | Splits every operation into a **command** (changes state, returns little more than "did it work") or a **query** (reads state, never changes it). Each side can be reasoned about, validated, and optimized independently instead of one method doing both. |
-| **Mediator pattern** | Callers don't invoke handlers directly; they send a message to a mediator, which finds the one handler registered for it. A controller sending `CreateProductCommand` has no compile-time dependency on `CreateProductHandler` at all. MediatR is the library implementing this pattern here. |
-| **Pipeline (middleware) pattern** | Cross-cutting concerns (logging, validation, transactions) are applied as a chain of wrapping steps every request passes through, instead of being duplicated inside every handler. ASP.NET Core's HTTP middleware pipeline is the same idea one layer up the stack; MediatR's pipeline behaviors are the same idea for in-process messages. |
-| **Vertical slice architecture** | Code is organized by *feature* (`Features/Products/Create/` holds that operation's command, handler, validator, and result together) rather than by *technical layer* (a `Commands/` folder, a `Handlers/` folder, each containing pieces of every feature). Changing one operation touches one folder. |
-| **Repository pattern** | An interface (`IProductRepository`) hiding how entities are actually fetched or persisted behind method calls that read like domain operations (`GetByIdAsync`, `AddAsync`) — the caller doesn't know or care whether that's EF Core, a REST call, or a file. |
-| **Unit of Work pattern** | A single object (`IUnitOfWork`) that tracks everything changed during one logical operation and commits or rolls it all back together, so a handler touching multiple repositories doesn't have to save each one individually and risk a partial write. |
-
-### C# language concepts
-
-| Term | Meaning |
-| --- | --- |
-| **Generics** | Writing code once against a type parameter (`T`, `TRequest`, `TResponse`) instead of once per concrete type. `IRequestHandler<TRequest, TResponse>` is generic so one interface serves every command and query without duplication. |
-| **Interface** | A contract listing members a type must implement, without providing its own implementation. `IProductRepository`, MediatR's `IRequestHandler<,>`, and this repo's own `IValidatable<TSelf>` are all interfaces. |
-| **Static abstract interface member** *(C# 11+)* | An interface member marked `static abstract`: every *implementing type* — not every instance — must supply it, and it's callable through a generic type parameter constrained to that interface (`where TSelf : IValidatable<TSelf>`). This is what lets fully generic pipeline code construct or query a concrete union type it has never seen, by calling `TResponse.FromValidationErrors(...)` or `TResponse.ShouldCommit(...)` — impossible with an ordinary instance member, since there's no instance to call it on yet. |
-| **Record** | A type (`record`, or `record struct`) with compiler-generated structural equality (same property values ⇒ `==`), a generated `ToString()`, and non-destructive mutation via `with`. Used here for immutable shapes like `ProductDto` and every command/query. |
-| **Struct vs. class** | A `struct` is a value type — copied by value, usually stack-allocated, not nullable by default. A `class` is a reference type — copied by reference, heap-allocated, nullable by default. A `union` compiles down to a `struct` (see below), which is part of why it carries no boxing tax for the common case. |
-| **Pattern matching / `switch` expression** | `switch` used as an *expression* producing a value (`var x = input switch { ... }`) rather than a statement that just branches. Every case is tested against the switched value's shape or type, and — for a closed set of possibilities like a union — the compiler can prove every case was handled. |
-| **Union type** *(C# 15 preview — the concept this whole repo tests)* | A closed set of "case types" declared as `union Name(CaseA, CaseB, CaseC)`. A value of that type is always exactly one of the listed cases, never null, never anything outside the list. See [The C# `union` type](#the-c-union-type) for the full mechanics. |
-| **Exhaustiveness checking** | The compiler verifying that a `switch` over a closed set of possibilities (a union, or an enum with no `default`) handles every member of that set, refusing to compile (`CS8509`) if one is missing. This is what turns "forgot to handle a new case" into a build failure instead of a runtime gap. |
-| **Source generator** | A compiler plugin that generates additional C# source at build time, usually driven by an attribute. Vogen uses one to turn a six-line `ValueObject<Guid>` declaration into a full value type with factories, equality, and serialization support — see [Vogen: avoiding primitive obsession](#vogen-avoiding-primitive-obsession). |
-
-### MediatR vocabulary
-
-| Term | Meaning |
-| --- | --- |
-| **`IRequest<TResponse>`** | MediatR's marker interface for "this message expects a `TResponse` back." Every command and query here implements it indirectly through this repo's own `ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>` (below). |
-| **`IRequestHandler<TRequest, TResponse>`** | MediatR's interface for "the one place that knows how to handle a `TRequest` and produce a `TResponse`." MediatR resolves and calls exactly one registered handler per request type. |
-| **`IPipelineBehavior<TRequest, TResponse>`** | MediatR's interface for a pipeline step wrapping every request's handling: it receives the request plus a delegate to call the *next* step (another behavior, or the handler itself). `LoggingBehavior`, `ValidationBehavior`, and `TransactionBehavior` all implement this, and run in the order they're registered. |
-| **`ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>`** *(this repo's own marker interfaces — not part of MediatR)* | Sit between `IRequest<TResponse>` and a concrete request to say which pipeline behaviors apply: `IQuery<TResponse>` never runs `TransactionBehavior`; `ICommand<TResponse>` may mutate state with no transaction assumption; `ITransactionalCommand<TResponse>` additionally requires its `TResponse` implement `ITransactionOutcome<TResponse>`. See [`Messages.cs`](src/MediatrUnionPoc.Application/Common/Abstractions/Messages.cs). |
-
-### Vogen vocabulary
-
-| Term | Meaning |
-| --- | --- |
-| **Value object** | A type identified by *what it holds*, not by identity, and typically immutable — two `Money` instances wrapping `9.99m` are the same value. Contrast with an *entity* (`Product`), which keeps its identity even as its other properties change. |
-| **Primitive obsession** | A code smell where domain concepts (a product ID, a monetary amount) are represented directly by a bare primitive (`Guid`, `decimal`) instead of their own type — letting an arbitrary `Guid` be passed where a `ProductId` was meant, or a negative `decimal` be accepted where a `Money` should never have been constructible at all. Vogen exists to eliminate this at compile time with almost no boilerplate. |
-| **`[ValueObject<T>]`** *(Vogen-specific)* | Vogen's attribute; placed on a `partial struct`, it triggers the source generator to build that value type's factories, equality, and (per selected `Conversions`) serialization/EF Core support around the wrapped primitive `T`. |
-
-### This repo's own types
-
-| Term | Meaning |
-| --- | --- |
-| **`IValidatable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can build that union's own validation-failure case generically, without ever naming the concrete union type. |
-| **`ITransactionOutcome<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract bool ShouldCommit(TSelf)`) so `TransactionBehavior` can ask the union itself whether to commit or roll back, without inspecting which case type came back by name. See [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means). |
-| **Case type** *(C# spec term)* | Any one of the types listed in a union's declaration (`union Name(CaseA, CaseB, CaseC)` — `CaseA`, `CaseB`, and `CaseC` are all case types of `Name`). This repo further splits case types into two roles it names itself — **shared** and **bespoke**, below — because the spec term alone doesn't distinguish them. |
-| **Shared case type** *(project-specific)* | A plain, meaning-free record (`Success`, `NotFound`, `Error`, ...) reused across many unions. A shared case type's identity never implies what it means for commit/rollback or anything else — only the union that declares it decides that; see [Case types used here](#case-types-used-here). |
-| **Bespoke case type** *(project-specific)* | A case type carrying one operation's actual payload (`ProductDto`, a hypothetical `PongDto`) rather than a meaning-free shared record. It can still appear in more than one union — `ProductDto` is the success case of both `CreateProductResult` and `GetProductByIdResult`, and again wrapped in `PagedResult<ProductDto>` inside `GetPagedProductsResult` — but unlike a shared case type, that reuse is because those operations happen to succeed with the same payload shape, not because its identity is deliberately meaning-free. |
-
-## Why this matters
+## What this pattern provides, and its actual scope
 
 > [!NOTE]
 > **This is a convention, not a MediatR requirement.** `IRequestHandler<TRequest, TResponse>`
@@ -117,6 +59,268 @@ read this section before the deep-dive sections that follow — they assume it.
   FromValidationErrors(ValidationErrors errors)`), a fully generic `ValidationBehavior<TRequest,
   TResponse>` can construct the right concrete union's error case without ever naming it — see
   [`IValidatable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IValidatable.cs).
+
+## Getting started
+
+```bash
+dotnet build
+dotnet test
+dotnet run --project src/MediatrUnionPoc.Api
+```
+
+`global.json` pins the SDK to the exact `11.0.100-rc.1...` preview build this repo was written
+against. Without it, an IDE's own SDK resolver (Visual Studio in particular) can silently fall
+back to the newest *stable* SDK it finds and fail with `NETSDK1045` ("does not support targeting
+.NET 11.0") — `allowPrerelease: true` is what tells it a preview SDK is expected here, not a
+missing `<TargetFramework>` value. If VS still shows the error after pulling this file, close and
+reopen the solution so it re-resolves.
+
+### Project layout
+
+| Project                          | Responsibility                                                            |
+| --------------------------------- | --------------------------------------------------------------------------- |
+| `MediatrUnionPoc.Domain`          | Entities, Vogen value objects (`ProductId`, `Money`), repository/UoW interfaces |
+| `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors |
+| `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext`, repository + unit-of-work implementations             |
+| `MediatrUnionPoc.Api`             | Controllers that map each union to an `IActionResult`                      |
+| `MediatrUnionPoc.Domain.Tests`    | Unit tests for `Money`, `ProductId`, and `Product`                          |
+| `MediatrUnionPoc.Application.Tests` | xUnit + NSubstitute — union mechanics, pipeline behaviors, handlers, validators |
+| `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core InMemory provider, end to end |
+| `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests           |
+| `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions enforcing the layering above               |
+
+Application code is organized as **vertical slices** under `Features/Products/<Operation>/`
+(`Create`, `Update`, `Delete`, `GetById`, `GetPaged`) — everything for one operation
+(command/query, validator, handler, result union) lives together, rather than being split across
+horizontal "Commands/Handlers/Validators" folders.
+
+## Core concepts
+
+The sections below cover the mechanics and vocabulary the pattern is built on. Read what's
+relevant to what you're doing; the [Glossary](#glossary) at the end is reference material, not
+required front-to-back reading.
+
+### The C# `union` type
+
+> Deeper, citation-backed research behind this section lives in
+> [`docs/research/csharp-union-type-research.md`](docs/research/csharp-union-type-research.md) —
+> primary sources (language reference, feature spec, LDM issue, compiler bug tracker) for every
+> claim below, plus open questions not yet settled upstream.
+
+```csharp
+public union CreateProductResult(ProductDto, ValidationErrors, Error);
+```
+
+This declares a closed set of three **case types**. The compiler generates a struct implementing
+`IUnion { object? Value { get; } }`, plus an implicit conversion from each case type:
+
+```csharp
+CreateProductResult ok = new ProductDto(id, "Widget", 9.99m);   // implicit conversion
+CreateProductResult bad = new Error("boom", "BOOM");            // implicit conversion
+```
+
+Pattern matching unwraps to the *contained* case, not the union wrapper itself:
+
+```csharp
+var response = result switch
+{
+    ProductDto dto => Ok(dto),          // matches result.Value is ProductDto
+    ValidationErrors e => BadRequest(e),
+    Error err => Problem(err.Message),
+    // no default/discard needed — the compiler knows these are the only three cases
+};
+```
+
+Unions can carry a body, including implementing interfaces — which is how this repo gets a union
+to expose a static factory method usable from fully generic code (see `IValidatable<TSelf>`
+above). This only works because C# now allows **static abstract members on interfaces** —
+without that, a generic pipeline behavior would have no way to construct an arbitrary union type
+it has never seen.
+
+#### Switch-and-unwrap: why controllers never return the union directly
+
+Every action in [`ProductsController`](src/MediatrUnionPoc.Api/Controllers/ProductsController.cs)
+`switch`es on the union and returns a plain DTO/`ProblemPayload`/status code — it never does
+`return Ok(result)` with the raw union itself.
+
+> [!NOTE]
+> It's not because `System.Text.Json` would otherwise serialize the generated struct's own
+> `Value` property as a wrapper. .NET 11's `System.Text.Json` has built-in awareness of `IUnion`
+> and transparently flattens to whichever case type is boxed inside, with no wrapper at all:
+> `JsonSerializer.Serialize((CreateProductResult)new ProductDto(...))` produces the exact same
+> bytes as serializing the `ProductDto` directly. See
+> [`UnionJsonSerializationTests`](tests/MediatrUnionPoc.Application.Tests/Unions/UnionJsonSerializationTests.cs)
+> for the proof.
+
+The real reason to switch first has nothing to do with serialization shape:
+
+- **There is no wire-level case discriminator.** Even with automatic flattening, nothing in the
+  JSON says *which* case came back. `Success` serializes to a completely uninformative `{}`; a
+  `ProductDto` and a `NotFound` produce different-looking objects only because their fields happen
+  to differ — there is no formal `"case"` or `"$type"` tag guaranteeing that. A consumer receiving
+  raw bytes, outside the context of (say) an HTTP status code, cannot reliably tell "succeeded with
+  nothing to report" apart from "an unrecognized case was added and I don't know what it means."
+- **Each case still needs boundary-specific context attached.** A `NotFound` needs to become
+  HTTP 404, not just "an object shaped like `{"Id": "..."}"`; a `ValidationErrors` needs to become
+  an RFC 7807 problem response with per-field errors. Nothing about serialization does that
+  mapping — only code that inspects which case came back can, which is exactly what the
+  `switch` in every controller action does.
+- **The union is for code that's still in-process; the unwrapped result is for anything crossing a
+  boundary.** Controller, queue consumer, CLI — whichever boundary the domain outcome meets,
+  that's where the `switch` belongs, turning a domain outcome into whatever shape *that* boundary
+  actually needs.
+
+### Vogen: avoiding primitive obsession
+
+> Deeper, citation-backed research behind this section lives in
+> [`docs/research/vogen-research.md`](docs/research/vogen-research.md) — primary sources (Vogen's
+> README and official docs site) for the factory/equality/conversion behavior described below, and
+> the defense-in-depth reasoning behind the EF Core converter choice.
+
+[Vogen](https://github.com/SteveDunn/Vogen) is a source generator that turns a bare primitive
+(`Guid`, `decimal`, `string`, ...) into a distinct, validated value type — so `ProductId` and an
+unrelated `Guid` parameter can never be swapped by mistake, and an invalid value can never be
+constructed in the first place.
+
+```csharp
+[ValueObject<Guid>(conversions: Conversions.SystemTextJson)]
+public readonly partial struct ProductId
+{
+    private static Validation Validate(Guid input) =>
+        input != Guid.Empty ? Validation.Ok : Validation.Invalid("ProductId cannot be an empty guid.");
+
+    public static ProductId New() => From(Guid.NewGuid());
+}
+```
+
+From this ~6-line declaration, Vogen generates:
+
+- **Factory methods** — `ProductId.From(guid)` (throws on invalid input) and `TryFrom(guid, out id)`
+  (doesn't). `Validate` runs inside *every* generated factory, so an empty-guid `ProductId` cannot
+  exist anywhere in the codebase — not just at the API boundary where FluentValidation already
+  checks it.
+- **Structural equality, hashing, and `ToString`** — two `ProductId`s wrapping the same `Guid` are
+  equal; `record`-style value semantics without needing `record` (this has to be a `struct` per
+  Vogen's own constraints, and `readonly partial struct` is the declaration shape it generates
+  into).
+- **Conversions**, opt-in per flag on the attribute. This repo uses `Conversions.SystemTextJson`
+  only, so `ProductId` serializes as a bare GUID string (`"..."`), not as a wrapper object — see
+  [`ProductDto`](src/MediatrUnionPoc.Application/Features/Products/Common/ProductDto.cs) for where
+  that matters on the wire.
+
+`Money` ([`Money.cs`](src/MediatrUnionPoc.Domain/Money.cs)) follows the identical pattern over
+`decimal`, rejecting negative amounts.
+
+Two Vogen-specific pitfalls we hit while building this — full detail in
+[Notes and gotchas](#notes-and-gotchas) — are worth knowing about up front if you add your own
+value object: don't set `PrivateAssets="all"` on the `Vogen` package reference, and don't reach
+for Vogen's generated `EfCoreValueConverter` from a persistence-agnostic Domain project (this repo
+hand-writes its EF Core converters in Infrastructure instead — see
+[`ValueConverters.cs`](src/MediatrUnionPoc.Infrastructure/ValueConverters.cs)).
+
+### Case types used here
+
+| Case               | Role    | Meaning                                                         |
+| ------------------ | ------- | --------------------------------------------------------------- |
+| `Success`          | Shared  | The command completed; no payload to return                     |
+| `<Dto>`            | Bespoke | The operation's actual result payload (e.g. `ProductDto`)       |
+| `NotFound`         | Shared  | The requested entity doesn't exist                              |
+| `ValidationErrors` | Shared  | Input failed FluentValidation checks                            |
+| `Error`            | Shared  | An unexpected/domain error, with a stable machine-readable code |
+| `Failure`          | Shared  | Business-rule failure(s) that aren't input validation           |
+| `NotAuthorized`    | Shared  | The caller isn't allowed to perform this operation              |
+
+Every row but `<Dto>` is a **shared case type** — the same meaning-free record reused across
+unions (see [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)).
+`<Dto>` stands for whatever **bespoke case type** carries that operation's actual payload —
+`ProductDto` for the Products feature. "Bespoke" here means *not meaning-free* — a `ProductDto`
+means exactly one thing, a successfully materialized product — not that it's confined to a single
+union: it's the success case of `CreateProductResult` and `GetProductByIdResult` alike, and appears
+again wrapped as `PagedResult<ProductDto>` inside `GetPagedProductsResult`. That's a third,
+different kind of reuse from a shared case type's — `ProductDto` is reused because every one of
+those operations happens to succeed with the same payload shape, not because its identity is
+deliberately meaning-free the way `Success` or `NotFound`'s is.
+
+Each union in this repo declares only the subset of cases that operation can actually produce —
+see `CreateProductResult` vs `UpdateProductResult` vs `GetProductByIdResult` for three different
+mixes.
+
+> [!WARNING]
+> **Don't design case types as a mirror of HTTP status codes.** A union case describes what
+> *happened in the domain* — it's meaning, not transport. `NotFound` doesn't mean "return 404";
+> it means "the thing wasn't there," full stop. The mapping to a status code (or a gRPC status, or
+> a retry decision, or a log line) belongs entirely to the outermost adapter — here, the
+> controller's `switch` — and nowhere else. The same `NotFound` case, consumed by a queue worker
+> instead of a controller, might mean "drop the message" or "dead-letter it"; it never means
+> "404" in that context, because there is no HTTP response to produce. Keep the case types
+> transport-agnostic so the Application layer stays usable from a worker, a CLI, or a gRPC service
+> without modification.
+
+### Shared case types are meaning-free: TransactionBehavior can't assume what a case means
+
+`Error`, `NotFound`, `Success`, and the rest of this codebase's shared case types are plain,
+meaning-free records. Any union is free to reuse `NotFound` to mean something that should
+*commit*, or to introduce its own bespoke case type that should roll back — nothing about a shared
+case type's identity says what it means for a given operation's transaction. That rules out
+deciding commit-vs-rollback by pattern-matching case types against a fixed list (`response.Value is
+Error or Failure or NotAuthorized or ValidationErrors or NotFound`): that's a closed-world
+assumption baked into generic code, and it would silently misclassify any case type outside the
+list, including one declared after the code that lists them was written.
+
+The decision belongs on the union itself instead, via
+[`ITransactionOutcome<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/ITransactionOutcome.cs):
+
+```csharp
+public interface ITransactionOutcome<TSelf> where TSelf : ITransactionOutcome<TSelf>
+{
+    static abstract bool ShouldCommit(TSelf response);
+}
+```
+
+Each command's union implements it with a `switch` over **its own** cases:
+
+```csharp
+public union UpdateProductResult(Success, NotFound, ValidationErrors, Error)
+    : IValidatable<UpdateProductResult>, ITransactionOutcome<UpdateProductResult>
+{
+    public static bool ShouldCommit(UpdateProductResult response) => response switch
+    {
+        Success => true,
+        NotFound => false,
+        ValidationErrors => false,
+        Error => false,
+    };
+}
+```
+
+`TransactionBehavior` calls `TResponse.ShouldCommit(response)` and never inspects a case type by
+name. Two compiler-enforced guarantees back this, not just convention:
+
+- **Every case, including future ones, must be classified.** `ShouldCommit`'s `switch` is
+  exhaustive over that union's own closed case set — exactly like every other union `switch` in
+  this codebase. Adding a case to `UpdateProductResult` without updating its `ShouldCommit` fails
+  the build with `CS8509`, the same diagnostic
+  [`ExhaustivenessTests`](tests/MediatrUnionPoc.Application.Tests/Unions/ExhaustivenessTests.cs) proves against
+  a plain `switch`. Two more scratch projects,
+  [`ShouldCommitNonExhaustive`](tests/CompileTimeChecks/ShouldCommitNonExhaustive) and
+  [`ShouldCommitExhaustive`](tests/CompileTimeChecks/ShouldCommitExhaustive), prove this
+  specifically for `ShouldCommit` using a union of entirely made-up case types —
+  `Approved`, `Rejected`, `NeedsManualReview` — showing the guarantee holds for arbitrary case
+  types, not just the ones any existing union happens to declare.
+- **Only commands that need a transaction carry the obligation.** `ITransactionOutcome<TResponse>`
+  is required by [`ITransactionalCommand<TResponse>`](src/MediatrUnionPoc.Application/Common/Abstractions/Messages.cs),
+  not by `ICommand<TResponse>` itself — a command with nothing to commit or roll back (one that
+  only publishes an event, say) is a plain `ICommand<TResponse>` and never needs to answer the
+  question at all. A command that *does* declare `ITransactionalCommand<TResponse>` without its
+  response implementing `ShouldCommit` is a compile error at the command declaration, not a
+  pipeline behavior that quietly declines to run because a generic constraint wasn't satisfied. See
+  [`NonTransactionalCommandTests`](tests/MediatrUnionPoc.Application.Tests/Behaviors/NonTransactionalCommandTests.cs)
+  for both halves of this proved together.
+
+[`TransactionBehaviorTests`](tests/MediatrUnionPoc.Application.Tests/Behaviors/TransactionBehaviorTests.cs)
+proves the general case with an `ArbitraryOutcome` union whose case type (`SomeDevsOwnCaseType`)
+shares no name, shape, or relationship with any case type used anywhere else in the codebase — the
+behavior rolls back correctly purely by asking the union, never by recognizing the type.
 
 ### No exceptions for expected outcomes
 
@@ -228,176 +432,77 @@ flowchart TB
   [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
   for why this isn't a hardcoded list of "which case types mean error."
 
-### Shared case types are meaning-free: TransactionBehavior can't assume what a case means
+### Glossary
 
-`Error`, `NotFound`, `Success`, and the rest of this codebase's shared case types are plain,
-meaning-free records. Any union is free to reuse `NotFound` to mean something that should
-*commit*, or to introduce its own bespoke case type that should roll back — nothing about a shared
-case type's identity says what it means for a given operation's transaction. That rules out
-deciding commit-vs-rollback by pattern-matching case types against a fixed list (`response.Value is
-Error or Failure or NotAuthorized or ValidationErrors or NotFound`): that's a closed-world
-assumption baked into generic code, and it would silently misclassify any case type outside the
-list, including one declared after the code that lists them was written.
+This project sits at the intersection of a few architectural patterns, MediatR's own vocabulary,
+one third-party library (Vogen), and a brand-new language feature. This is reference material —
+read what you need when a term above is unfamiliar; it isn't required front-to-back reading before
+the rest of this document makes sense.
 
-The decision belongs on the union itself instead, via
-[`ITransactionOutcome<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/ITransactionOutcome.cs):
+#### Architectural patterns
 
-```csharp
-public interface ITransactionOutcome<TSelf> where TSelf : ITransactionOutcome<TSelf>
-{
-    static abstract bool ShouldCommit(TSelf response);
-}
-```
+| Term | Meaning |
+| --- | --- |
+| **CQRS** (Command Query Responsibility Segregation) | Splits every operation into a **command** (changes state, returns little more than "did it work") or a **query** (reads state, never changes it). Each side can be reasoned about, validated, and optimized independently instead of one method doing both. |
+| **Mediator pattern** | Callers don't invoke handlers directly; they send a message to a mediator, which finds the one handler registered for it. A controller sending `CreateProductCommand` has no compile-time dependency on `CreateProductHandler` at all. MediatR is the library implementing this pattern here. |
+| **Pipeline (middleware) pattern** | Cross-cutting concerns (logging, validation, transactions) are applied as a chain of wrapping steps every request passes through, instead of being duplicated inside every handler. ASP.NET Core's HTTP middleware pipeline is the same idea one layer up the stack; MediatR's pipeline behaviors are the same idea for in-process messages. |
+| **Vertical slice architecture** | Code is organized by *feature* (`Features/Products/Create/` holds that operation's command, handler, validator, and result together) rather than by *technical layer* (a `Commands/` folder, a `Handlers/` folder, each containing pieces of every feature). Changing one operation touches one folder. |
+| **Repository pattern** | An interface (`IProductRepository`) hiding how entities are actually fetched or persisted behind method calls that read like domain operations (`GetByIdAsync`, `AddAsync`) — the caller doesn't know or care whether that's EF Core, a REST call, or a file. |
+| **Unit of Work pattern** | A single object (`IUnitOfWork`) that tracks everything changed during one logical operation and commits or rolls it all back together, so a handler touching multiple repositories doesn't have to save each one individually and risk a partial write. |
 
-Each command's union implements it with a `switch` over **its own** cases:
+#### C# language concepts
 
-```csharp
-public union UpdateProductResult(Success, NotFound, ValidationErrors, Error)
-    : IValidatable<UpdateProductResult>, ITransactionOutcome<UpdateProductResult>
-{
-    public static bool ShouldCommit(UpdateProductResult response) => response switch
-    {
-        Success => true,
-        NotFound => false,
-        ValidationErrors => false,
-        Error => false,
-    };
-}
-```
+| Term | Meaning |
+| --- | --- |
+| **Generics** | Writing code once against a type parameter (`T`, `TRequest`, `TResponse`) instead of once per concrete type. `IRequestHandler<TRequest, TResponse>` is generic so one interface serves every command and query without duplication. |
+| **Interface** | A contract listing members a type must implement, without providing its own implementation. `IProductRepository`, MediatR's `IRequestHandler<,>`, and this repo's own `IValidatable<TSelf>` are all interfaces. |
+| **Static abstract interface member** *(C# 11+)* | An interface member marked `static abstract`: every *implementing type* — not every instance — must supply it, and it's callable through a generic type parameter constrained to that interface (`where TSelf : IValidatable<TSelf>`). This is what lets fully generic pipeline code construct or query a concrete union type it has never seen, by calling `TResponse.FromValidationErrors(...)` or `TResponse.ShouldCommit(...)` — impossible with an ordinary instance member, since there's no instance to call it on yet. |
+| **Record** | A type (`record`, or `record struct`) with compiler-generated structural equality (same property values ⇒ `==`), a generated `ToString()`, and non-destructive mutation via `with`. Used here for immutable shapes like `ProductDto` and every command/query. |
+| **Struct vs. class** | A `struct` is a value type — copied by value, usually stack-allocated, not nullable by default. A `class` is a reference type — copied by reference, heap-allocated, nullable by default. A `union` compiles down to a `struct` (see below), which is part of why it carries no boxing tax for the common case. |
+| **Pattern matching / `switch` expression** | `switch` used as an *expression* producing a value (`var x = input switch { ... }`) rather than a statement that just branches. Every case is tested against the switched value's shape or type, and — for a closed set of possibilities like a union — the compiler can prove every case was handled. |
+| **Union type** *(C# 15 preview — the concept this whole repo tests)* | A closed set of "case types" declared as `union Name(CaseA, CaseB, CaseC)`. A value of that type is always exactly one of the listed cases, never null, never anything outside the list. See [The C# `union` type](#the-c-union-type) for the full mechanics. |
+| **Exhaustiveness checking** | The compiler verifying that a `switch` over a closed set of possibilities (a union, or an enum with no `default`) handles every member of that set, refusing to compile (`CS8509`) if one is missing. This is what turns "forgot to handle a new case" into a build failure instead of a runtime gap. |
+| **Source generator** | A compiler plugin that generates additional C# source at build time, usually driven by an attribute. Vogen uses one to turn a six-line `ValueObject<Guid>` declaration into a full value type with factories, equality, and serialization support — see [Vogen: avoiding primitive obsession](#vogen-avoiding-primitive-obsession). |
 
-`TransactionBehavior` calls `TResponse.ShouldCommit(response)` and never inspects a case type by
-name. Two compiler-enforced guarantees back this, not just convention:
+#### MediatR vocabulary
 
-- **Every case, including future ones, must be classified.** `ShouldCommit`'s `switch` is
-  exhaustive over that union's own closed case set — exactly like every other union `switch` in
-  this codebase. Adding a case to `UpdateProductResult` without updating its `ShouldCommit` fails
-  the build with `CS8509`, the same diagnostic
-  [`ExhaustivenessTests`](tests/MediatrUnionPoc.Application.Tests/Unions/ExhaustivenessTests.cs) proves against
-  a plain `switch`. Two more scratch projects,
-  [`ShouldCommitNonExhaustive`](tests/CompileTimeChecks/ShouldCommitNonExhaustive) and
-  [`ShouldCommitExhaustive`](tests/CompileTimeChecks/ShouldCommitExhaustive), prove this
-  specifically for `ShouldCommit` using a union of entirely made-up case types —
-  `Approved`, `Rejected`, `NeedsManualReview` — showing the guarantee holds for arbitrary case
-  types, not just the ones any existing union happens to declare.
-- **Only commands that need a transaction carry the obligation.** `ITransactionOutcome<TResponse>`
-  is required by [`ITransactionalCommand<TResponse>`](src/MediatrUnionPoc.Application/Common/Abstractions/Messages.cs),
-  not by `ICommand<TResponse>` itself — a command with nothing to commit or roll back (one that
-  only publishes an event, say) is a plain `ICommand<TResponse>` and never needs to answer the
-  question at all. A command that *does* declare `ITransactionalCommand<TResponse>` without its
-  response implementing `ShouldCommit` is a compile error at the command declaration, not a
-  pipeline behavior that quietly declines to run because a generic constraint wasn't satisfied. See
-  [`NonTransactionalCommandTests`](tests/MediatrUnionPoc.Application.Tests/Behaviors/NonTransactionalCommandTests.cs)
-  for both halves of this proved together.
+| Term | Meaning |
+| --- | --- |
+| **`IRequest<TResponse>`** | MediatR's marker interface for "this message expects a `TResponse` back." Every command and query here implements it indirectly through this repo's own `ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>` (below). |
+| **`IRequestHandler<TRequest, TResponse>`** | MediatR's interface for "the one place that knows how to handle a `TRequest` and produce a `TResponse`." MediatR resolves and calls exactly one registered handler per request type. |
+| **`IPipelineBehavior<TRequest, TResponse>`** | MediatR's interface for a pipeline step wrapping every request's handling: it receives the request plus a delegate to call the *next* step (another behavior, or the handler itself). `LoggingBehavior`, `ValidationBehavior`, and `TransactionBehavior` all implement this, and run in the order they're registered. |
+| **`ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>`** *(this repo's own marker interfaces — not part of MediatR)* | Sit between `IRequest<TResponse>` and a concrete request to say which pipeline behaviors apply: `IQuery<TResponse>` never runs `TransactionBehavior`; `ICommand<TResponse>` may mutate state with no transaction assumption; `ITransactionalCommand<TResponse>` additionally requires its `TResponse` implement `ITransactionOutcome<TResponse>`. See [`Messages.cs`](src/MediatrUnionPoc.Application/Common/Abstractions/Messages.cs). |
 
-[`TransactionBehaviorTests`](tests/MediatrUnionPoc.Application.Tests/Behaviors/TransactionBehaviorTests.cs)
-proves the general case with an `ArbitraryOutcome` union whose case type (`SomeDevsOwnCaseType`)
-shares no name, shape, or relationship with any case type used anywhere else in the codebase — the
-behavior rolls back correctly purely by asking the union, never by recognizing the type.
+#### Vogen vocabulary
 
-## Project layout
+| Term | Meaning |
+| --- | --- |
+| **Value object** | A type identified by *what it holds*, not by identity, and typically immutable — two `Money` instances wrapping `9.99m` are the same value. Contrast with an *entity* (`Product`), which keeps its identity even as its other properties change. |
+| **Primitive obsession** | A code smell where domain concepts (a product ID, a monetary amount) are represented directly by a bare primitive (`Guid`, `decimal`) instead of their own type — letting an arbitrary `Guid` be passed where a `ProductId` was meant, or a negative `decimal` be accepted where a `Money` should never have been constructible at all. Vogen exists to eliminate this at compile time with almost no boilerplate. |
+| **`[ValueObject<T>]`** *(Vogen-specific)* | Vogen's attribute; placed on a `partial struct`, it triggers the source generator to build that value type's factories, equality, and (per selected `Conversions`) serialization/EF Core support around the wrapped primitive `T`. |
 
-| Project                          | Responsibility                                                            |
-| --------------------------------- | --------------------------------------------------------------------------- |
-| `MediatrUnionPoc.Domain`          | Entities, Vogen value objects (`ProductId`, `Money`), repository/UoW interfaces |
-| `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors |
-| `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext`, repository + unit-of-work implementations             |
-| `MediatrUnionPoc.Api`             | Controllers that map each union to an `IActionResult`                      |
-| `MediatrUnionPoc.Domain.Tests`    | Unit tests for `Money`, `ProductId`, and `Product`                          |
-| `MediatrUnionPoc.Application.Tests` | xUnit + NSubstitute — union mechanics, pipeline behaviors, handlers, validators |
-| `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core InMemory provider, end to end |
-| `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests           |
-| `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions enforcing the layering above               |
+#### This repo's own types
 
-Application code is organized as **vertical slices** under `Features/Products/<Operation>/`
-(`Create`, `Update`, `Delete`, `GetById`, `GetPaged`) — everything for one operation
-(command/query, validator, handler, result union) lives together, rather than being split across
-horizontal "Commands/Handlers/Validators" folders.
+| Term | Meaning |
+| --- | --- |
+| **`IValidatable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can build that union's own validation-failure case generically, without ever naming the concrete union type. |
+| **`ITransactionOutcome<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract bool ShouldCommit(TSelf)`) so `TransactionBehavior` can ask the union itself whether to commit or roll back, without inspecting which case type came back by name. See [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means). |
+| **Case type** *(C# spec term)* | Any one of the types listed in a union's declaration (`union Name(CaseA, CaseB, CaseC)` — `CaseA`, `CaseB`, and `CaseC` are all case types of `Name`). This repo further splits case types into two roles it names itself — **shared** and **bespoke**, below — because the spec term alone doesn't distinguish them. |
+| **Shared case type** *(project-specific)* | A plain, meaning-free record (`Success`, `NotFound`, `Error`, ...) reused across many unions. A shared case type's identity never implies what it means for commit/rollback or anything else — only the union that declares it decides that; see [Case types used here](#case-types-used-here). |
+| **Bespoke case type** *(project-specific)* | A case type carrying one operation's actual payload (`ProductDto`, a hypothetical `PongDto`) rather than a meaning-free shared record. It can still appear in more than one union — `ProductDto` is the success case of both `CreateProductResult` and `GetProductByIdResult`, and again wrapped in `PagedResult<ProductDto>` inside `GetPagedProductsResult` — but unlike a shared case type, that reuse is because those operations happen to succeed with the same payload shape, not because its identity is deliberately meaning-free. |
 
-## Getting started
-
-```bash
-dotnet build
-dotnet test
-dotnet run --project src/MediatrUnionPoc.Api
-```
-
-`global.json` pins the SDK to the exact `11.0.100-rc.1...` preview build this repo was written
-against. Without it, an IDE's own SDK resolver (Visual Studio in particular) can silently fall
-back to the newest *stable* SDK it finds and fail with `NETSDK1045` ("does not support targeting
-.NET 11.0") — `allowPrerelease: true` is what tells it a preview SDK is expected here, not a
-missing `<TargetFramework>` value. If VS still shows the error after pulling this file, close and
-reopen the solution so it re-resolves.
-
-`.editorconfig` configures the analyzer suite referenced by every project (StyleCop.Analyzers,
-SonarAnalyzer.CSharp, IDisposableAnalyzers, AsyncFixer, Microsoft.VisualStudio.Threading.Analyzers)
-— every suppression in it is commented with why, not just silenced blanket. One is worth calling
-out on its own: `StyleCop.Analyzers`' `SA1649` rule crashes outright on a file containing a
-`union` declaration (`Unhandled declaration kind: UnionDeclaration`) — the analyzer package
-predates this preview language feature. Two packages that showed up as noise during setup are
-deliberately *not* referenced: `SonarAnalyzer.CSharp.Styling` (SonarSource's own internal
-code-style ruleset, not meant for general consumption) and `Roslynator.Testing.CSharp.MSTest` (a
-testing helper for people writing unit tests of their own Roslyn analyzers, not a code analyzer).
-
-## Vogen: avoiding primitive obsession
-
-> Deeper, citation-backed research behind this section lives in
-> [`docs/research/vogen-research.md`](docs/research/vogen-research.md) — primary sources (Vogen's
-> README and official docs site) for the factory/equality/conversion behavior described below, and
-> the defense-in-depth reasoning behind the EF Core converter choice.
-
-[Vogen](https://github.com/SteveDunn/Vogen) is a source generator that turns a bare primitive
-(`Guid`, `decimal`, `string`, ...) into a distinct, validated value type — so `ProductId` and an
-unrelated `Guid` parameter can never be swapped by mistake, and an invalid value can never be
-constructed in the first place.
-
-```csharp
-[ValueObject<Guid>(conversions: Conversions.SystemTextJson)]
-public readonly partial struct ProductId
-{
-    private static Validation Validate(Guid input) =>
-        input != Guid.Empty ? Validation.Ok : Validation.Invalid("ProductId cannot be an empty guid.");
-
-    public static ProductId New() => From(Guid.NewGuid());
-}
-```
-
-From this ~6-line declaration, Vogen generates:
-
-- **Factory methods** — `ProductId.From(guid)` (throws on invalid input) and `TryFrom(guid, out id)`
-  (doesn't). `Validate` runs inside *every* generated factory, so an empty-guid `ProductId` cannot
-  exist anywhere in the codebase — not just at the API boundary where FluentValidation already
-  checks it.
-- **Structural equality, hashing, and `ToString`** — two `ProductId`s wrapping the same `Guid` are
-  equal; `record`-style value semantics without needing `record` (this has to be a `struct` per
-  Vogen's own constraints, and `readonly partial struct` is the declaration shape it generates
-  into).
-- **Conversions**, opt-in per flag on the attribute. This repo uses `Conversions.SystemTextJson`
-  only, so `ProductId` serializes as a bare GUID string (`"..."`), not as a wrapper object — see
-  [`ProductDto`](src/MediatrUnionPoc.Application/Features/Products/Common/ProductDto.cs) for where
-  that matters on the wire.
-
-`Money` ([`Money.cs`](src/MediatrUnionPoc.Domain/Money.cs)) follows the identical pattern over
-`decimal`, rejecting negative amounts.
-
-Two Vogen-specific pitfalls we hit while building this — full detail in
-[Notes and gotchas](#notes-and-gotchas) — are worth knowing about up front if you add your own
-value object: don't set `PrivateAssets="all"` on the `Vogen` package reference, and don't reach
-for Vogen's generated `EfCoreValueConverter` from a persistence-agnostic Domain project (this repo
-hand-writes its EF Core converters in Infrastructure instead — see
-[`ValueConverters.cs`](src/MediatrUnionPoc.Infrastructure/ValueConverters.cs)).
-
-## MediatR, for the unfamiliar
-
-> Deeper, citation-backed research behind this section lives in
-> [`docs/research/mediatr-research.md`](docs/research/mediatr-research.md) — primary sources
-> (MediatR's own repo and release notes) for the pipeline behavior mechanics below, plus a worked
-> sequence diagram tracing `CreateProductCommand` through the full pipeline.
+## Adding a new command or query
 
 MediatR is an in-process mediator: instead of a controller calling a service directly, it sends a
 message object and MediatR routes it to exactly one handler. This is what makes CQRS's
 "Commands write, Queries read" split easy to enforce — commands and queries are just different
 message types, and cross-cutting concerns (logging, validation, transactions) wrap around all of
 them uniformly via **pipeline behaviors**, the MediatR equivalent of ASP.NET Core middleware.
+
+> Deeper, citation-backed research behind MediatR's pipeline mechanics lives in
+> [`docs/research/mediatr-research.md`](docs/research/mediatr-research.md) — primary sources
+> (MediatR's own repo and release notes), plus a worked sequence diagram tracing
+> `CreateProductCommand` through the full pipeline.
 
 ```mermaid
 flowchart LR
@@ -406,8 +511,6 @@ flowchart LR
     Handler --> Behaviors
     Behaviors --> Controller
 ```
-
-### Adding a new command or query
 
 Every operation in this repo has five pieces. Using a hypothetical `Ping` query as a minimal,
 non-Product example:
@@ -432,8 +535,11 @@ public sealed record PingQuery(string Message) : IQuery<PingResult>;
 ```
 
 **3. (Optional) add a [FluentValidation](https://github.com/FluentValidation/FluentValidation)
-validator** — picked up automatically by assembly scanning, no manual registration needed. Deeper,
-citation-backed research on FluentValidation's async/cascade/DI behavior in this pipeline lives in
+validator** — picked up automatically by assembly scanning, no manual registration needed.
+FluentValidation is this POC's illustrative choice for wiring validation, not a prescription — any
+approach that can short-circuit into the response union via `IValidatable<TSelf>` fits the pattern
+equally well. Deeper, citation-backed research on FluentValidation's async/cascade/DI behavior in
+this pipeline lives in
 [`docs/research/fluentvalidation-research.md`](docs/research/fluentvalidation-research.md):
 
 ```csharp
@@ -469,139 +575,6 @@ return result switch
 That's it — no DI registration step for the handler or validator; both are found via
 `services.AddMediatR(...)` and `services.AddValidatorsFromAssembly(...)` in
 [`DependencyInjection.cs`](src/MediatrUnionPoc.Application/DependencyInjection.cs).
-
-## The C# `union` type
-
-> Deeper, citation-backed research behind this section lives in
-> [`docs/research/csharp-union-type-research.md`](docs/research/csharp-union-type-research.md) —
-> primary sources (language reference, feature spec, LDM issue, compiler bug tracker) for every
-> claim below, plus open questions not yet settled upstream.
-
-```csharp
-public union CreateProductResult(ProductDto, ValidationErrors, Error);
-```
-
-This declares a closed set of three **case types**. The compiler generates a struct implementing
-`IUnion { object? Value { get; } }`, plus an implicit conversion from each case type:
-
-```csharp
-CreateProductResult ok = new ProductDto(id, "Widget", 9.99m);   // implicit conversion
-CreateProductResult bad = new Error("boom", "BOOM");            // implicit conversion
-```
-
-Pattern matching unwraps to the *contained* case, not the union wrapper itself:
-
-```csharp
-var response = result switch
-{
-    ProductDto dto => Ok(dto),          // matches result.Value is ProductDto
-    ValidationErrors e => BadRequest(e),
-    Error err => Problem(err.Message),
-    // no default/discard needed — the compiler knows these are the only three cases
-};
-```
-
-Unions can carry a body, including implementing interfaces — which is how this repo gets a union
-to expose a static factory method usable from fully generic code (see `IValidatable<TSelf>`
-above). This only works because C# now allows **static abstract members on interfaces** —
-without that, a generic pipeline behavior would have no way to construct an arbitrary union type
-it has never seen.
-
-### Switch-and-unwrap: why controllers never return the union directly
-
-Every action in [`ProductsController`](src/MediatrUnionPoc.Api/Controllers/ProductsController.cs)
-`switch`es on the union and returns a plain DTO/`ProblemPayload`/status code — it never does
-`return Ok(result)` with the raw union itself.
-
-> [!NOTE]
-> It's not because `System.Text.Json` would otherwise serialize the generated struct's own
-> `Value` property as a wrapper. .NET 11's `System.Text.Json` has built-in awareness of `IUnion`
-> and transparently flattens to whichever case type is boxed inside, with no wrapper at all:
-> `JsonSerializer.Serialize((CreateProductResult)new ProductDto(...))` produces the exact same
-> bytes as serializing the `ProductDto` directly. See
-> [`UnionJsonSerializationTests`](tests/MediatrUnionPoc.Application.Tests/Unions/UnionJsonSerializationTests.cs)
-> for the proof.
-
-The real reason to switch first has nothing to do with serialization shape:
-
-- **There is no wire-level case discriminator.** Even with automatic flattening, nothing in the
-  JSON says *which* case came back. `Success` serializes to a completely uninformative `{}`; a
-  `ProductDto` and a `NotFound` produce different-looking objects only because their fields happen
-  to differ — there is no formal `"case"` or `"$type"` tag guaranteeing that. A consumer receiving
-  raw bytes, outside the context of (say) an HTTP status code, cannot reliably tell "succeeded with
-  nothing to report" apart from "an unrecognized case was added and I don't know what it means."
-- **Each case still needs boundary-specific context attached.** A `NotFound` needs to become
-  HTTP 404, not just "an object shaped like `{"Id": "..."}"`; a `ValidationErrors` needs to become
-  an RFC 7807 problem response with per-field errors. Nothing about serialization does that
-  mapping — only code that inspects which case came back can, which is exactly what the
-  `switch` in every controller action does.
-- **The union is for code that's still in-process; the unwrapped result is for anything crossing a
-  boundary.** Controller, queue consumer, CLI — whichever boundary the domain outcome meets,
-  that's where the `switch` belongs, turning a domain outcome into whatever shape *that* boundary
-  actually needs.
-
-## Case types used here
-
-| Case               | Role    | Meaning                                                         |
-| ------------------ | ------- | --------------------------------------------------------------- |
-| `Success`          | Shared  | The command completed; no payload to return                     |
-| `<Dto>`            | Bespoke | The operation's actual result payload (e.g. `ProductDto`)       |
-| `NotFound`         | Shared  | The requested entity doesn't exist                              |
-| `ValidationErrors` | Shared  | Input failed FluentValidation checks                            |
-| `Error`            | Shared  | An unexpected/domain error, with a stable machine-readable code |
-| `Failure`          | Shared  | Business-rule failure(s) that aren't input validation           |
-| `NotAuthorized`    | Shared  | The caller isn't allowed to perform this operation              |
-
-Every row but `<Dto>` is a **shared case type** — the same meaning-free record reused across
-unions (see [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)).
-`<Dto>` stands for whatever **bespoke case type** carries that operation's actual payload —
-`ProductDto` for the Products feature. "Bespoke" here means *not meaning-free* — a `ProductDto`
-means exactly one thing, a successfully materialized product — not that it's confined to a single
-union: it's the success case of `CreateProductResult` and `GetProductByIdResult` alike, and appears
-again wrapped as `PagedResult<ProductDto>` inside `GetPagedProductsResult`. That's a third,
-different kind of reuse from a shared case type's — `ProductDto` is reused because every one of
-those operations happens to succeed with the same payload shape, not because its identity is
-deliberately meaning-free the way `Success` or `NotFound`'s is.
-
-Each union in this repo declares only the subset of cases that operation can actually produce —
-see `CreateProductResult` vs `UpdateProductResult` vs `GetProductByIdResult` for three different
-mixes.
-
-> [!WARNING]
-> **Don't design case types as a mirror of HTTP status codes.** A union case describes what
-> *happened in the domain* — it's meaning, not transport. `NotFound` doesn't mean "return 404";
-> it means "the thing wasn't there," full stop. The mapping to a status code (or a gRPC status, or
-> a retry decision, or a log line) belongs entirely to the outermost adapter — here, the
-> controller's `switch` — and nowhere else. The same `NotFound` case, consumed by a queue worker
-> instead of a controller, might mean "drop the message" or "dead-letter it"; it never means
-> "404" in that context, because there is no HTTP response to produce. Keep the case types
-> transport-agnostic so the Application layer stays usable from a worker, a CLI, or a gRPC service
-> without modification.
-
-## Speculative shared case types for a larger API
-
-Not implemented here, but worth having in your vocabulary for a real project — none of these map
-1:1 onto an HTTP status, deliberately. Like the shared case types actually used in this repo, each
-one below is meant to be a meaning-free record reused across many unions, not tied to any single
-operation:
-
-| Case                                    | Meaning                                                                 |
-| ----------------------------------------- | -------------------------------------------------------------------------- |
-| `Accepted(jobId)`                        | Work was queued/deferred, not completed synchronously                     |
-| `Conflict(currentVersion)`               | Optimistic-concurrency version mismatch on update                         |
-| `Locked(heldBy)`                         | Resource is pessimistically locked by another process                    |
-| `RateLimited(retryAfter)`                | Caller hit a throttling limit                                             |
-| `Timeout(dependency)`                    | A downstream dependency didn't respond in time                           |
-| `QuotaExceeded(limit, current)`          | A business quota (not a rate limit) was exceeded                          |
-| `PartialSuccess(succeeded, failed)`      | A batch operation partially completed                                     |
-| `AlreadyProcessed(idempotencyKey)`       | A duplicate request was detected and safely ignored                       |
-| `RequiresConfirmation(prompt)`           | The action needs an explicit second confirmation before proceeding        |
-| `Stale(asOf)`                            | Data was served from a cache/read-replica and may be out of date          |
-| `Deprecated(replacement)`                | The operation still works but callers should migrate                      |
-
-A queue consumer, a scheduled job, and an HTTP controller could all share the exact same
-`Conflict`/`Locked`/`AlreadyProcessed` cases and each map them to something completely different
-in their own boundary code.
 
 ## Request lifecycle
 
@@ -679,6 +652,13 @@ named policy), wired into the MediatR pipeline the same way `ValidationBehavior`
 `TransactionBehavior` already are: a marker interface on the request, a marker interface on the
 response union, and a pipeline behavior that short-circuits generically without knowing either
 concrete type.
+
+> [!NOTE]
+> What follows is *an example configuration* of the authorization mechanism, not the only valid
+> way to wire it — a different project might gate different operations, use different policies, or
+> skip authorization entirely for commands that don't need it. This section is revisited with a
+> deeper pass once resource-based authorization exists in this repo; for now it only documents the
+> `Administrator`-policy example built here.
 
 ### How it fits the pipeline
 
@@ -875,6 +855,31 @@ Reading the diagram:
   handler chose to return, not any `try`/`catch` structure.
 - Every branch still passes back through `LoggingBehavior` on the way out, so every outcome —
   success or not — gets logged exactly once, symmetrically.
+
+## Speculative shared case types for a larger API
+
+Not implemented here, but worth having in your vocabulary for a real project — none of these map
+1:1 onto an HTTP status, deliberately. Like the shared case types actually used in this repo, each
+one below is meant to be a meaning-free record reused across many unions, not tied to any single
+operation:
+
+| Case                                    | Meaning                                                                 |
+| ----------------------------------------- | -------------------------------------------------------------------------- |
+| `Accepted(jobId)`                        | Work was queued/deferred, not completed synchronously                     |
+| `Conflict(currentVersion)`               | Optimistic-concurrency version mismatch on update                         |
+| `Locked(heldBy)`                         | Resource is pessimistically locked by another process                    |
+| `RateLimited(retryAfter)`                | Caller hit a throttling limit                                             |
+| `Timeout(dependency)`                    | A downstream dependency didn't respond in time                           |
+| `QuotaExceeded(limit, current)`          | A business quota (not a rate limit) was exceeded                          |
+| `PartialSuccess(succeeded, failed)`      | A batch operation partially completed                                     |
+| `AlreadyProcessed(idempotencyKey)`       | A duplicate request was detected and safely ignored                       |
+| `RequiresConfirmation(prompt)`           | The action needs an explicit second confirmation before proceeding        |
+| `Stale(asOf)`                            | Data was served from a cache/read-replica and may be out of date          |
+| `Deprecated(replacement)`                | The operation still works but callers should migrate                      |
+
+A queue consumer, a scheduled job, and an HTTP controller could all share the exact same
+`Conflict`/`Locked`/`AlreadyProcessed` cases and each map them to something completely different
+in their own boundary code.
 
 ## Notes and gotchas
 
