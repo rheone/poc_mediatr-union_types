@@ -61,6 +61,45 @@ public class PagedResultTests
         Assert.Equal("Items", ex.ParamName);
     }
 
+    /// <summary>Verifies a <c>with</c> expression cannot smuggle null into <see cref="PagedResult{T}.Items"/>.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void With_NullItems_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        var page = new PagedResult<string>(Items: [], PageNumber: 1, PageSize: 10, TotalCount: 0);
+
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => page with { Items = null! });
+
+        // Assert
+        Assert.Equal("Items", ex.ParamName);
+    }
+
+    /// <summary>Verifies a valid <c>with</c> expression still copies the record with the changed member and preserves value equality.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void With_ValidPageNumber_CopiesRecordAndPreservesEquality_Test()
+    {
+        // Arrange
+        IReadOnlyList<string> items = ["a", "b"];
+        var page = new PagedResult<string>(items, PageNumber: 1, PageSize: 2, TotalCount: 4);
+
+        // Act
+        var next = page with
+        {
+            PageNumber = 2,
+        };
+        var same = page with { };
+
+        // Assert
+        Assert.Equal(2, next.PageNumber);
+        Assert.Same(items, next.Items);
+        Assert.NotEqual(page, next);
+        Assert.Equal(page, same);
+        Assert.Equal(page.GetHashCode(), same.GetHashCode());
+    }
+
     // PageSize 0 is deliberately not guarded here: TotalPages documents it as a caller precondition,
     // enforced upstream by GetPagedProductsValidator.
 }
