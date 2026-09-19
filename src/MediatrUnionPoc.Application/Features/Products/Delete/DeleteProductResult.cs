@@ -9,8 +9,13 @@ using MediatrUnionPoc.Domain;
 namespace MediatrUnionPoc.Application.Features.Products.Delete;
 
 /// <summary>
-/// Everything a "delete" command can come back as. Deliberately has no <see cref="ValidationErrors"/>
-/// case — <see cref="DeleteProductCommand"/> has only one field to validate (a non-empty id), so a
+/// Everything a "delete" command can come back as: the product was removed
+/// (<see cref="Success"/>), no product with the given id exists — including a second delete of the
+/// same id, since removal isn't remembered (<see cref="NotFound{TId}"/>), the id was malformed
+/// (<see cref="Error"/>, folded in below), or the caller is neither the product's owner nor an
+/// administrator (<see cref="NotAuthorized"/> — see <see cref="DeleteProductCommand"/> for how that
+/// check runs). Deliberately has no <see cref="ValidationErrors"/> case of its own —
+/// <see cref="DeleteProductCommand"/> has only one field to validate (a non-empty id), so a
 /// failure there is folded into <see cref="Error"/> instead of adding a rarely-used fourth case.
 /// </summary>
 [DebuggerDisplay("{Value}")]

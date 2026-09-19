@@ -7,25 +7,39 @@ using Microsoft.Extensions.Logging;
 namespace MediatrUnionPoc.Application.Common.Behaviors;
 
 /// <summary>
-/// Wraps <see cref="ITransactionalCommand{TResponse}"/> execution in a unit-of-work transaction —
-/// a plain <see cref="ICommand{TResponse}"/> that never opted into <see cref="ITransactionalCommand{TResponse}"/>
-/// (e.g. one that only publishes an event, with no persistence to commit or roll back) simply
-/// doesn't match this behavior's generic constraints and skips it entirely; that's a deliberate
-/// opt-in, not every command needing a transaction. Commit-vs-rollback is decided by asking
-/// the union itself — <see cref="ITransactionOutcome{TSelf}.ShouldCommit"/> — never by this
-/// behavior inspecting which case type came back. Shared case types are meaning-free and reusable
-/// across unions (an <c>Error</c> in one union might mean something entirely different in
-/// another), so only the union that declares a case type gets to say what that case means for its own
-/// transaction; this behavior stays generic over every command without knowing any of them.
+/// Wraps <see cref="ITransactionalCommand{TResponse}"/> execution in a unit-of-work transaction,
+/// committing or rolling back based on which case the returned union reports.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A plain <see cref="ICommand{TResponse}"/> that never opts into
+/// <see cref="ITransactionalCommand{TResponse}"/> (e.g. one that only publishes an event, with no
+/// persistence to commit or roll back) simply doesn't match this behavior's generic constraints
+/// and is skipped by the pipeline entirely — opting into a transaction is deliberate per command,
+/// not automatic.
+/// </para>
+/// <para>
+/// Commit-vs-rollback is decided by asking the union itself —
+/// <see cref="ITransactionOutcome{TSelf}.ShouldCommit"/> — never by this behavior inspecting
+/// which case type came back. Shared case types are meaning-free and reused across unions (an
+/// <c>Error</c> in one union might mean something entirely different in another), so only the
+/// union that declares a case type gets to say what that case means for its own transaction; this
+/// behavior stays generic over every command without knowing any of their case types.
+/// </para>
+/// <para>
 /// Because each union's <c>ShouldCommit</c> implementation is a <c>switch</c> over its own closed
 /// set of case types, the compiler forces every case — including ones added after this behavior
 /// was written — to be classified. There is no default branch here to silently commit (or roll
 /// back) an unrecognized case, because this behavior never sees case types at all.
-/// No exceptions are used for this branching, since a domain-level failure (validation, not-found,
+/// </para>
+/// <para>
+/// No exceptions are used for this branching: a domain-level failure (validation, not-found,
 /// unauthorized, business-rule failure) is an ordinary, expected outcome, not an exceptional one.
 /// A thrown exception still triggers a rollback, but is reserved for genuinely unexpected
-/// infrastructure failures.
-/// </summary>
+/// infrastructure failures, and is rethrown unmodified after the rollback so the caller sees the
+/// original exception.
+/// </para>
+/// </remarks>
 /// <typeparam name="TRequest">The transactional command type.</typeparam>
 /// <typeparam name="TResponse">The command's response union type.</typeparam>
 public sealed class TransactionBehavior<TRequest, TResponse>(
@@ -66,6 +80,8 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
         }
         catch (Exception ex)
         {
+            // Log the request-specific rollback context here, then rethrow the original exception
+            // unmodified (not wrapped) so its type and stack trace survive for the caller.
             logger.LogError(
                 ex,
                 "{RequestName} threw; rolling back transaction",

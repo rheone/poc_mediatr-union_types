@@ -12,7 +12,7 @@ namespace MediatrUnionPoc.Application.Common.Abstractions;
 public interface IAuthorizable<TSelf>
     where TSelf : IAuthorizable<TSelf>
 {
-    /// <summary>Builds this union's <c>NotAuthorized</c> case from an authorization failure.</summary>
+    /// <summary>Builds this union's <see cref="NotAuthorized"/> case from an authorization failure.</summary>
     /// <param name="notAuthorized">The authorization failure to represent.</param>
     /// <returns>An instance of <typeparamref name="TSelf"/> carrying <paramref name="notAuthorized"/>.</returns>
     static abstract TSelf FromNotAuthorized(NotAuthorized notAuthorized);

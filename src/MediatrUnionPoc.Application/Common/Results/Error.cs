@@ -21,9 +21,10 @@ public sealed record Error(
     /// <summary>
     /// The <see cref="Code"/> an <see cref="Error"/> carries when a union with no
     /// <see cref="ValidationErrors"/> case of its own folds a validation failure into <see cref="Error"/>
-    /// instead (see <c>DeleteProductResult.FromValidationErrors</c> and similar). This is a fact
-    /// about <see cref="Error"/>'s own vocabulary of stable codes — not a property of
-    /// <see cref="ValidationErrors"/>, which never carries or needs a code itself.
+    /// instead (see
+    /// <see cref="MediatrUnionPoc.Application.Features.Products.Delete.DeleteProductResult.FromValidationErrors(ValidationErrors)"/>
+    /// and similar). This is a fact about <see cref="Error"/>'s own vocabulary of stable codes — not a
+    /// property of <see cref="ValidationErrors"/>, which never carries or needs a code itself.
     /// </summary>
     public const string ValidationFailureCode = "VALIDATION_ERROR";
 

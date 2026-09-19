@@ -16,5 +16,6 @@ public sealed class AdministratorRequirement : IAuthorizationRequirement
     public AdministratorRequirement(params string[] allowedRoles) => AllowedRoles = allowedRoles;
 
     /// <summary>The roles that satisfy this requirement — matching any one of them is sufficient.</summary>
+    /// <value>A possibly-empty set of role names; an empty set means the requirement is automatically satisfied.</value>
     public IReadOnlyCollection<string> AllowedRoles { get; }
 }

@@ -9,8 +9,9 @@ namespace MediatrUnionPoc.Application.Common.Behaviors;
 /// <summary>
 /// Runs all registered FluentValidation validators for <typeparamref name="TRequest"/>.
 /// On failure, short-circuits the pipeline by asking the union response itself (via the
-/// static abstract factory on <see cref="IValidatable{TSelf}"/>) to build its ValidationErrors case
-/// — the handler never runs and never throws for this, invalid input is simply another outcome.
+/// static abstract factory on <see cref="IValidatable{TSelf}"/>) to build its <c>ValidationErrors</c>
+/// case — the handler never runs and never throws for this, invalid input is simply another
+/// outcome.
 /// </summary>
 /// <typeparam name="TRequest">The MediatR request type being validated.</typeparam>
 /// <typeparam name="TResponse">The request's response union type, which must implement <see cref="IValidatable{TSelf}"/>.</typeparam>
@@ -30,6 +31,8 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
     {
         if (!validators.Any())
         {
+            // No validators registered for TRequest — skip building a ValidationContext and
+            // running FluentValidation's async machinery for nothing.
             return await next(cancellationToken);
         }
 

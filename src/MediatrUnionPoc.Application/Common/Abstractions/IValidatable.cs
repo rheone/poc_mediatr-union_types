@@ -11,7 +11,7 @@ namespace MediatrUnionPoc.Application.Common.Abstractions;
 public interface IValidatable<TSelf>
     where TSelf : IValidatable<TSelf>
 {
-    /// <summary>Builds this union's <c>ValidationErrors</c>-equivalent case from a validation failure.</summary>
+    /// <summary>Builds this union's <see cref="ValidationErrors"/>-equivalent case from a validation failure.</summary>
     /// <param name="errors">The validation failures to represent.</param>
     /// <returns>An instance of <typeparamref name="TSelf"/> carrying <paramref name="errors"/>.</returns>
     static abstract TSelf FromValidationErrors(ValidationErrors errors);

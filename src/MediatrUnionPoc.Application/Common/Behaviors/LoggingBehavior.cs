@@ -24,6 +24,10 @@ public sealed class LoggingBehavior<TRequest, TResponse>(
 
         var response = await next(cancellationToken);
 
+        // This behavior is generic over every MediatR request, not just union-returning ones, so
+        // it can't assume TResponse is a union. When it is, log the case's own runtime type (e.g.
+        // "NotFound") rather than the union's declared type, which would be the same for every
+        // case and tell a reader nothing. Non-union responses fall back to their own type name.
         var caseName = response switch
         {
             IUnion union => union.Value?.GetType().Name ?? "null",

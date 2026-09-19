@@ -6,8 +6,9 @@ namespace MediatrUnionPoc.Application.Common.Authorization;
 /// <summary>
 /// Succeeds an <see cref="OperationAuthorizationRequirement"/> for any resource type when the
 /// caller holds the <c>Administrator</c> role and the requirement's
-/// <see cref="OperationAuthorizationRequirement.Name"/> is one of <see cref="_allowedOperationNames"/>
-/// — a role-based bypass layered onto whichever resource-based handler(s) (e.g.
+/// <see cref="OperationAuthorizationRequirement.Name"/> is one of the names passed as
+/// <paramref name="allowedOperationNames"/> — a role-based bypass layered onto whichever
+/// resource-based handler(s) (e.g.
 /// <see cref="OwnerAuthorizationHandler{TResource}"/>) are already registered for the same
 /// requirement/resource pair. This works without any OR logic in application code because ASP.NET
 /// Core's own authorization evaluation succeeds a requirement as soon as any one registered handler

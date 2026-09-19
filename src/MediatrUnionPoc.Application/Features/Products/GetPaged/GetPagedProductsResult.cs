@@ -10,9 +10,25 @@ using MediatrUnionPoc.Domain;
 namespace MediatrUnionPoc.Application.Features.Products.GetPaged;
 
 /// <summary>
-/// Everything a paged listing can come back as. No <c>NotFound</c>
-/// case — an out-of-range page simply returns an empty <see cref="PagedResult{T}.Items"/> collection, not a failure.
+/// Everything a paged product listing can come back as. Has no <c>NotFound</c> case — an
+/// out-of-range <see cref="GetPagedProductsQuery.PageNumber"/> is not a failure, just a page whose
+/// <see cref="PagedResult{T}.Items"/> collection is empty.
 /// </summary>
+/// <remarks>
+/// <para>What each case means for this specific operation, as distinct from the generic meaning
+/// documented on the case type itself in <c>Common/Results/</c> (e.g. <see cref="Error"/>):</para>
+/// <list type="bullet">
+/// <item><description><see cref="PagedResult{T}"/> of <see cref="ProductDto"/> — the requested
+/// page, ordered by product name, plus enough metadata (<see cref="PagedResult{T}.PageNumber"/>,
+/// <see cref="PagedResult{T}.PageSize"/>, <see cref="PagedResult{T}.TotalCount"/>) for the caller
+/// to compute whether further pages exist. This is the only outcome
+/// <see cref="GetPagedProductsHandler"/> itself ever produces.</description></item>
+/// <item><description><see cref="Error"/> — reached only via <see cref="FromValidationErrors"/>;
+/// <see cref="GetPagedProductsHandler"/> never constructs this case directly, since
+/// <see cref="GetPagedProductsValidator"/> is the only source of invalid input for this
+/// query.</description></item>
+/// </list>
+/// </remarks>
 [DebuggerDisplay("{Value}")]
 public union GetPagedProductsResult(PagedResult<ProductDto>, Error) : IValidatable<GetPagedProductsResult>
 {
