@@ -1,9 +1,11 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
+using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.Update;
 using MediatrUnionPoc.Domain;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -14,7 +16,7 @@ namespace MediatrUnionPoc.Application.Tests.Handlers;
 /// <see cref="IProductRepository"/>, covering the Success, NotFound, and NotAuthorized union
 /// cases — the latter exercised through a real <see cref="ResourceAuthorizationService"/> backed
 /// by the same <see cref="OwnerAuthorizationHandler{TResource}"/> DI wiring registers, the same
-/// style ticket 04's authorization tests already use for the underlying mechanism.
+/// style <c>OwnerAuthorizationHandlerTests</c> already uses for the underlying mechanism.
 /// </summary>
 public sealed class UpdateProductHandlerTests : IDisposable
 {
@@ -31,16 +33,13 @@ public sealed class UpdateProductHandlerTests : IDisposable
                 AuthorizationPolicies.ProductOwner,
                 policy =>
                     policy.Requirements.Add(
-                        new Microsoft.AspNetCore.Authorization.Infrastructure.OperationAuthorizationRequirement
-                        {
-                            Name = "Update",
-                        }
+                        new OperationAuthorizationRequirement { Name = "Update" }
                     )
             )
         );
         services.AddSingleton<
             IAuthorizationHandler,
-            OwnerAuthorizationHandler<MediatrUnionPoc.Application.Features.Products.Common.OwnedProductResource>
+            OwnerAuthorizationHandler<OwnedProductResource>
         >();
         _provider = services.BuildServiceProvider();
         _resourceAuthorizationService = new ResourceAuthorizationService(

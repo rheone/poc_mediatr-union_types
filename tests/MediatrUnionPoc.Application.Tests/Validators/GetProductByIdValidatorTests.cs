@@ -10,7 +10,7 @@ public class GetProductByIdValidatorTests
 
     /// <summary>Verifies an empty id fails validation.</summary>
     [Fact]
-    public void Id_must_not_be_empty()
+    public void Empty_id_fails_validation()
     {
         var result = _sut.TestValidate(new GetProductByIdQuery(Guid.Empty));
 

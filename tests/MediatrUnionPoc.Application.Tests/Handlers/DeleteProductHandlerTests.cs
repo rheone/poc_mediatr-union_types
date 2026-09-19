@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
+using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.Delete;
 using MediatrUnionPoc.Domain;
 using Microsoft.AspNetCore.Authorization;
@@ -40,10 +41,10 @@ public sealed class DeleteProductHandlerTests : IDisposable
         );
         services.AddSingleton<
             IAuthorizationHandler,
-            OwnerAuthorizationHandler<MediatrUnionPoc.Application.Features.Products.Common.OwnedProductResource>
+            OwnerAuthorizationHandler<OwnedProductResource>
         >();
         services.AddSingleton<IAuthorizationHandler>(
-            _ => new AdministratorResourceOverrideAuthorizationHandler<MediatrUnionPoc.Application.Features.Products.Common.OwnedProductResource>(
+            _ => new AdministratorResourceOverrideAuthorizationHandler<OwnedProductResource>(
                 "Delete"
             )
         );

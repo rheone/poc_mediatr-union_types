@@ -77,7 +77,7 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     /// <summary>Verifies ownership alone, via <see cref="OwnerAuthorizationHandler{TResource}"/>, is enough to succeed.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Succeeds_when_the_caller_owns_the_resource_even_without_the_override_claim()
+    public async Task Owning_caller_succeeds_without_the_override_claim()
     {
         var resource = new TestResource("user-1");
         var principal = PrincipalWithId("user-1");
@@ -90,7 +90,7 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     /// <summary>Verifies the override claim alone, via <see cref="OverrideClaimAuthorizationHandler{TResource}"/>, is enough to succeed even for a non-owner.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Succeeds_when_the_caller_has_the_override_claim_even_without_owning_the_resource()
+    public async Task Caller_with_the_override_claim_succeeds_without_owning_the_resource()
     {
         var resource = new TestResource("user-1");
         var identity = new ClaimsIdentity(
@@ -107,7 +107,7 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     /// <summary>Verifies the policy fails when neither handler succeeds.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Fails_when_the_caller_neither_owns_the_resource_nor_has_the_override_claim()
+    public async Task Caller_with_neither_ownership_nor_the_override_claim_fails_authorization()
     {
         var resource = new TestResource("user-1");
         var principal = PrincipalWithId("user-2");

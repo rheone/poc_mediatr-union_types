@@ -14,66 +14,34 @@ public class AdministratorAuthorizationHandlerTests
 {
     private readonly AdministratorAuthorizationHandler _sut = new();
 
-    /// <summary>Verifies the requirement succeeds when the caller holds one of its allowed roles.</summary>
-    /// <returns>A task that completes when the assertion runs.</returns>
-    [Fact]
-    public async Task Succeeds_when_the_user_has_one_of_the_allowed_roles()
-    {
-        var requirement = new AdministratorRequirement("Administrator");
-        var user = PrincipalWithRoles("Administrator");
-        var context = new AuthorizationHandlerContext([requirement], user, resource: null);
-
-        await _sut.HandleAsync(context);
-
-        Assert.True(context.HasSucceeded);
-    }
-
-    /// <summary>Verifies the requirement fails when the caller holds none of its allowed roles.</summary>
-    /// <returns>A task that completes when the assertion runs.</returns>
-    [Fact]
-    public async Task Fails_when_the_user_has_none_of_the_allowed_roles()
-    {
-        var requirement = new AdministratorRequirement("Administrator");
-        var user = PrincipalWithRoles("Viewer");
-        var context = new AuthorizationHandlerContext([requirement], user, resource: null);
-
-        await _sut.HandleAsync(context);
-
-        Assert.False(context.HasSucceeded);
-    }
-
     /// <summary>
-    /// Verifies matching any one of several allowed roles is sufficient — the OR-across-roles
-    /// semantics of ASP.NET Core's built-in <c>RolesAuthorizationRequirement</c>.
+    /// Verifies role matching is OR-across-roles — any one of the allowed roles is sufficient —
+    /// and that an unconfigured requirement (no allowed roles) is automatically satisfied, the
+    /// same "any match succeeds, no roles means nothing to check" semantics as ASP.NET Core's own
+    /// built-in <c>RolesAuthorizationHandler</c>.
     /// </summary>
+    /// <param name="allowedRoles">The requirement's configured <see cref="AdministratorRequirement.AllowedRoles"/>.</param>
+    /// <param name="userRoles">The roles claimed by the simulated caller.</param>
+    /// <param name="expectedSuccess">Whether the requirement is expected to succeed for this combination.</param>
     /// <returns>A task that completes when the assertion runs.</returns>
-    [Fact]
-    public async Task Succeeds_when_the_user_matches_at_least_one_of_several_allowed_roles()
+    [Theory]
+    [InlineData(new[] { "Administrator" }, new[] { "Administrator" }, true)]
+    [InlineData(new[] { "Administrator" }, new[] { "Viewer" }, false)]
+    [InlineData(new[] { "Administrator", "SuperUser" }, new[] { "SuperUser" }, true)]
+    [InlineData(new string[0], new string[0], true)]
+    public async Task Role_membership_determines_authorization_result(
+        string[] allowedRoles,
+        string[] userRoles,
+        bool expectedSuccess
+    )
     {
-        var requirement = new AdministratorRequirement("Administrator", "SuperUser");
-        var user = PrincipalWithRoles("SuperUser");
+        var requirement = new AdministratorRequirement(allowedRoles);
+        var user = PrincipalWithRoles(userRoles);
         var context = new AuthorizationHandlerContext([requirement], user, resource: null);
 
         await _sut.HandleAsync(context);
 
-        Assert.True(context.HasSucceeded);
-    }
-
-    /// <summary>
-    /// Verifies a requirement with no configured roles is automatically satisfied — there's
-    /// nothing to challenge the caller against, mirroring the built-in handler's own behavior.
-    /// </summary>
-    /// <returns>A task that completes when the assertion runs.</returns>
-    [Fact]
-    public async Task Succeeds_automatically_when_no_roles_are_configured()
-    {
-        var requirement = new AdministratorRequirement();
-        var user = PrincipalWithRoles();
-        var context = new AuthorizationHandlerContext([requirement], user, resource: null);
-
-        await _sut.HandleAsync(context);
-
-        Assert.True(context.HasSucceeded);
+        Assert.Equal(expectedSuccess, context.HasSucceeded);
     }
 
     private static ClaimsPrincipal PrincipalWithRoles(params string[] roles)

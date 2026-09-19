@@ -13,7 +13,7 @@ public class GetPagedProductsValidatorTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void PageNumber_must_be_at_least_1(int pageNumber)
+    public void PageNumber_below_1_fails_validation(int pageNumber)
     {
         var result = _sut.TestValidate(new GetPagedProductsQuery(pageNumber, 10));
 
@@ -25,7 +25,7 @@ public class GetPagedProductsValidatorTests
     [Theory]
     [InlineData(0)]
     [InlineData(101)]
-    public void PageSize_must_be_between_1_and_100(int pageSize)
+    public void PageSize_outside_1_to_100_range_fails_validation(int pageSize)
     {
         var result = _sut.TestValidate(new GetPagedProductsQuery(1, pageSize));
 

@@ -23,7 +23,7 @@ public class UnionTypeTests
     /// unboxed, through <see cref="IUnion.Value"/>.
     /// </summary>
     [Fact]
-    public void Implicitly_converts_from_each_declared_case_type()
+    public void Each_declared_case_type_implicitly_converts_into_the_union()
     {
         var dto = new ProductDto(ProductId.New(), "Widget", 9.99m);
         var validationErrors = new ValidationErrors([new ValidationError("Name", "required")]);

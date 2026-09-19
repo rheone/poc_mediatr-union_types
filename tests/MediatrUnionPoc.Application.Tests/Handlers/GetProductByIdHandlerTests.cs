@@ -1,3 +1,4 @@
+using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.GetById;
 using MediatrUnionPoc.Domain;
@@ -50,10 +51,9 @@ public class GetProductByIdHandlerTests
             CancellationToken.None
         );
 
-        var notFound =
-            Assert.IsType<MediatrUnionPoc.Application.Common.Results.NotFound<ProductId>>(
-                ((System.Runtime.CompilerServices.IUnion)result).Value
-            );
+        var notFound = Assert.IsType<NotFound<ProductId>>(
+            ((System.Runtime.CompilerServices.IUnion)result).Value
+        );
         Assert.Equal(ProductId.From(missingId), notFound.Id);
     }
 }

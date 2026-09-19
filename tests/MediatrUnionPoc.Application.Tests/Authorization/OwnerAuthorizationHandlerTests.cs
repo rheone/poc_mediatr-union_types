@@ -22,46 +22,38 @@ public sealed class OwnerAuthorizationHandlerTests
 {
     private readonly OwnerAuthorizationHandler<TestResource> _sut = new();
 
-    /// <summary>Verifies the requirement succeeds when the caller's identifier claim matches the resource's owner.</summary>
+    /// <summary>
+    /// Verifies the requirement succeeds only when the caller's identifier claim matches the
+    /// resource's owner exactly.
+    /// </summary>
+    /// <param name="callerId">The <see cref="ClaimTypes.NameIdentifier"/> claim value of the simulated caller.</param>
+    /// <param name="expectedSuccess">Whether the requirement is expected to succeed for this caller.</param>
     /// <returns>A task that completes when the assertion runs.</returns>
-    [Fact]
-    public async Task Succeeds_when_the_caller_owns_the_resource()
+    [Theory]
+    [InlineData("user-1", true)]
+    [InlineData("user-2", false)]
+    public async Task Ownership_match_determines_authorization_result(
+        string callerId,
+        bool expectedSuccess
+    )
     {
         var requirement = new OperationAuthorizationRequirement { Name = "Update" };
         var resource = new TestResource(OwnerId: "user-1");
         var context = new AuthorizationHandlerContext(
             [requirement],
-            PrincipalWithId("user-1"),
+            PrincipalWithId(callerId),
             resource
         );
 
         await _sut.HandleAsync(context);
 
-        Assert.True(context.HasSucceeded);
-    }
-
-    /// <summary>Verifies the requirement fails when the caller's identifier claim doesn't match the resource's owner.</summary>
-    /// <returns>A task that completes when the assertion runs.</returns>
-    [Fact]
-    public async Task Fails_when_the_caller_does_not_own_the_resource()
-    {
-        var requirement = new OperationAuthorizationRequirement { Name = "Update" };
-        var resource = new TestResource(OwnerId: "user-1");
-        var context = new AuthorizationHandlerContext(
-            [requirement],
-            PrincipalWithId("user-2"),
-            resource
-        );
-
-        await _sut.HandleAsync(context);
-
-        Assert.False(context.HasSucceeded);
+        Assert.Equal(expectedSuccess, context.HasSucceeded);
     }
 
     /// <summary>Verifies the requirement fails, rather than throwing, when the caller has no identifier claim at all.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Fails_when_the_caller_has_no_identifier_claim()
+    public async Task Caller_with_no_identifier_claim_fails_authorization()
     {
         var requirement = new OperationAuthorizationRequirement { Name = "Update" };
         var resource = new TestResource(OwnerId: "user-1");

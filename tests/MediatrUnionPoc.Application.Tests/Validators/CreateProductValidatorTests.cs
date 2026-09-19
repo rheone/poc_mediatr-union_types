@@ -17,7 +17,7 @@ public class CreateProductValidatorTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Name_must_not_be_empty_or_whitespace(string name)
+    public void Empty_or_whitespace_name_fails_validation(string name)
     {
         var result = _sut.TestValidate(new CreateProductCommand(name, 10m));
 
@@ -26,7 +26,7 @@ public class CreateProductValidatorTests
 
     /// <summary>Verifies a name over 200 characters fails validation.</summary>
     [Fact]
-    public void Name_must_not_exceed_200_characters()
+    public void Name_over_200_characters_fails_validation()
     {
         var result = _sut.TestValidate(new CreateProductCommand(new string('a', 201), 10m));
 
@@ -38,7 +38,7 @@ public class CreateProductValidatorTests
     [Theory]
     [InlineData(-0.01)]
     [InlineData(-1000)]
-    public void Price_must_not_be_negative(decimal price)
+    public void Negative_price_fails_validation(decimal price)
     {
         var result = _sut.TestValidate(new CreateProductCommand("Widget", price));
 

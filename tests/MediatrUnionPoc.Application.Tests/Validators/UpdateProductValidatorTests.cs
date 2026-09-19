@@ -12,7 +12,7 @@ public class UpdateProductValidatorTests
 
     /// <summary>Verifies an empty id fails validation.</summary>
     [Fact]
-    public void Id_must_not_be_empty()
+    public void Empty_id_fails_validation()
     {
         var result = _sut.TestValidate(
             new UpdateProductCommand(Guid.Empty, "Widget", 10m, AnonymousPrincipal)
@@ -26,7 +26,7 @@ public class UpdateProductValidatorTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Name_must_not_be_empty_or_whitespace(string name)
+    public void Empty_or_whitespace_name_fails_validation(string name)
     {
         var result = _sut.TestValidate(
             new UpdateProductCommand(Guid.NewGuid(), name, 10m, AnonymousPrincipal)
@@ -40,7 +40,7 @@ public class UpdateProductValidatorTests
     [Theory]
     [InlineData(-0.01)]
     [InlineData(-1000)]
-    public void Price_must_not_be_negative(decimal price)
+    public void Negative_price_fails_validation(decimal price)
     {
         var result = _sut.TestValidate(
             new UpdateProductCommand(Guid.NewGuid(), "Widget", price, AnonymousPrincipal)

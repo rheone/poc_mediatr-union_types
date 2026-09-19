@@ -28,7 +28,7 @@ public sealed class ResourceAuthorizationServiceTests
     /// <summary>Verifies a successful authorization result yields <see langword="null"/> rather than a <c>NotAuthorized</c>.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Returns_null_when_the_authorization_service_succeeds()
+    public async Task Successful_authorization_returns_null()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
         var resource = new TestResource("user-1");
@@ -44,7 +44,7 @@ public sealed class ResourceAuthorizationServiceTests
     /// <summary>Verifies a failed authorization result yields a <c>NotAuthorized</c> naming the policy that was checked.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Returns_a_NotAuthorized_case_when_the_authorization_service_fails()
+    public async Task Failed_authorization_returns_a_NotAuthorized_case()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
         var resource = new TestResource("user-1");
@@ -61,7 +61,7 @@ public sealed class ResourceAuthorizationServiceTests
     /// <summary>Verifies the resource-aware three-argument overload is called with exactly the given principal, resource, and policy.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Calls_the_resource_aware_overload_with_the_given_arguments()
+    public async Task AuthorizeAsync_calls_the_resource_aware_overload_with_the_given_arguments()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
         var resource = new TestResource("user-1");
