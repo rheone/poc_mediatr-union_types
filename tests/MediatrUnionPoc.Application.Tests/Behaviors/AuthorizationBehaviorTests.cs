@@ -338,3 +338,123 @@ public sealed class AuthorizationBehaviorPolicyNameTests
         await _authorizationService.DidNotReceive().AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>());
     }
 }
+
+/// <summary>
+/// Verifies what <see cref="AuthorizationBehavior{TRequest,TResponse}"/> logs: a single Warning
+/// naming the request type and policy when access is denied, nothing when it is granted, and
+/// never anything about the caller's identity.
+/// </summary>
+public sealed class AuthorizationBehaviorLoggingTests
+{
+    private const string DenialTemplate = "{RequestName} denied: caller does not satisfy the {Policy} policy";
+    private const string RequestNameKey = "RequestName";
+    private const string PolicyKey = "Policy";
+    private const string CallerId = "caller-id-marker-42";
+    private const string CallerRole = "caller-role-marker";
+
+    private readonly IAuthorizationService _authorizationService =
+        Substitute.For<IAuthorizationService>();
+
+    private readonly CapturingLogger<AuthorizationBehavior<ArbitraryPolicyCommand, ArbitraryAdminOutcome>> _logger = new();
+    private readonly AuthorizationBehavior<ArbitraryPolicyCommand, ArbitraryAdminOutcome> _sut;
+
+    /// <summary>Wires up <see cref="_sut"/> against a mocked <see cref="IAuthorizationService"/> and a capturing logger.</summary>
+    public AuthorizationBehaviorLoggingTests() =>
+        _sut = new AuthorizationBehavior<ArbitraryPolicyCommand, ArbitraryAdminOutcome>(
+            _authorizationService,
+            _logger
+        );
+
+    /// <summary>Verifies a denial writes exactly one Warning carrying the request type name and policy name.</summary>
+    /// <returns>A task that completes when the assertion runs.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_PolicyDenied_LogsWarningWithRequestNameAndPolicy_Test()
+    {
+        // Arrange
+        var command = new ArbitraryPolicyCommand(PrincipalMother.Anonymous());
+        DenyEveryone();
+
+        // Act
+        await _sut.Handle(
+            command,
+            _ => Task.FromResult<ArbitraryAdminOutcome>(new Success()),
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        var entry = Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Equal(DenialTemplate, entry.Template);
+        Assert.Equal(
+            $"{nameof(ArbitraryPolicyCommand)} denied: caller does not satisfy the {ArbitraryPolicyCommand.SomeOtherPolicy} policy",
+            entry.Message
+        );
+        Assert.Equal(nameof(ArbitraryPolicyCommand), entry.Properties[RequestNameKey]);
+        Assert.Equal(ArbitraryPolicyCommand.SomeOtherPolicy, entry.Properties[PolicyKey]);
+        Assert.Null(entry.Exception);
+    }
+
+    /// <summary>Verifies a granted request writes nothing to the log.</summary>
+    /// <returns>A task that completes when the assertion runs.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_PolicySucceeds_LogsNothing_Test()
+    {
+        // Arrange
+        var command = new ArbitraryPolicyCommand(PrincipalMother.Anonymous());
+        _authorizationService
+            .AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Is(ArbitraryPolicyCommand.SomeOtherPolicy))
+            .Returns(AuthorizationResult.Success());
+
+        // Act
+        await _sut.Handle(
+            command,
+            _ => Task.FromResult<ArbitraryAdminOutcome>(new Success()),
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        Assert.Empty(_logger.Entries);
+    }
+
+    /// <summary>Verifies the denial log never contains the caller's identifier or roles, in the message or in any structured property.</summary>
+    /// <returns>A task that completes when the assertion runs.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_PolicyDenied_DoesNotLogCallerIdentity_Test()
+    {
+        // Arrange
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, CallerId),
+                    new Claim(ClaimTypes.Role, CallerRole),
+                ],
+                "Test"
+            )
+        );
+        var command = new ArbitraryPolicyCommand(principal);
+        DenyEveryone();
+
+        // Act
+        await _sut.Handle(
+            command,
+            _ => Task.FromResult<ArbitraryAdminOutcome>(new Success()),
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        var entry = Assert.Single(_logger.Entries);
+        Assert.DoesNotContain(CallerId, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(CallerRole, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(principal, entry.Properties.Values);
+        Assert.DoesNotContain(CallerId, entry.Properties.Values);
+        Assert.DoesNotContain(CallerRole, entry.Properties.Values);
+    }
+
+    private void DenyEveryone() =>
+        _authorizationService
+            .AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Is(ArbitraryPolicyCommand.SomeOtherPolicy))
+            .Returns(AuthorizationResult.Failed());
+}

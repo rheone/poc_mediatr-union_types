@@ -7,6 +7,7 @@ using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Delete;
 using MediatrUnionPoc.Application.Tests.TestData;
 using MediatrUnionPoc.Domain;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -255,4 +256,102 @@ public class TransactionBehaviorTests
         await _unitOfWork.DidNotReceive().BeginTransactionAsync(Arg.Any<CancellationToken>());
         await _unitOfWork.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
     }
+}
+
+/// <summary>
+/// Verifies what <see cref="TransactionBehavior{TRequest,TResponse}"/> logs: an Information line
+/// naming the request and case when the union says to roll back, an Error line carrying the
+/// original exception when the handler throws, and nothing on a commit.
+/// </summary>
+public class TransactionBehaviorLoggingTests
+{
+    private const string ErrorMessage = "boom";
+    private const string ErrorCode = "BOOM";
+    private const string InfrastructureFailureMessage = "infra failure";
+    private const string RollbackTemplate = "{RequestName} produced {ResultCase}; rolling back transaction";
+    private const string ThrewTemplate = "{RequestName} threw; rolling back transaction";
+    private const string RequestNameKey = "RequestName";
+    private const string ResultCaseKey = "ResultCase";
+
+    private static readonly Guid ProductGuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly CapturingLogger<TransactionBehavior<DeleteProductCommand, DeleteProductResult>> _logger = new();
+    private readonly TransactionBehavior<DeleteProductCommand, DeleteProductResult> _sut;
+
+    /// <summary>Wires up <see cref="_sut"/> against a substituted unit of work and a capturing logger.</summary>
+    public TransactionBehaviorLoggingTests() =>
+        _sut = new TransactionBehavior<DeleteProductCommand, DeleteProductResult>(_unitOfWork, _logger);
+
+    /// <summary>The rollback-producing cases <see cref="Handle_RollbackCase_LogsInformationWithRequestNameAndCase_Test(DeleteProductResult, string)"/> is theorized over, with the case name each should log.</summary>
+    public static TheoryData<DeleteProductResult, string> Handle_RollbackCase_LogsInformationWithRequestNameAndCase_Test_Data =>
+        new()
+        {
+            { new DeleteProductResult(new NotFound<ProductId>(ProductId.From(ProductGuid))), typeof(NotFound<ProductId>).Name },
+            { new DeleteProductResult(new Error(ErrorMessage, ErrorCode)), nameof(Error) },
+        };
+
+    /// <summary>Verifies a rollback decision logs one Information line naming the request type and the returned case.</summary>
+    /// <param name="response">The rollback-producing response the handler returns.</param>
+    /// <param name="expectedCase">The case name expected in the log.</param>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Theory]
+    [MemberData(nameof(Handle_RollbackCase_LogsInformationWithRequestNameAndCase_Test_Data))]
+    public async Task Handle_RollbackCase_LogsInformationWithRequestNameAndCase_Test(DeleteProductResult response, string expectedCase)
+    {
+        // Act
+        await _sut.Handle(DeleteCommand(), _ => Task.FromResult(response), TestContext.Current.CancellationToken);
+
+        // Assert
+        var entry = Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Information, entry.Level);
+        Assert.Equal(RollbackTemplate, entry.Template);
+        Assert.Equal($"{nameof(DeleteProductCommand)} produced {expectedCase}; rolling back transaction", entry.Message);
+        Assert.Equal(nameof(DeleteProductCommand), entry.Properties[RequestNameKey]);
+        Assert.Equal(expectedCase, entry.Properties[ResultCaseKey]);
+        Assert.Null(entry.Exception);
+    }
+
+    /// <summary>Verifies a commit writes nothing to the log.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_SuccessCase_LogsNothing_Test()
+    {
+        // Arrange
+        DeleteProductResult response = new Success();
+
+        // Act
+        await _sut.Handle(DeleteCommand(), _ => Task.FromResult(response), TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Empty(_logger.Entries);
+    }
+
+    /// <summary>Verifies a throwing handler logs one Error line carrying the original exception instance and the request name, with no result case.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_HandlerThrows_LogsErrorWithExceptionAndRequestName_Test()
+    {
+        // Arrange
+        var thrown = new InvalidOperationException(InfrastructureFailureMessage);
+
+        // Act
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _sut.Handle(DeleteCommand(), _ => throw thrown, TestContext.Current.CancellationToken));
+
+        // Assert
+        var entry = Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Equal(ThrewTemplate, entry.Template);
+        Assert.Equal($"{nameof(DeleteProductCommand)} threw; rolling back transaction", entry.Message);
+        Assert.Same(thrown, entry.Exception);
+        Assert.Equal(nameof(DeleteProductCommand), entry.Properties[RequestNameKey]);
+        Assert.False(entry.Properties.ContainsKey(ResultCaseKey));
+    }
+
+    private static DeleteProductCommand DeleteCommand() =>
+        new(ProductGuid, PrincipalMother.Anonymous());
 }

@@ -1,6 +1,9 @@
+using MediatR;
 using MediatrUnionPoc.Application.Common.Behaviors;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Create;
+using MediatrUnionPoc.Application.Tests.TestData;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MediatrUnionPoc.Application.Tests.Behaviors;
@@ -143,5 +146,172 @@ public class LoggingBehaviorTests
         _nextWasCalled = true;
         CreateProductResult response = new Error(ErrorMessage, ErrorCode);
         return Task.FromResult(response);
+    }
+}
+
+/// <summary>A request whose response is a plain <see cref="string"/>, not a union.</summary>
+/// <param name="Secret">A payload value that must never be written to the log.</param>
+public sealed record PlainStringRequest(string Secret) : IRequest<string>;
+
+/// <summary>
+/// Verifies what <see cref="LoggingBehavior{TRequest,TResponse}"/> writes: an Information
+/// "Handling" line before <c>next</c>, an Information "Handled" line naming the response's case
+/// after it, and only type names as structured values, never request payloads.
+/// </summary>
+public sealed class LoggingBehaviorLoggingTests
+{
+    private const string ProductName = "Widget-Payload-Marker";
+    private const decimal ProductPrice = 9.99m;
+    private const string ErrorMessage = "boom";
+    private const string ErrorCode = "BOOM";
+    private const string SecretPayload = "top-secret-payload";
+    private const string PlainResponse = "plain";
+    private const string HandlingTemplate = "Handling {RequestName}";
+    private const string HandledTemplate = "Handled {RequestName} -> {ResultCase}";
+    private const string RequestNameKey = "RequestName";
+    private const string ResultCaseKey = "ResultCase";
+    private const string NullCaseName = "null";
+
+    private readonly CapturingLogger<
+        LoggingBehavior<CreateProductCommand, CreateProductResult>
+    > _logger = new();
+
+    /// <summary>Verifies a union response yields a "Handling" line then a "Handled" line naming the union's runtime case, both at Information.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_UnionResponse_LogsHandlingThenHandledWithCaseName_Test()
+    {
+        // Arrange
+        var sut = new LoggingBehavior<CreateProductCommand, CreateProductResult>(_logger);
+        CreateProductResult response = new Error(ErrorMessage, ErrorCode);
+
+        // Act
+        await sut.Handle(
+            new CreateProductCommand(ProductName, ProductPrice),
+            _ => Task.FromResult(response),
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        Assert.Collection(
+            _logger.Entries,
+            handling =>
+            {
+                Assert.Equal(LogLevel.Information, handling.Level);
+                Assert.Equal(HandlingTemplate, handling.Template);
+                Assert.Equal($"Handling {nameof(CreateProductCommand)}", handling.Message);
+                Assert.Equal(nameof(CreateProductCommand), handling.Properties[RequestNameKey]);
+            },
+            handled =>
+            {
+                Assert.Equal(LogLevel.Information, handled.Level);
+                Assert.Equal(HandledTemplate, handled.Template);
+                Assert.Equal(
+                    $"Handled {nameof(CreateProductCommand)} -> {nameof(Error)}",
+                    handled.Message
+                );
+                Assert.Equal(nameof(CreateProductCommand), handled.Properties[RequestNameKey]);
+                Assert.Equal(nameof(Error), handled.Properties[ResultCaseKey]);
+            }
+        );
+    }
+
+    /// <summary>Verifies a non-union response is logged under its own runtime type name.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NonUnionResponse_LogsResponseTypeNameAsCase_Test()
+    {
+        // Arrange
+        var logger = new CapturingLogger<LoggingBehavior<PlainStringRequest, string>>();
+        var sut = new LoggingBehavior<PlainStringRequest, string>(logger);
+
+        // Act
+        await sut.Handle(
+            new PlainStringRequest(SecretPayload),
+            _ => Task.FromResult(PlainResponse),
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        var handled = logger.Entries[^1];
+        Assert.Equal(LogLevel.Information, handled.Level);
+        Assert.Equal(nameof(String), handled.Properties[ResultCaseKey]);
+    }
+
+    /// <summary>Verifies a null response is logged with the literal case name "null" rather than throwing.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullResponse_LogsNullAsCase_Test()
+    {
+        // Arrange
+        var logger = new CapturingLogger<LoggingBehavior<PlainStringRequest, string?>>();
+        var sut = new LoggingBehavior<PlainStringRequest, string?>(logger);
+
+        // Act
+        await sut.Handle(
+            new PlainStringRequest(SecretPayload),
+            _ => Task.FromResult<string?>(null),
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        Assert.Equal(NullCaseName, logger.Entries[^1].Properties[ResultCaseKey]);
+    }
+
+    /// <summary>Verifies that when <c>next</c> throws only the "Handling" line is written; no "Handled" line and no error log.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NextThrows_LogsOnlyHandlingLine_Test()
+    {
+        // Arrange
+        var sut = new LoggingBehavior<CreateProductCommand, CreateProductResult>(_logger);
+
+        // Act
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.Handle(
+                new CreateProductCommand(ProductName, ProductPrice),
+                static Task<CreateProductResult> (_) => throw new InvalidOperationException(),
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        // Assert
+        var entry = Assert.Single(_logger.Entries);
+        Assert.Equal(HandlingTemplate, entry.Template);
+    }
+
+    /// <summary>Verifies request payload values never appear in any log message or structured property; only type names do.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_AnyRequest_DoesNotLogRequestPayload_Test()
+    {
+        // Arrange
+        var sut = new LoggingBehavior<CreateProductCommand, CreateProductResult>(_logger);
+        CreateProductResult response = new Error(ErrorMessage, ErrorCode);
+
+        // Act
+        await sut.Handle(
+            new CreateProductCommand(ProductName, ProductPrice),
+            _ => Task.FromResult(response),
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        Assert.All(
+            _logger.Entries,
+            entry =>
+            {
+                Assert.DoesNotContain(ProductName, entry.Message, StringComparison.Ordinal);
+                Assert.DoesNotContain(ErrorMessage, entry.Message, StringComparison.Ordinal);
+                Assert.All(entry.Properties.Values, value => Assert.IsType<string>(value));
+                Assert.DoesNotContain(ProductName, entry.Properties.Values);
+                Assert.DoesNotContain(ErrorMessage, entry.Properties.Values);
+            }
+        );
     }
 }
