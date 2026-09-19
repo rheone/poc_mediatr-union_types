@@ -33,7 +33,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies a create returns 201 with the created product and a Location header that resolves to it.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Create_returns_201_with_the_created_product_and_a_working_location_header()
+    public async Task Create_with_valid_body_returns_201_and_resolvable_location_header()
     {
         using var response = await _client.PostAsJsonAsync(
             "/api/products",
@@ -45,8 +45,8 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.NotNull(dto);
         Assert.Equal("Widget", dto.Name);
 
-        // CreatedAtAction's Location header must resolve back to the same resource — proves
-        // nameof(GetByIdAsync) still lines up with the actual route after the Async-suffix rename.
+        // CreatedAtAction resolves its target by action name; the Location header only works if
+        // nameof(GetByIdAsync) matches the name MVC registered (SuppressAsyncSuffixInActionNames = false).
         using var located = await _client.GetAsync(response.Headers.Location);
         Assert.Equal(HttpStatusCode.OK, located.StatusCode);
     }
@@ -70,7 +70,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies a missing product returns 404.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetById_returns_404_for_a_product_that_does_not_exist()
+    public async Task GetById_for_missing_product_returns_404()
     {
         using var response = await _client.GetAsync($"/api/products/{Guid.NewGuid()}");
 
@@ -80,7 +80,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies paging only returns products from this test's own isolated database.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetPaged_returns_only_products_created_in_this_tests_own_database()
+    public async Task GetPaged_after_one_create_returns_only_that_product()
     {
         using var createResponse = await _client.PostAsJsonAsync(
             "/api/products",
@@ -103,7 +103,7 @@ public sealed class ProductsControllerTests : IDisposable
     [InlineData("pageNumber=0&pageSize=10")]
     [InlineData("pageNumber=1&pageSize=0")]
     [InlineData("pageNumber=1&pageSize=101")]
-    public async Task GetPaged_returns_400_for_out_of_range_paging(string query)
+    public async Task GetPaged_with_out_of_range_paging_returns_400(string query)
     {
         using var response = await _client.GetAsync($"/api/products?{query}");
 
@@ -113,7 +113,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies updating a missing product returns 404.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_returns_404_for_a_product_that_does_not_exist()
+    public async Task Update_for_missing_product_returns_404()
     {
         using var response = await _client.PutAsJsonAsync(
             $"/api/products/{Guid.NewGuid()}",
@@ -123,10 +123,31 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    /// <summary>Verifies an owner's update with an invalid body returns 400 with per-field validation errors (authorization runs before validation, so the caller must own the product).</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Update_by_owner_with_invalid_body_returns_400_with_per_field_errors()
+    {
+        using var created = await PostAsCallerAsync("owner-1");
+        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{dto!.Id.Value}")
+        {
+            Content = JsonContent.Create(new UpdateProductRequest(string.Empty, -5m)),
+        };
+        request.Headers.Add("X-Caller-Id", "owner-1");
+        using var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Name", body);
+        Assert.Contains("Price", body);
+    }
+
     /// <summary>Verifies an owner's update returns 204 and its changes are visible to a subsequent GetById.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_by_the_owner_persists_changes_that_a_subsequent_GetById_can_see()
+    public async Task Update_by_owner_returns_204_and_persists_changes()
     {
         using var created = await PostAsCallerAsync("owner-1");
         var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
@@ -145,7 +166,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies a non-owner's update returns 403 and leaves the product untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_by_a_non_owner_returns_403_and_leaves_the_product_untouched()
+    public async Task Update_by_non_owner_returns_403_and_leaves_product_untouched()
     {
         using var created = await PostAsCallerAsync("owner-1");
         var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
@@ -164,7 +185,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies an update with no caller identity at all returns 403, since an anonymous caller never matches any product's owner.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_without_any_caller_id_header_returns_403()
+    public async Task Update_without_caller_id_header_returns_403()
     {
         using var created = await PostAsCallerAsync("owner-1");
         var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
@@ -185,7 +206,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_by_an_anonymous_caller_of_an_unowned_product_returns_403()
+    public async Task Update_of_unowned_product_by_anonymous_caller_returns_403()
     {
         using var created = await _client.PostAsJsonAsync(
             "/api/products",
@@ -204,7 +225,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies an administrator's delete returns 204 and the product subsequently returns 404 from GetById.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_removes_the_product_so_a_subsequent_GetById_returns_404()
+    public async Task Delete_by_administrator_returns_204_and_product_is_then_gone()
     {
         using var created = await _client.PostAsJsonAsync(
             "/api/products",
@@ -222,7 +243,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies an administrator deleting a missing product returns 404.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_returns_404_for_a_product_that_does_not_exist()
+    public async Task Delete_for_missing_product_returns_404()
     {
         using var response = await DeleteAsAdminAsync($"/api/products/{Guid.NewGuid()}");
 
@@ -232,7 +253,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies a delete without the X-Admin header or a matching X-Caller-Id returns 403, and the product is left untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_without_the_admin_header_returns_403_and_leaves_the_product_untouched()
+    public async Task Delete_without_admin_or_owner_headers_returns_403_and_leaves_product_untouched()
     {
         using var created = await _client.PostAsJsonAsync(
             "/api/products",
@@ -250,7 +271,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies the product's owner can delete it without the X-Admin header, via the X-Caller-Id header alone.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_by_the_products_owner_returns_204_without_the_admin_header()
+    public async Task Delete_by_owner_without_admin_header_returns_204()
     {
         using var created = await PostAsCallerAsync("owner-1");
         var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
@@ -268,7 +289,7 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Verifies a caller who neither owns the product nor presents the X-Admin header gets 403, and the product is left untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_by_a_non_owner_non_administrator_returns_403_and_leaves_the_product_untouched()
+    public async Task Delete_by_non_owner_non_administrator_returns_403_and_leaves_product_untouched()
     {
         using var created = await PostAsCallerAsync("owner-1");
         var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
