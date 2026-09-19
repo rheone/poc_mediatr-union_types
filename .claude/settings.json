@@ -1,6 +1,8 @@
 {
-  "env": {
-    "CLAUDE_CODE_DISABLE_COAUTHOR": "1"
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
   },
   "hooks": {
     "PreToolUse": [
@@ -15,7 +17,6 @@
       }
     ]
   },
-  "disableCoauthor": true,
   "enabledPlugins": {
     "csharp-lsp@claude-plugins-official": true
   }
