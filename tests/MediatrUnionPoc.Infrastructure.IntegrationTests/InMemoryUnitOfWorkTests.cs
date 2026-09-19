@@ -304,8 +304,6 @@ public class InMemoryUnitOfWorkTests
         Assert.Equal("dbContext", exception.ParamName);
     }
 
-    // SWEEP-AMBIGUITY: BeginTransactionAsync's "dispose a held transaction first" branch and every
-    // `_transaction is not null` branch in Commit/Rollback/Dispose are unreachable under the InMemory
-    // provider (BeginTransaction always throws and is swallowed, so _transaction stays null). The code
-    // handles a real transaction; no test here can exercise that without a relational provider.
+    // The `_transaction is not null` branches (begin-twice, commit, rollback, dispose) cannot run under
+    // the InMemory provider; InMemoryUnitOfWorkTransactionTests covers them against SQLite.
 }

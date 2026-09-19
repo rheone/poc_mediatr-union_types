@@ -20,6 +20,8 @@
     <!-- Persistence -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
+    <!-- Test-only: a real relational provider so InMemoryUnitOfWork's transaction branches can run -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- DI / logging (explicit pins so non-Web projects get a consistent version, not whatever the framework happens to carry) -->
     <PackageVersion
       Include="Microsoft.Extensions.DependencyInjection"

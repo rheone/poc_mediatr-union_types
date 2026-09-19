@@ -10,6 +10,12 @@ handler tests do).
   `MoneyValueConverter`. This is the behavior `TransactionBehavior` depends on; if commit/rollback
   stopped actually controlling persistence, the pipeline-level tests in
   `MediatrUnionPoc.Application.Tests` (which substitute `IUnitOfWork`) would never catch it.
+- `InMemoryUnitOfWorkTransactionTests.cs` — covers the `_transaction is not null` branches of
+  `InMemoryUnitOfWork` (begin twice, commit, rollback, dispose with a held transaction) that the
+  InMemory provider can never reach, because its `BeginTransaction` always throws and is swallowed.
+  Runs the production `AppDbContext` model (same value converters) on a test-only SQLite `:memory:`
+  connection (`TestData/SqliteDatabaseMother`) so a real `IDbContextTransaction` exists. SQLite is
+  used here only as a transaction host; nothing in `src` references it.
 - `ProductRepositoryTests.cs` — covers the query logic `InMemoryUnitOfWorkTests` doesn't:
   `GetPagedAsync`'s ordering (by name) and its skip/take math across multiple pages, plus a plain
   `GetByIdAsync` miss/hit and a `Remove` round trip. Nothing here substitutes `IProductRepository`
@@ -36,6 +42,7 @@ happens to be fast in practice.
 
 - `xunit.v3` / `xunit.runner.visualstudio` — test framework (xUnit v3; the test project is an executable) and VSTest runner (`xunit.analyzers` supplies the xUnit-specific Roslyn rules).
 - `coverlet.collector` / `Microsoft.NET.Test.Sdk` — coverage collection and the `dotnet test` host.
+- `Microsoft.EntityFrameworkCore.Sqlite` — test-only relational provider for the transaction tests (same EF Core version as the rest of the solution).
 - `Microsoft.EntityFrameworkCore.InMemory` comes transitively via the `Infrastructure` project
   reference.
 
