@@ -21,9 +21,12 @@ public sealed record PagedResult<T>(
     /// <exception cref="ArgumentNullException">The value supplied at construction or through a <c>with</c> expression is <see langword="null"/>.</exception>
     public IReadOnlyList<T> Items
     {
-        get;
-        init => field = value ?? throw new ArgumentNullException(nameof(Items));
-    } = Items ?? throw new ArgumentNullException(nameof(Items));
+        get => _items;
+        init => _items = value ?? throw new ArgumentNullException(nameof(Items));
+    }
+
+    private readonly IReadOnlyList<T> _items =
+        Items ?? throw new ArgumentNullException(nameof(Items));
 
     /// <summary>The total number of pages, rounded up — e.g. 10 total rows at a page size of 3 yields 4 pages, the last with only 1 row.</summary>
     /// <value>The page count implied by <see cref="TotalCount"/> and <see cref="PageSize"/>; never negative, but callers must guard against a zero <see cref="PageSize"/>.</value>
