@@ -8,7 +8,7 @@ public class ProductIdTests
 {
     /// <summary>Verifies <see cref="Guid.Empty"/> fails validation via <c>ProductId.TryFrom</c>.</summary>
     [Fact]
-    public void TryFrom_empty_guid_returns_false()
+    public void TryFrom_EmptyGuid_ReturnsFalse_Test()
     {
         // Arrange
         var empty = Guid.Empty;
@@ -22,7 +22,7 @@ public class ProductIdTests
 
     /// <summary>Verifies a non-empty guid round-trips through <see cref="ProductId.From"/> unchanged.</summary>
     [Fact]
-    public void From_non_empty_guid_round_trips_unchanged()
+    public void From_NonEmptyGuid_RoundTripsUnchanged_Test()
     {
         // Arrange
         var guid = new Guid("11111111-2222-3333-4444-555555555555");
@@ -36,7 +36,7 @@ public class ProductIdTests
 
     /// <summary>Verifies <see cref="ProductId.New"/> always produces a valid, non-empty id.</summary>
     [Fact]
-    public void New_produces_a_non_empty_id()
+    public void New_Called_ReturnsNonEmptyId_Test()
     {
         // Arrange
 
@@ -47,10 +47,10 @@ public class ProductIdTests
         Assert.NotEqual(Guid.Empty, id.Value);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies <see cref="ProductId.From"/> rejects an empty guid by throwing.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void From_empty_guid_throws_validation_exception()
+    public void From_EmptyGuid_ThrowsValueObjectValidationException_Test()
     {
         // Arrange
         var empty = Guid.Empty;
@@ -62,10 +62,10 @@ public class ProductIdTests
         Assert.Contains("empty guid", ex.Message);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies two ids built from the same guid are equal (structural, not reference, equality).</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void Equals_same_guid_returns_true()
+    public void Equals_SameGuid_ReturnsTrue_Test()
     {
         // Arrange
         var guid = new Guid("11111111-2222-3333-4444-555555555555");

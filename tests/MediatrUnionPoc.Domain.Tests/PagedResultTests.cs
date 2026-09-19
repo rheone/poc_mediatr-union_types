@@ -8,7 +8,11 @@ namespace MediatrUnionPoc.Domain.Tests;
 public class PagedResultTests
 {
     /// <summary>Rows: even division, remainder (rounds up), zero rows (zero pages, not one).</summary>
-    public static TheoryData<int, int, int> TotalPages_rounds_up_Test_Data =>
+    public static TheoryData<
+        int,
+        int,
+        int
+    > TotalPages_VariousCounts_RoundsUpToWholePages_Test_Data =>
         new()
         {
             { 5, 10, 2 }, // divides evenly: no extra page needed
@@ -21,8 +25,8 @@ public class PagedResultTests
     /// <param name="totalCount">The total row count across all pages.</param>
     /// <param name="expectedTotalPages">The expected value of <see cref="PagedResult{T}.TotalPages"/> for this combination.</param>
     [Theory]
-    [MemberData(nameof(TotalPages_rounds_up_Test_Data))]
-    public void TotalPages_rounds_up_to_the_nearest_whole_page(
+    [MemberData(nameof(TotalPages_VariousCounts_RoundsUpToWholePages_Test_Data))]
+    public void TotalPages_VariousCounts_RoundsUpToWholePages_Test(
         int pageSize,
         int totalCount,
         int expectedTotalPages
@@ -42,4 +46,9 @@ public class PagedResultTests
         // Assert
         Assert.Equal(expectedTotalPages, totalPages);
     }
+
+    // SWEEP-AMBIGUITY: PagedResult's positional ctor accepts null Items without an ArgumentNullException guard (only
+    // the nullable annotation protects it), and TotalPages with PageSize 0 divides by zero as double, yielding
+    // infinity cast to int; it may be intended that Domain rejects null Items and a non-positive PageSize.
+    // No ArgumentNullException or zero-PageSize tests written.
 }

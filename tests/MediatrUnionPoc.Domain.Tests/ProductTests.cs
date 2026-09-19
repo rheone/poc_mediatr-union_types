@@ -10,10 +10,12 @@ public class ProductTests
     private const string Name = "Widget";
     private const decimal PriceValue = 9.99m;
     private const string OwnerId = "owner-1";
+    private const string UpdatedName = "Widget Pro";
+    private const decimal UpdatedPriceValue = 19.99m;
 
     /// <summary>Verifies <see cref="Product.Create"/> assigns the given name and price.</summary>
     [Fact]
-    public void Create_given_name_and_price_assigns_both()
+    public void Create_NameAndPrice_AssignsBoth_Test()
     {
         // Arrange
         var price = Money.From(PriceValue);
@@ -30,7 +32,7 @@ public class ProductTests
 
     /// <summary>Verifies each call to <see cref="Product.Create"/> generates a distinct <see cref="ProductId"/>.</summary>
     [Fact]
-    public void Create_called_twice_generates_distinct_ids()
+    public void Create_CalledTwice_GeneratesDistinctIds_Test()
     {
         // Arrange
         var price = Money.From(PriceValue);
@@ -45,7 +47,7 @@ public class ProductTests
 
     /// <summary>Verifies <see cref="Product.Create"/> assigns the given owner id when one is supplied.</summary>
     [Fact]
-    public void Create_given_owner_id_assigns_it()
+    public void Create_OwnerId_AssignsOwnerId_Test()
     {
         // Arrange
         var price = Money.From(PriceValue);
@@ -59,7 +61,7 @@ public class ProductTests
 
     /// <summary>Verifies <see cref="Product.Create"/> defaults the owner id to an empty string when none is supplied.</summary>
     [Fact]
-    public void Create_without_owner_id_defaults_to_empty_string()
+    public void Create_NoOwnerId_DefaultsToEmptyString_Test()
     {
         // Arrange
         var price = Money.From(PriceValue);
@@ -73,33 +75,33 @@ public class ProductTests
 
     /// <summary>Verifies <see cref="Product.UpdateDetails"/> replaces name and price, leaving the id unchanged.</summary>
     [Fact]
-    public void UpdateDetails_new_values_replace_name_and_price_but_not_id()
+    public void UpdateDetails_NewValues_ReplacesNameAndPriceButNotId_Test()
     {
         // Arrange
         var product = Product.Create(Name, Money.From(PriceValue));
         var originalId = product.Id;
 
         // Act
-        product.UpdateDetails("Widget Pro", Money.From(19.99m));
+        product.UpdateDetails(UpdatedName, Money.From(UpdatedPriceValue));
 
         // Assert
         Assert.Multiple(
             () => Assert.Equal(originalId, product.Id),
-            () => Assert.Equal("Widget Pro", product.Name),
-            () => Assert.Equal(19.99m, product.Price.Value)
+            () => Assert.Equal(UpdatedName, product.Name),
+            () => Assert.Equal(UpdatedPriceValue, product.Price.Value)
         );
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies <see cref="Product.UpdateDetails"/> leaves the owner id untouched.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void UpdateDetails_new_values_leave_owner_id_unchanged()
+    public void UpdateDetails_NewValues_LeavesOwnerIdUnchanged_Test()
     {
         // Arrange
         var product = Product.Create(Name, Money.From(PriceValue), OwnerId);
 
         // Act
-        product.UpdateDetails("Widget Pro", Money.From(19.99m));
+        product.UpdateDetails(UpdatedName, Money.From(UpdatedPriceValue));
 
         // Assert
         Assert.Equal(OwnerId, product.OwnerId);
