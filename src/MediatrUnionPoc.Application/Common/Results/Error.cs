@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace MediatrUnionPoc.Application.Common.Results;
 
-/// <summary>Case type: an unexpected/domain error with a stable code for API consumers.</summary>
+/// <summary>Shared case type: an unexpected/domain error with a stable code for API consumers.</summary>
 /// <param name="Message">A human-readable description of what went wrong.</param>
 /// <param name="Code">A stable, machine-readable code identifying the error, when the failure has one to report.</param>
 /// <param name="Cause">

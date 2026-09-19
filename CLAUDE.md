@@ -67,7 +67,7 @@ keeping it out of the `.slnx`, `.csharpierignore` interaction).
 can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error)`) and never
 throws for an expected outcome (validation failure, not-found, etc.) — the controller's `switch`
 is the only place a union gets translated into an HTTP status. See `README.md`'s "Why this
-matters" and "Case types are meaning-free" sections for the full rationale.
+matters" and "Shared case types are meaning-free" sections for the full rationale.
 
 **MediatR pipeline** (registered in `Application/DependencyInjection.cs`, in this exact order):
 `LoggingBehavior` → `AuthorizationBehavior` → `ValidationBehavior` → `TransactionBehavior` — who's

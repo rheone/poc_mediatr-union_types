@@ -80,10 +80,23 @@ read this section before the deep-dive sections that follow — they assume it.
 | Term | Meaning |
 | --- | --- |
 | **`IValidatable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can build that union's own validation-failure case generically, without ever naming the concrete union type. |
-| **`ITransactionOutcome<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract bool ShouldCommit(TSelf)`) so `TransactionBehavior` can ask the union itself whether to commit or roll back, without inspecting which case type came back by name. See [Case types are meaning-free](#case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means). |
-| **Case type** *(project-specific)* | One of the plain, meaning-free record types (`Success`, `NotFound`, `Error`, ...) that can appear inside a union. A case type's identity never implies what it means for commit/rollback or anything else — only the union that declares it decides that; see [Case types used here](#case-types-used-here). |
+| **`ITransactionOutcome<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract bool ShouldCommit(TSelf)`) so `TransactionBehavior` can ask the union itself whether to commit or roll back, without inspecting which case type came back by name. See [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means). |
+| **Case type** *(C# spec term)* | Any one of the types listed in a union's declaration (`union Name(CaseA, CaseB, CaseC)` — `CaseA`, `CaseB`, and `CaseC` are all case types of `Name`). This repo further splits case types into two roles it names itself — **shared** and **bespoke**, below — because the spec term alone doesn't distinguish them. |
+| **Shared case type** *(project-specific)* | A plain, meaning-free record (`Success`, `NotFound`, `Error`, ...) reused across many unions. A shared case type's identity never implies what it means for commit/rollback or anything else — only the union that declares it decides that; see [Case types used here](#case-types-used-here). |
+| **Bespoke case type** *(project-specific)* | A case type carrying one operation's actual payload (`ProductDto`, a hypothetical `PongDto`) rather than a meaning-free shared record. It can still appear in more than one union — `ProductDto` is the success case of both `CreateProductResult` and `GetProductByIdResult`, and again wrapped in `PagedResult<ProductDto>` inside `GetPagedProductsResult` — but unlike a shared case type, that reuse is because those operations happen to succeed with the same payload shape, not because its identity is deliberately meaning-free. |
 
 ## Why this matters
+
+> [!NOTE]
+> **This is a convention, not a MediatR requirement.** `IRequestHandler<TRequest, TResponse>`
+> places no constraint on `TResponse` beyond being a type — a handler is free to return a plain
+> DTO, a `bool`, a `Task` with nothing meaningful in it, or anything else, and MediatR is
+> completely indifferent to unions. Returning a `union` of shared and bespoke case types is
+> *this repo's own deliberate convention* for expressing "exactly one of N meaningful outcomes,"
+> adopted because it fits CQRS-style commands/queries that can genuinely end several different
+> ways — not something MediatR asks for, and not the only valid return shape for a handler even
+> within this codebase's own pattern. A trivial operation with only one possible outcome has no
+> reason to introduce a union at all.
 
 ### Union types as responses
 
@@ -212,19 +225,19 @@ flowchart TB
   than inspecting which case type came back. No `catch` block is involved for expected outcomes; a
   `catch` still exists, but only for genuinely unexpected exceptions, and it rolls back and
   rethrows rather than swallowing anything into a result. See
-  [Case types are meaning-free](#case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
+  [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
   for why this isn't a hardcoded list of "which case types mean error."
 
-### Case types are meaning-free: TransactionBehavior can't assume what a case means
+### Shared case types are meaning-free: TransactionBehavior can't assume what a case means
 
-`Error`, `NotFound`, `Success`, and the rest of this codebase's case types are plain, meaning-free
-records. Any union is free to reuse `NotFound` to mean something that should *commit*, or to
-introduce its own record type that should roll back — nothing about a case type's identity says
-what it means for a given operation's transaction. That rules out deciding commit-vs-rollback by
-pattern-matching case types against a fixed list (`response.Value is Error or Failure or
-NotAuthorized or ValidationErrors or NotFound`): that's a closed-world assumption baked into
-generic code, and it would silently misclassify any case type outside the list, including one
-declared after the code that lists them was written.
+`Error`, `NotFound`, `Success`, and the rest of this codebase's shared case types are plain,
+meaning-free records. Any union is free to reuse `NotFound` to mean something that should
+*commit*, or to introduce its own bespoke case type that should roll back — nothing about a shared
+case type's identity says what it means for a given operation's transaction. That rules out
+deciding commit-vs-rollback by pattern-matching case types against a fixed list (`response.Value is
+Error or Failure or NotAuthorized or ValidationErrors or NotFound`): that's a closed-world
+assumption baked into generic code, and it would silently misclassify any case type outside the
+list, including one declared after the code that lists them was written.
 
 The decision belongs on the union itself instead, via
 [`ITransactionOutcome<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/ITransactionOutcome.cs):
@@ -529,15 +542,26 @@ The real reason to switch first has nothing to do with serialization shape:
 
 ## Case types used here
 
-| Case              | Meaning                                                  |
-| ----------------- | --------------------------------------------------------- |
-| `Success`         | The command completed; no payload to return               |
-| `<Dto>`            | The operation's actual result payload (e.g. `ProductDto`) |
-| `NotFound`         | The requested entity doesn't exist                        |
-| `ValidationErrors` | Input failed FluentValidation checks                       |
-| `Error`            | An unexpected/domain error, with a stable machine-readable code |
-| `Failure`          | Business-rule failure(s) that aren't input validation      |
-| `NotAuthorized`    | The caller isn't allowed to perform this operation          |
+| Case               | Role    | Meaning                                                         |
+| ------------------ | ------- | --------------------------------------------------------------- |
+| `Success`          | Shared  | The command completed; no payload to return                     |
+| `<Dto>`            | Bespoke | The operation's actual result payload (e.g. `ProductDto`)       |
+| `NotFound`         | Shared  | The requested entity doesn't exist                              |
+| `ValidationErrors` | Shared  | Input failed FluentValidation checks                            |
+| `Error`            | Shared  | An unexpected/domain error, with a stable machine-readable code |
+| `Failure`          | Shared  | Business-rule failure(s) that aren't input validation           |
+| `NotAuthorized`    | Shared  | The caller isn't allowed to perform this operation              |
+
+Every row but `<Dto>` is a **shared case type** — the same meaning-free record reused across
+unions (see [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)).
+`<Dto>` stands for whatever **bespoke case type** carries that operation's actual payload —
+`ProductDto` for the Products feature. "Bespoke" here means *not meaning-free* — a `ProductDto`
+means exactly one thing, a successfully materialized product — not that it's confined to a single
+union: it's the success case of `CreateProductResult` and `GetProductByIdResult` alike, and appears
+again wrapped as `PagedResult<ProductDto>` inside `GetPagedProductsResult`. That's a third,
+different kind of reuse from a shared case type's — `ProductDto` is reused because every one of
+those operations happens to succeed with the same payload shape, not because its identity is
+deliberately meaning-free the way `Success` or `NotFound`'s is.
 
 Each union in this repo declares only the subset of cases that operation can actually produce —
 see `CreateProductResult` vs `UpdateProductResult` vs `GetProductByIdResult` for three different
@@ -554,10 +578,12 @@ mixes.
 > transport-agnostic so the Application layer stays usable from a worker, a CLI, or a gRPC service
 > without modification.
 
-## Speculative case types for a larger API
+## Speculative shared case types for a larger API
 
 Not implemented here, but worth having in your vocabulary for a real project — none of these map
-1:1 onto an HTTP status, deliberately:
+1:1 onto an HTTP status, deliberately. Like the shared case types actually used in this repo, each
+one below is meant to be a meaning-free record reused across many unions, not tied to any single
+operation:
 
 | Case                                    | Meaning                                                                 |
 | ----------------------------------------- | -------------------------------------------------------------------------- |

@@ -3,11 +3,11 @@ using System.Diagnostics;
 namespace MediatrUnionPoc.Application.Common.Results;
 
 /// <summary>
-/// Case type: business-rule failure(s) that are not validation errors. No handler in this POC's
-/// Products feature currently produces this case — every failure mode it has needed so far is
-/// covered by <see cref="NotFound{TId}"/> or <see cref="Error"/> — but it's part of the case-type
-/// vocabulary this project set out to support, available for a future command whose business
-/// rules don't reduce to "not found" or "unexpected error." See
+/// Shared case type: business-rule failure(s) that are not validation errors. No handler in this
+/// POC's Products feature currently produces this case — every failure mode it has needed so far
+/// is covered by <see cref="NotFound{TId}"/> or <see cref="Error"/> — but it's part of the shared
+/// case type vocabulary this project set out to support, available for a future command whose
+/// business rules don't reduce to "not found" or "unexpected error." See
 /// <c>FailureAndNotAuthorizedCaseTypeTests</c> for proof it behaves correctly wherever a union
 /// does declare it, independent of whether any handler happens to today.
 /// </summary>

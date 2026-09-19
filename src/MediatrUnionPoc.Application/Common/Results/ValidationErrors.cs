@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace MediatrUnionPoc.Application.Common.Results;
 
-/// <summary>Case type: the request failed FluentValidation checks.</summary>
+/// <summary>Shared case type: the request failed FluentValidation checks.</summary>
 [DebuggerDisplay("{ToErrorMessage(),nq}")]
 public sealed record ValidationErrors
 {

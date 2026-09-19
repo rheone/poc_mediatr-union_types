@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace MediatrUnionPoc.Application.Common.Results;
 
 /// <summary>
-/// Case type: the requested entity could not be located.
+/// Shared case type: the requested entity could not be located.
 /// </summary>
 /// <typeparam name="TId">The identity type of the entity that was looked up.</typeparam>
 /// <param name="Id">

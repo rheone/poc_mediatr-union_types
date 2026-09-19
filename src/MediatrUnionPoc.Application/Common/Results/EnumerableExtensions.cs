@@ -1,6 +1,6 @@
 namespace MediatrUnionPoc.Application.Common.Results;
 
-/// <summary>Shared null-safe, distinct-collection coercion used by every case type that stores a collection.</summary>
+/// <summary>Shared null-safe, distinct-collection coercion used by every shared case type that stores a collection.</summary>
 internal static class EnumerableExtensions
 {
     /// <summary>Deduplicates <paramref name="source"/> into a read-only collection; <see langword="null"/> becomes empty.</summary>
@@ -14,7 +14,7 @@ internal static class EnumerableExtensions
     /// <summary>
     /// Set equality (order-independent) between two collections already known to be duplicate-free
     /// — i.e. ones produced by <see cref="ToDistinctReadOnlyCollection{T}"/>. Backs value equality
-    /// for every case type whose record-generated equality would otherwise compare the collection
+    /// for every shared case type whose record-generated equality would otherwise compare the collection
     /// field by reference.
     /// </summary>
     /// <typeparam name="T">The element type.</typeparam>

@@ -3,12 +3,12 @@ using System.Diagnostics;
 namespace MediatrUnionPoc.Application.Common.Results;
 
 /// <summary>
-/// Case type: the caller isn't allowed to perform the operation. Produced by
+/// Shared case type: the caller isn't allowed to perform the operation. Produced by
 /// <see cref="MediatrUnionPoc.Application.Common.Behaviors.AuthorizationBehavior{TRequest,TResponse}"/>
 /// for any union implementing <see cref="MediatrUnionPoc.Application.Common.Abstractions.IAuthorizable{TSelf}"/>
 /// — see <c>DeleteProductResult</c> for the one union in this POC that does — but part of the same
-/// intentionally-supported vocabulary as <see cref="Failure"/>, reusable by any future union
-/// without needing a new case type invented for it.
+/// intentionally-shared vocabulary as <see cref="Failure"/>, reusable by any future union without
+/// needing a new case type invented for it.
 /// </summary>
 [DebuggerDisplay("{DebuggerDisplayText,nq}")]
 public sealed record NotAuthorized

@@ -13,9 +13,9 @@ namespace MediatrUnionPoc.Application.Common.Behaviors;
 /// doesn't match this behavior's generic constraints and skips it entirely; that's a deliberate
 /// opt-in, not every command needing a transaction. Commit-vs-rollback is decided by asking
 /// the union itself — <see cref="ITransactionOutcome{TSelf}.ShouldCommit"/> — never by this
-/// behavior inspecting which case type came back. Case types are meaning-free and reusable across
-/// unions (an <c>Error</c> in one union might mean something entirely different in another), so
-/// only the union that declares a case type gets to say what that case means for its own
+/// behavior inspecting which case type came back. Shared case types are meaning-free and reusable
+/// across unions (an <c>Error</c> in one union might mean something entirely different in
+/// another), so only the union that declares a case type gets to say what that case means for its own
 /// transaction; this behavior stays generic over every command without knowing any of them.
 /// Because each union's <c>ShouldCommit</c> implementation is a <c>switch</c> over its own closed
 /// set of case types, the compiler forces every case — including ones added after this behavior
