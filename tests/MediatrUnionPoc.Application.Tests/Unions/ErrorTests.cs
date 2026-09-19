@@ -81,4 +81,16 @@ public class ErrorTests
             () => Assert.Equal(Code, document.RootElement.GetProperty("Code").GetString())
         );
     }
+
+    /// <summary>Verifies the positional constructor rejects a null message.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullMessage_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => new Error(null!));
+
+        // Assert
+        Assert.Equal("Message", ex.ParamName);
+    }
 }

@@ -13,19 +13,27 @@ namespace MediatrUnionPoc.Application.Features.Products.Create;
 /// is taken from <see cref="CreateProductCommand.Principal"/>'s <see cref="ClaimTypes.NameIdentifier"/>
 /// claim, if any — this is the only place a product's owner is ever assigned.
 /// </summary>
+/// <param name="repository">The repository the new product is added to.</param>
+/// <exception cref="ArgumentNullException"><paramref name="repository"/> is <see langword="null"/>.</exception>
 public sealed class CreateProductHandler(IProductRepository repository)
     : IRequestHandler<CreateProductCommand, CreateProductResult>
 {
+    private readonly IProductRepository _repository =
+        repository ?? throw new ArgumentNullException(nameof(repository));
+
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
     public async Task<CreateProductResult> Handle(
         CreateProductCommand request,
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(request);
+
         var ownerId =
             request.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
         var product = Product.Create(request.Name, Money.From(request.Price), ownerId);
-        await repository.AddAsync(product, cancellationToken);
+        await _repository.AddAsync(product, cancellationToken);
         return ProductDto.FromDomain(product);
     }
 }

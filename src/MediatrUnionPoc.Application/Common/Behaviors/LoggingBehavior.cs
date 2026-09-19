@@ -7,20 +7,29 @@ namespace MediatrUnionPoc.Application.Common.Behaviors;
 /// <summary>Logs every request and, for union responses, which case type came back.</summary>
 /// <typeparam name="TRequest">The MediatR request type.</typeparam>
 /// <typeparam name="TResponse">The request's response type.</typeparam>
+/// <param name="logger">The logger request/response lines are written to.</param>
+/// <exception cref="ArgumentNullException"><paramref name="logger"/> is <see langword="null"/>.</exception>
 public sealed class LoggingBehavior<TRequest, TResponse>(
     ILogger<LoggingBehavior<TRequest, TResponse>> logger
 ) : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
+    private readonly ILogger<LoggingBehavior<TRequest, TResponse>> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
+
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> or <paramref name="next"/> is <see langword="null"/>.</exception>
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(next);
+
         var requestName = typeof(TRequest).Name;
-        logger.LogInformation("Handling {RequestName}", requestName);
+        _logger.LogInformation("Handling {RequestName}", requestName);
 
         var response = await next(cancellationToken);
 
@@ -35,7 +44,7 @@ public sealed class LoggingBehavior<TRequest, TResponse>(
             _ => response.GetType().Name,
         };
 
-        logger.LogInformation("Handled {RequestName} -> {ResultCase}", requestName, caseName);
+        _logger.LogInformation("Handled {RequestName} -> {ResultCase}", requestName, caseName);
 
         return response;
     }

@@ -7,9 +7,6 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 /// <summary>Exercises <see cref="UpdateProductValidator"/>'s rules directly, including the id check that <see cref="MediatrUnionPoc.Application.Features.Products.Create.CreateProductValidator"/> doesn't need.</summary>
 public class UpdateProductValidatorTests
 {
-    // SWEEP-AMBIGUITY: validating a null command throws InvalidOperationException ("Cannot pass null model to
-    // Validate") from FluentValidation rather than ArgumentNullException / a null command should throw
-    // ArgumentNullException naming "instance", but no such test is written because production does not do that.
     private const string ValidName = "Widget";
     private const decimal ValidPrice = 10m;
     private const int MaxNameLength = 200;
@@ -135,4 +132,18 @@ public class UpdateProductValidatorTests
         string name = ValidName,
         decimal price = ValidPrice
     ) => new(id ?? SomeId, name, price, PrincipalMother.Anonymous());
+
+    /// <summary>Verifies validating a null <see cref="UpdateProductCommand"/> throws FluentValidation's own <see cref="InvalidOperationException"/> ("Cannot pass null model to Validate"); this validator deliberately does not override that with an <see cref="ArgumentNullException"/>.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Validate_NullModel_ThrowsInvalidOperationException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _sut.Validate((UpdateProductCommand)null!)
+        );
+
+        // Assert
+        Assert.Contains("null model", ex.Message);
+    }
 }

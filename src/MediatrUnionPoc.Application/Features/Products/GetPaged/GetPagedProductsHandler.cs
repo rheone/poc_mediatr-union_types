@@ -12,16 +12,24 @@ namespace MediatrUnionPoc.Application.Features.Products.GetPaged;
 /// succeeds: there is no entity to be "not found" for a list, so an out-of-range page simply yields
 /// a <see cref="PagedResult{T}"/> with an empty <see cref="PagedResult{T}.Items"/> collection.
 /// </summary>
+/// <param name="repository">The repository pages are read from.</param>
+/// <exception cref="ArgumentNullException"><paramref name="repository"/> is <see langword="null"/>.</exception>
 public sealed class GetPagedProductsHandler(IProductRepository repository)
     : IRequestHandler<GetPagedProductsQuery, GetPagedProductsResult>
 {
+    private readonly IProductRepository _repository =
+        repository ?? throw new ArgumentNullException(nameof(repository));
+
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
     public async Task<GetPagedProductsResult> Handle(
         GetPagedProductsQuery request,
         CancellationToken cancellationToken
     )
     {
-        var page = await repository.GetPagedAsync(
+        ArgumentNullException.ThrowIfNull(request);
+
+        var page = await _repository.GetPagedAsync(
             request.PageNumber,
             request.PageSize,
             cancellationToken

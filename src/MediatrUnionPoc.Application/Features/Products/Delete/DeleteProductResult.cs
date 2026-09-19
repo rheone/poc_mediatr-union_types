@@ -26,12 +26,25 @@ public union DeleteProductResult(Success, NotFound<ProductId>, Error, NotAuthori
 {
     /// <inheritdoc/>
     /// <remarks>Maps validation failures onto <see cref="Error"/> since this union has no <see cref="ValidationErrors"/> case of its own.</remarks>
-    public static DeleteProductResult FromValidationErrors(ValidationErrors errors) =>
-        new Error($"Invalid request: {errors.ToErrorMessage()}", Error.ValidationFailureCode);
+    /// <exception cref="ArgumentNullException"><paramref name="errors"/> is <see langword="null"/>.</exception>
+    public static DeleteProductResult FromValidationErrors(ValidationErrors errors)
+    {
+        ArgumentNullException.ThrowIfNull(errors);
+
+        return new Error(
+            $"Invalid request: {errors.ToErrorMessage()}",
+            Error.ValidationFailureCode
+        );
+    }
 
     /// <inheritdoc/>
-    public static DeleteProductResult FromNotAuthorized(NotAuthorized notAuthorized) =>
-        notAuthorized;
+    /// <exception cref="ArgumentNullException"><paramref name="notAuthorized"/> is <see langword="null"/>.</exception>
+    public static DeleteProductResult FromNotAuthorized(NotAuthorized notAuthorized)
+    {
+        ArgumentNullException.ThrowIfNull(notAuthorized);
+
+        return notAuthorized;
+    }
 
     /// <inheritdoc/>
     /// <remarks>Exhaustive over this union's own cases only — see <see cref="Create.CreateProductResult.ShouldCommit"/> for why that matters.</remarks>

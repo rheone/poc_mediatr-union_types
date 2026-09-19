@@ -25,9 +25,6 @@ public sealed class OwnerAuthorizationHandlerTests
     private const string OtherUserId = "user-2";
     private const string UpdateOperation = "Update";
 
-    // SWEEP-AMBIGUITY: HandleAsync(context) has no ArgumentNullException guard (a null context surfaces as a
-    // NullReferenceException from the framework base class) / a null context should throw ArgumentNullException
-    // naming "context", but no such test is written because production does not do that.
     private readonly OwnerAuthorizationHandler<TestResource> _sut = new();
 
     /// <summary>Verifies the requirement succeeds when the caller's identifier claim equals the resource's owner.</summary>
@@ -97,4 +94,17 @@ public sealed class OwnerAuthorizationHandlerTests
             caller,
             new TestResource(OwnerId)
         );
+
+    /// <summary>Verifies a null context is rejected with <see cref="ArgumentNullException"/> instead of a <see cref="NullReferenceException"/> from the framework base class.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task HandleAsync_NullContext_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.HandleAsync(null!));
+
+        // Assert
+        Assert.Equal("context", ex.ParamName);
+    }
 }

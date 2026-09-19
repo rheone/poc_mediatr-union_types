@@ -30,10 +30,6 @@ public sealed class DeleteProductHandlerTests : IDisposable
     private const string ProductName = "Widget";
     private const decimal ProductPrice = 9.99m;
 
-    // SWEEP-AMBIGUITY: the ctor's repository and resourceAuthorizationService and Handle(request,
-    // cancellationToken) have no ArgumentNullException guards (a null request fails with a NullReferenceException) /
-    // each null reference-type parameter should throw ArgumentNullException, but no such test is written because
-    // production does not do that.
     private static readonly Guid MissingProductGuid = Guid.Parse(
         "22222222-2222-2222-2222-222222222222"
     );
@@ -170,5 +166,54 @@ public sealed class DeleteProductHandlerTests : IDisposable
         var product = Product.Create(ProductName, Money.From(ProductPrice), ownerId: OwnerId);
         _repository.GetByIdAsync(product.Id, Arg.Any<CancellationToken>()).Returns(product);
         return product;
+    }
+
+    /// <summary>Verifies the constructor rejects a null repository instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullRepository_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new DeleteProductHandler(
+                null!,
+                new ResourceAuthorizationService(
+                    _provider.GetRequiredService<IAuthorizationService>()
+                )
+            )
+        );
+
+        // Assert
+        Assert.Equal("repository", ex.ParamName);
+    }
+
+    /// <summary>Verifies the constructor rejects a null resource authorization service instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullResourceAuthorizationService_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new DeleteProductHandler(_repository, null!)
+        );
+
+        // Assert
+        Assert.Equal("resourceAuthorizationService", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null request is rejected with <see cref="ArgumentNullException"/> before the repository is touched.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullRequest_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.Handle(null!, CancellationToken.None)
+        );
+
+        // Assert
+        Assert.Equal("request", ex.ParamName);
+        Assert.Empty(_repository.ReceivedCalls());
     }
 }

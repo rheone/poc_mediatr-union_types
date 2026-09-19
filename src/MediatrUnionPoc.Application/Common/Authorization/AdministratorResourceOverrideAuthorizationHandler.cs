@@ -28,11 +28,27 @@ namespace MediatrUnionPoc.Application.Common.Authorization;
 /// set applies to every operation name, mirroring <see cref="AdministratorRequirement.AllowedRoles"/>'s
 /// "empty means unrestricted" convention.
 /// </param>
+/// <exception cref="ArgumentNullException"><paramref name="allowedOperationNames"/> is <see langword="null"/>.</exception>
 public sealed class AdministratorResourceOverrideAuthorizationHandler<TResource>(
     params string[] allowedOperationNames
 ) : AuthorizationHandler<OperationAuthorizationRequirement, TResource>
 {
-    private readonly string[] _allowedOperationNames = allowedOperationNames;
+    private readonly string[] _allowedOperationNames =
+        allowedOperationNames ?? throw new ArgumentNullException(nameof(allowedOperationNames));
+
+    /// <summary>
+    /// Guards <paramref name="context"/> before delegating to the framework's evaluation, which would
+    /// otherwise fail with a <see cref="NullReferenceException"/> from inside the base class.
+    /// </summary>
+    /// <param name="context">The authorization context to evaluate.</param>
+    /// <returns>A task that completes when evaluation has finished.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
+    public override Task HandleAsync(AuthorizationHandlerContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return base.HandleAsync(context);
+    }
 
     /// <inheritdoc/>
     protected override Task HandleRequirementAsync(

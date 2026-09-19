@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Delete;
+using MediatrUnionPoc.Application.Features.Products.Update;
 using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Tests.Unions;
@@ -13,9 +14,6 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// </summary>
 public class DeleteProductResultTests
 {
-    // SWEEP-AMBIGUITY: FromNotAuthorized(notAuthorized) has no ArgumentNullException guard (a null argument is
-    // silently wrapped into the union) / a null NotAuthorized should throw ArgumentNullException naming
-    // "notAuthorized", but no such test is written because production does not do that.
     private const string ErrorMessage = "boom";
     private const string ErrorCode = "BOOM";
     private const string NotAnAdministrator = "not an administrator";
@@ -69,5 +67,33 @@ public class DeleteProductResultTests
         // Assert
         var reasons = Assert.IsType<NotAuthorized>(((IUnion)result).Value).Reasons;
         Assert.Equal([NotAnAdministrator], reasons);
+    }
+
+    /// <summary>Verifies <see cref="DeleteProductResult.FromNotAuthorized"/> rejects a null argument instead of silently wrapping it into the union.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void FromNotAuthorized_DeleteProductResultNullNotAuthorized_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            DeleteProductResult.FromNotAuthorized(null!)
+        );
+
+        // Assert
+        Assert.Equal("notAuthorized", ex.ParamName);
+    }
+
+    /// <summary>Verifies <see cref="UpdateProductResult.FromNotAuthorized"/> rejects a null argument instead of silently wrapping it into the union.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void FromNotAuthorized_UpdateProductResultNullNotAuthorized_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            UpdateProductResult.FromNotAuthorized(null!)
+        );
+
+        // Assert
+        Assert.Equal("notAuthorized", ex.ParamName);
     }
 }

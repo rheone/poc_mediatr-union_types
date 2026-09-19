@@ -6,9 +6,6 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 /// <summary>Exercises <see cref="GetProductByIdValidator"/>'s validation rules directly.</summary>
 public class GetProductByIdValidatorTests
 {
-    // SWEEP-AMBIGUITY: validating a null command throws InvalidOperationException ("Cannot pass null model to
-    // Validate") from FluentValidation rather than ArgumentNullException / a null command should throw
-    // ArgumentNullException naming "instance", but no such test is written because production does not do that.
     private static readonly Guid SomeId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     private readonly GetProductByIdValidator _sut = new();
@@ -39,5 +36,19 @@ public class GetProductByIdValidatorTests
 
         // Assert
         result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    /// <summary>Verifies validating a null <see cref="GetProductByIdQuery"/> throws FluentValidation's own <see cref="InvalidOperationException"/> ("Cannot pass null model to Validate"); this validator deliberately does not override that with an <see cref="ArgumentNullException"/>.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Validate_NullModel_ThrowsInvalidOperationException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _sut.Validate((GetProductByIdQuery)null!)
+        );
+
+        // Assert
+        Assert.Contains("null model", ex.Message);
     }
 }

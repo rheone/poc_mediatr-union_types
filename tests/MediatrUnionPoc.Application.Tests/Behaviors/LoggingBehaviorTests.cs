@@ -18,13 +18,11 @@ public class LoggingBehaviorTests
     private const string ErrorCode = "BOOM";
     private const string InfrastructureFailureMessage = "infra failure";
 
-    // SWEEP-AMBIGUITY: the ctor's logger and Handle(request, next, cancellationToken) have no ArgumentNullException
-    // guards (a null request is never dereferenced except via typeof; a null next fails with a NullReferenceException) /
-    // each null reference-type parameter should throw ArgumentNullException, but no such test is written because
-    // production does not do that.
     private readonly LoggingBehavior<CreateProductCommand, CreateProductResult> _sut = new(
         NullLogger<LoggingBehavior<CreateProductCommand, CreateProductResult>>.Instance
     );
+
+    private bool _nextWasCalled;
 
     /// <summary>Verifies the union response returned by <c>next</c> passes through unchanged.</summary>
     /// <returns>The asynchronous test operation.</returns>
@@ -89,5 +87,61 @@ public class LoggingBehaviorTests
 
         // Assert
         Assert.Equal(message, ex.Message);
+    }
+
+    /// <summary>Verifies the constructor rejects a null logger instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullLogger_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LoggingBehavior<CreateProductCommand, CreateProductResult>(null!)
+        );
+
+        // Assert
+        Assert.Equal("logger", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null request is rejected with <see cref="ArgumentNullException"/> before <c>next</c> runs.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullRequest_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.Handle(null!, NeverInvokedNextAsync, CancellationToken.None)
+        );
+
+        // Assert
+        Assert.Equal("request", ex.ParamName);
+        Assert.False(_nextWasCalled);
+    }
+
+    /// <summary>Verifies a null <c>next</c> delegate is rejected with <see cref="ArgumentNullException"/> up front rather than a <see cref="NullReferenceException"/> after the request is logged.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullNext_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.Handle(
+                new CreateProductCommand(ProductName, ProductPrice),
+                null!,
+                CancellationToken.None
+            )
+        );
+
+        // Assert
+        Assert.Equal("next", ex.ParamName);
+    }
+
+    private Task<CreateProductResult> NeverInvokedNextAsync(CancellationToken cancellationToken)
+    {
+        _nextWasCalled = true;
+        CreateProductResult response = new Error(ErrorMessage, ErrorCode);
+        return Task.FromResult(response);
     }
 }

@@ -16,26 +16,38 @@ namespace MediatrUnionPoc.Application.Features.Products.Delete;
 /// the same resource-based mechanism <see cref="Update.UpdateProductHandler"/> uses, but backed by
 /// two independently-registered handlers (ownership and an admin role bypass) instead of one.
 /// </summary>
+/// <param name="repository">The repository the product is loaded from.</param>
+/// <param name="resourceAuthorizationService">The service used for the resource-based authorization check once the product is loaded.</param>
+/// <exception cref="ArgumentNullException"><paramref name="repository"/> or <paramref name="resourceAuthorizationService"/> is <see langword="null"/>.</exception>
 public sealed class DeleteProductHandler(
     IProductRepository repository,
     ResourceAuthorizationService resourceAuthorizationService
 ) : IRequestHandler<DeleteProductCommand, DeleteProductResult>
 {
+    private readonly IProductRepository _repository =
+        repository ?? throw new ArgumentNullException(nameof(repository));
+    private readonly ResourceAuthorizationService _resourceAuthorizationService =
+        resourceAuthorizationService
+        ?? throw new ArgumentNullException(nameof(resourceAuthorizationService));
+
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
     public async Task<DeleteProductResult> Handle(
         DeleteProductCommand request,
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(request);
+
         var productId = ProductId.From(request.Id);
-        var product = await repository.GetByIdAsync(productId, cancellationToken);
+        var product = await _repository.GetByIdAsync(productId, cancellationToken);
 
         if (product is null)
         {
             return new NotFound<ProductId>(productId);
         }
 
-        var notAuthorized = await resourceAuthorizationService.AuthorizeAsync(
+        var notAuthorized = await _resourceAuthorizationService.AuthorizeAsync(
             request.Principal,
             OwnedProductResource.FromDomain(product),
             AuthorizationPolicies.ProductOwnerOrAdministrator,
@@ -47,7 +59,7 @@ public sealed class DeleteProductHandler(
             return DeleteProductResult.FromNotAuthorized(notAuthorized);
         }
 
-        repository.Remove(product);
+        _repository.Remove(product);
         return new Success();
     }
 }

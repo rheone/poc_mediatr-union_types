@@ -10,9 +10,6 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 /// </summary>
 public class CreateProductValidatorTests
 {
-    // SWEEP-AMBIGUITY: validating a null command throws InvalidOperationException ("Cannot pass null model to
-    // Validate") from FluentValidation rather than ArgumentNullException / a null command should throw
-    // ArgumentNullException naming "instance", but no such test is written because production does not do that.
     private const string ValidName = "Widget";
     private const decimal ValidPrice = 10m;
     private const int MaxNameLength = 200;
@@ -103,5 +100,19 @@ public class CreateProductValidatorTests
 
         // Assert
         result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    /// <summary>Verifies validating a null <see cref="CreateProductCommand"/> throws FluentValidation's own <see cref="InvalidOperationException"/> ("Cannot pass null model to Validate"); this validator deliberately does not override that with an <see cref="ArgumentNullException"/>.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Validate_NullModel_ThrowsInvalidOperationException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _sut.Validate((CreateProductCommand)null!)
+        );
+
+        // Assert
+        Assert.Contains("null model", ex.Message);
     }
 }

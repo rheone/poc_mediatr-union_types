@@ -16,26 +16,38 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 /// already passed through the pipeline before its own handler runs (see
 /// <see cref="UpdateProductCommand.Principal"/> for why this one runs here instead).
 /// </summary>
+/// <param name="repository">The repository the product is loaded from.</param>
+/// <param name="resourceAuthorizationService">The service used for the resource-based authorization check once the product is loaded.</param>
+/// <exception cref="ArgumentNullException"><paramref name="repository"/> or <paramref name="resourceAuthorizationService"/> is <see langword="null"/>.</exception>
 public sealed class UpdateProductHandler(
     IProductRepository repository,
     ResourceAuthorizationService resourceAuthorizationService
 ) : IRequestHandler<UpdateProductCommand, UpdateProductResult>
 {
+    private readonly IProductRepository _repository =
+        repository ?? throw new ArgumentNullException(nameof(repository));
+    private readonly ResourceAuthorizationService _resourceAuthorizationService =
+        resourceAuthorizationService
+        ?? throw new ArgumentNullException(nameof(resourceAuthorizationService));
+
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
     public async Task<UpdateProductResult> Handle(
         UpdateProductCommand request,
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(request);
+
         var productId = ProductId.From(request.Id);
-        var product = await repository.GetByIdAsync(productId, cancellationToken);
+        var product = await _repository.GetByIdAsync(productId, cancellationToken);
 
         if (product is null)
         {
             return new NotFound<ProductId>(productId);
         }
 
-        var notAuthorized = await resourceAuthorizationService.AuthorizeAsync(
+        var notAuthorized = await _resourceAuthorizationService.AuthorizeAsync(
             request.Principal,
             OwnedProductResource.FromDomain(product),
             AuthorizationPolicies.ProductOwner,

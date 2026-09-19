@@ -23,8 +23,12 @@ namespace MediatrUnionPoc.Application.Common.Authorization;
 /// invoked at a different point in the request's lifetime.
 /// </remarks>
 /// <param name="authorizationService">The framework authorization service resource-aware checks are delegated to.</param>
+/// <exception cref="ArgumentNullException"><paramref name="authorizationService"/> is <see langword="null"/>.</exception>
 public sealed class ResourceAuthorizationService(IAuthorizationService authorizationService)
 {
+    private readonly IAuthorizationService _authorizationService =
+        authorizationService ?? throw new ArgumentNullException(nameof(authorizationService));
+
     /// <summary>
     /// Checks <paramref name="principal"/> against <paramref name="policyName"/> for the specific
     /// <paramref name="resource"/> the calling handler has already loaded, via
@@ -43,6 +47,7 @@ public sealed class ResourceAuthorizationService(IAuthorizationService authoriza
     /// <see langword="null"/> when authorization succeeds; otherwise a <see cref="Results.NotAuthorized"/>
     /// describing the failure, for the caller to pass to its union's <c>FromNotAuthorized</c>.
     /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="principal"/>, <paramref name="resource"/>, or <paramref name="policyName"/> is <see langword="null"/>.</exception>
     public async Task<NotAuthorized?> AuthorizeAsync(
         ClaimsPrincipal principal,
         object resource,
@@ -50,7 +55,11 @@ public sealed class ResourceAuthorizationService(IAuthorizationService authoriza
         CancellationToken cancellationToken = default
     )
     {
-        var result = await authorizationService.AuthorizeAsync(principal, resource, policyName);
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(policyName);
+
+        var result = await _authorizationService.AuthorizeAsync(principal, resource, policyName);
 
         return result.Succeeded
             ? null

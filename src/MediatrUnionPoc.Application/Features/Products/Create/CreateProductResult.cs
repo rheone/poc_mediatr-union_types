@@ -18,7 +18,13 @@ public union CreateProductResult(ProductDto, ValidationErrors, Error)
     : IValidatable<CreateProductResult>, ITransactionOutcome<CreateProductResult>
 {
     /// <inheritdoc/>
-    public static CreateProductResult FromValidationErrors(ValidationErrors errors) => errors;
+    /// <exception cref="ArgumentNullException"><paramref name="errors"/> is <see langword="null"/>.</exception>
+    public static CreateProductResult FromValidationErrors(ValidationErrors errors)
+    {
+        ArgumentNullException.ThrowIfNull(errors);
+
+        return errors;
+    }
 
     /// <inheritdoc/>
     /// <remarks>

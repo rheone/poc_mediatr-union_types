@@ -51,10 +51,6 @@ public class TransactionBehaviorTests
 
     private static readonly Guid ProductGuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
-    // SWEEP-AMBIGUITY: the ctor's unitOfWork and logger and Handle(request, next, cancellationToken) have no
-    // ArgumentNullException guards (a null next fails with a NullReferenceException after the transaction has begun) /
-    // each null reference-type parameter should throw ArgumentNullException before any transaction work, but no such
-    // test is written because production does not do that.
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
     private readonly TransactionBehavior<DeleteProductCommand, DeleteProductResult> _sut;
 
@@ -197,4 +193,58 @@ public class TransactionBehaviorTests
 
     private static DeleteProductCommand DeleteCommand() =>
         new(ProductGuid, PrincipalMother.Anonymous());
+
+    /// <summary>Verifies the constructor rejects a null unit of work instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullUnitOfWork_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => new TransactionBehavior<DeleteProductCommand, DeleteProductResult>(null!, NullLogger<TransactionBehavior<DeleteProductCommand, DeleteProductResult>>.Instance));
+
+        // Assert
+        Assert.Equal("unitOfWork", ex.ParamName);
+    }
+
+    /// <summary>Verifies the constructor rejects a null logger instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullLogger_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => new TransactionBehavior<DeleteProductCommand, DeleteProductResult>(_unitOfWork, null!));
+
+        // Assert
+        Assert.Equal("logger", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null request is rejected with <see cref="ArgumentNullException"/> before any transaction is begun.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullRequest_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(null!, _ => Task.FromResult<DeleteProductResult>(new Success()), CancellationToken.None));
+
+        // Assert
+        Assert.Equal("request", ex.ParamName);
+        await _unitOfWork.DidNotReceive().BeginTransactionAsync(Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Verifies a null <c>next</c> delegate is rejected with <see cref="ArgumentNullException"/> before any transaction is begun, rather than surfacing later as a <see cref="NullReferenceException"/> that rolls one back.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullNext_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(DeleteCommand(), null!, CancellationToken.None));
+
+        // Assert
+        Assert.Equal("next", ex.ParamName);
+        await _unitOfWork.DidNotReceive().BeginTransactionAsync(Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
+    }
 }

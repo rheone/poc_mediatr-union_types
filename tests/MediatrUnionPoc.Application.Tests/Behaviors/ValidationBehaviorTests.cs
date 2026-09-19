@@ -18,10 +18,6 @@ public class ValidationBehaviorTests
     private const string ValidName = "Widget";
     private const decimal ValidPrice = 10m;
 
-    // SWEEP-AMBIGUITY: the ctor's validators and logger and Handle(request, next, cancellationToken) have no
-    // ArgumentNullException guards (a null validators sequence or null request fails with a NullReferenceException,
-    // a null next only when invoked) / each null reference-type parameter should throw ArgumentNullException, but no
-    // such test is written because production does not do that.
     private readonly ValidationBehavior<CreateProductCommand, CreateProductResult> _sut;
     private readonly IValidator<CreateProductCommand> _validator;
     private bool _nextWasCalled;
@@ -180,5 +176,77 @@ public class ValidationBehaviorTests
         _nextWasCalled = true;
         CreateProductResult sentinel = new Error("sentinel from next()", "SENTINEL");
         return Task.FromResult(sentinel);
+    }
+
+    /// <summary>Verifies the constructor rejects a null validators sequence instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullValidators_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new ValidationBehavior<CreateProductCommand, CreateProductResult>(
+                null!,
+                NullLogger<ValidationBehavior<CreateProductCommand, CreateProductResult>>.Instance
+            )
+        );
+
+        // Assert
+        Assert.Equal("validators", ex.ParamName);
+    }
+
+    /// <summary>Verifies the constructor rejects a null logger instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullLogger_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new ValidationBehavior<CreateProductCommand, CreateProductResult>([_validator], null!)
+        );
+
+        // Assert
+        Assert.Equal("logger", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null request is rejected with <see cref="ArgumentNullException"/> before any validator runs.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullRequest_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.Handle(null!, NextAsync, CancellationToken.None)
+        );
+
+        // Assert
+        Assert.Equal("request", ex.ParamName);
+        Assert.False(_nextWasCalled);
+        await _validator
+            .DidNotReceiveWithAnyArgs()
+            .ValidateAsync(default(ValidationContext<CreateProductCommand>)!, default);
+    }
+
+    /// <summary>Verifies a null <c>next</c> delegate is rejected with <see cref="ArgumentNullException"/> before any validator runs, even when validation would have passed.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullNext_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.Handle(
+                new CreateProductCommand(ValidName, ValidPrice),
+                null!,
+                CancellationToken.None
+            )
+        );
+
+        // Assert
+        Assert.Equal("next", ex.ParamName);
+        await _validator
+            .DidNotReceiveWithAnyArgs()
+            .ValidateAsync(default(ValidationContext<CreateProductCommand>)!, default);
     }
 }

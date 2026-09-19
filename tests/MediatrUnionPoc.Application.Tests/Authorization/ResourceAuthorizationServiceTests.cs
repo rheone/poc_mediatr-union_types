@@ -18,10 +18,6 @@ public sealed class ResourceAuthorizationServiceTests
     private const string PolicyName = "SomePolicy";
     private const string ResourceOwnerId = "user-1";
 
-    // SWEEP-AMBIGUITY: the ctor's authorizationService and AuthorizeAsync(principal, resource, policyName) have no
-    // ArgumentNullException guards (a null service fails later with a NullReferenceException; null principal,
-    // resource, or policyName are forwarded to the framework unchecked) / each null reference-type parameter should
-    // throw ArgumentNullException, but no such test is written because production does not do that.
     private readonly IAuthorizationService _authorizationService =
         Substitute.For<IAuthorizationService>();
 
@@ -89,5 +85,77 @@ public sealed class ResourceAuthorizationServiceTests
 
         // Assert
         await _authorizationService.Received(1).AuthorizeAsync(principal, resource, PolicyName);
+    }
+
+    /// <summary>Verifies the constructor rejects a null authorization service instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullAuthorizationService_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new ResourceAuthorizationService(null!)
+        );
+
+        // Assert
+        Assert.Equal("authorizationService", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null principal is rejected with <see cref="ArgumentNullException"/> before the framework service is called.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task AuthorizeAsync_NullPrincipal_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.AuthorizeAsync(null!, new TestResource(ResourceOwnerId), PolicyName)
+        );
+
+        // Assert
+        Assert.Equal("principal", ex.ParamName);
+        await _authorizationService
+            .DidNotReceiveWithAnyArgs()
+            .AuthorizeAsync(default!, default, default(string)!);
+    }
+
+    /// <summary>Verifies a null resource is rejected with <see cref="ArgumentNullException"/> before the framework service is called.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task AuthorizeAsync_NullResource_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.AuthorizeAsync(PrincipalMother.Anonymous(), null!, PolicyName)
+        );
+
+        // Assert
+        Assert.Equal("resource", ex.ParamName);
+        await _authorizationService
+            .DidNotReceiveWithAnyArgs()
+            .AuthorizeAsync(default!, default, default(string)!);
+    }
+
+    /// <summary>Verifies a null policy name is rejected with <see cref="ArgumentNullException"/> before the framework service is called.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task AuthorizeAsync_NullPolicyName_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.AuthorizeAsync(
+                PrincipalMother.Anonymous(),
+                new TestResource(ResourceOwnerId),
+                null!
+            )
+        );
+
+        // Assert
+        Assert.Equal("policyName", ex.ParamName);
+        await _authorizationService
+            .DidNotReceiveWithAnyArgs()
+            .AuthorizeAsync(default!, default, default(string)!);
     }
 }

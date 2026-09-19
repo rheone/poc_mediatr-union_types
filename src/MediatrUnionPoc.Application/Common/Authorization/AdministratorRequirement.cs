@@ -13,7 +13,9 @@ public sealed class AdministratorRequirement : IAuthorizationRequirement
 {
     /// <summary>Initializes the requirement with the set of roles that satisfy it.</summary>
     /// <param name="allowedRoles">Any one of these roles is sufficient; an empty set is automatically satisfied.</param>
-    public AdministratorRequirement(params string[] allowedRoles) => AllowedRoles = allowedRoles;
+    /// <exception cref="ArgumentNullException"><paramref name="allowedRoles"/> is <see langword="null"/>.</exception>
+    public AdministratorRequirement(params string[] allowedRoles) =>
+        AllowedRoles = allowedRoles ?? throw new ArgumentNullException(nameof(allowedRoles));
 
     /// <summary>The roles that satisfy this requirement — matching any one of them is sufficient.</summary>
     /// <value>A possibly-empty set of role names; an empty set means the requirement is automatically satisfied.</value>

@@ -11,10 +11,21 @@ namespace MediatrUnionPoc.Application.Features.Products.Common;
 /// adaptation <see cref="IOwnedResource"/>'s own doc comment anticipates, rather than a stub.
 /// </summary>
 /// <param name="OwnerId">The wrapped product's owner identifier.</param>
+/// <exception cref="ArgumentNullException"><paramref name="OwnerId"/> is <see langword="null"/>.</exception>
 public sealed record OwnedProductResource(string OwnerId) : IOwnedResource
 {
+    /// <inheritdoc/>
+    public string OwnerId { get; init; } =
+        OwnerId ?? throw new ArgumentNullException(nameof(OwnerId));
+
     /// <summary>Wraps an already-loaded <see cref="Product"/> for a resource-based authorization check.</summary>
     /// <param name="product">The already-loaded product to wrap.</param>
     /// <returns>An <see cref="OwnedProductResource"/> exposing <paramref name="product"/>'s owner.</returns>
-    public static OwnedProductResource FromDomain(Product product) => new(product.OwnerId);
+    /// <exception cref="ArgumentNullException"><paramref name="product"/> is <see langword="null"/>.</exception>
+    public static OwnedProductResource FromDomain(Product product)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+
+        return new(product.OwnerId);
+    }
 }

@@ -14,10 +14,6 @@ namespace MediatrUnionPoc.Application.Tests.Authorization;
 /// </summary>
 public sealed class AdministratorResourceOverrideAuthorizationHandlerTests
 {
-    // SWEEP-AMBIGUITY: the ctor's allowedOperationNames array and HandleAsync(context) have no
-    // ArgumentNullException guard (a null array or context fails later with a NullReferenceException) / each null
-    // reference-type parameter should throw ArgumentNullException, but no such test is written because production
-    // does not do that.
     private const string Administrator = "Administrator";
     private const string Viewer = "Viewer";
     private const string Delete = "Delete";
@@ -80,5 +76,34 @@ public sealed class AdministratorResourceOverrideAuthorizationHandlerTests
 
         // Assert
         Assert.Equal(expectedSuccess, context.HasSucceeded);
+    }
+
+    /// <summary>Verifies the constructor rejects a null operation-name array instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullAllowedOperationNames_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new AdministratorResourceOverrideAuthorizationHandler<TestResource>(null!)
+        );
+
+        // Assert
+        Assert.Equal("allowedOperationNames", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null context is rejected with <see cref="ArgumentNullException"/> instead of a <see cref="NullReferenceException"/> from the framework base class.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task HandleAsync_NullContext_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            new AdministratorResourceOverrideAuthorizationHandler<TestResource>().HandleAsync(null!)
+        );
+
+        // Assert
+        Assert.Equal("context", ex.ParamName);
     }
 }

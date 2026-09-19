@@ -42,6 +42,9 @@ namespace MediatrUnionPoc.Application.Common.Behaviors;
 /// </remarks>
 /// <typeparam name="TRequest">The transactional command type.</typeparam>
 /// <typeparam name="TResponse">The command's response union type.</typeparam>
+/// <param name="unitOfWork">The unit of work the transaction is begun, committed, and rolled back on.</param>
+/// <param name="logger">The logger rollbacks are written to.</param>
+/// <exception cref="ArgumentNullException"><paramref name="unitOfWork"/> or <paramref name="logger"/> is <see langword="null"/>.</exception>
 public sealed class TransactionBehavior<TRequest, TResponse>(
     IUnitOfWork unitOfWork,
     ILogger<TransactionBehavior<TRequest, TResponse>> logger
@@ -49,14 +52,24 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
     where TRequest : ITransactionalCommand<TResponse>
     where TResponse : IUnion, ITransactionOutcome<TResponse>
 {
+    private readonly IUnitOfWork _unitOfWork =
+        unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+    private readonly ILogger<TransactionBehavior<TRequest, TResponse>> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
+
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> or <paramref name="next"/> is <see langword="null"/>.</exception>
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken
     )
     {
-        await unitOfWork.BeginTransactionAsync(cancellationToken);
+        // Guard before BeginTransactionAsync so a null argument never opens a transaction.
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(next);
+
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
         try
         {
@@ -64,16 +77,16 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
 
             if (TResponse.ShouldCommit(response))
             {
-                await unitOfWork.CommitAsync(cancellationToken);
+                await _unitOfWork.CommitAsync(cancellationToken);
             }
             else
             {
-                logger.LogInformation(
+                _logger.LogInformation(
                     "{RequestName} produced {ResultCase}; rolling back transaction",
                     typeof(TRequest).Name,
                     response.Value?.GetType().Name ?? "null"
                 );
-                await unitOfWork.RollbackAsync(cancellationToken);
+                await _unitOfWork.RollbackAsync(cancellationToken);
             }
 
             return response;
@@ -82,12 +95,12 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
         {
             // Log the request-specific rollback context here, then rethrow the original exception
             // unmodified (not wrapped) so its type and stack trace survive for the caller.
-            logger.LogError(
+            _logger.LogError(
                 ex,
                 "{RequestName} threw; rolling back transaction",
                 typeof(TRequest).Name
             );
-            await unitOfWork.RollbackAsync(cancellationToken);
+            await _unitOfWork.RollbackAsync(cancellationToken);
             throw;
         }
     }

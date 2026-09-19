@@ -20,9 +20,6 @@ public class FromValidationErrorsTests
     private const string PropertyName = "Name";
     private const string ErrorMessage = "must not be empty";
 
-    // SWEEP-AMBIGUITY: each FromValidationErrors(errors) has no ArgumentNullException guard (a null argument is
-    // wrapped as-is or fails later in ToErrorMessage with a NullReferenceException) / a null ValidationErrors should
-    // throw ArgumentNullException naming "errors", but no such test is written because production does not do that.
     private static readonly ValidationErrors SomeErrors = new([
         new ValidationError(PropertyName, ErrorMessage),
     ]);
@@ -72,5 +69,75 @@ public class FromValidationErrorsTests
                 Assert.Contains(SomeErrors.ToErrorMessage(), error.Message);
             }
         );
+    }
+
+    /// <summary>Verifies <see cref="CreateProductResult.FromValidationErrors"/> rejects a null argument instead of wrapping it or failing later.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void FromValidationErrors_CreateProductNullErrors_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            CreateProductResult.FromValidationErrors(null!)
+        );
+
+        // Assert
+        Assert.Equal("errors", ex.ParamName);
+    }
+
+    /// <summary>Verifies <see cref="UpdateProductResult.FromValidationErrors"/> rejects a null argument instead of wrapping it or failing later.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void FromValidationErrors_UpdateProductNullErrors_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            UpdateProductResult.FromValidationErrors(null!)
+        );
+
+        // Assert
+        Assert.Equal("errors", ex.ParamName);
+    }
+
+    /// <summary>Verifies <see cref="DeleteProductResult.FromValidationErrors"/> rejects a null argument instead of wrapping it or failing later.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void FromValidationErrors_DeleteProductNullErrors_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            DeleteProductResult.FromValidationErrors(null!)
+        );
+
+        // Assert
+        Assert.Equal("errors", ex.ParamName);
+    }
+
+    /// <summary>Verifies <see cref="GetProductByIdResult.FromValidationErrors"/> rejects a null argument instead of wrapping it or failing later.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void FromValidationErrors_GetProductByIdNullErrors_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            GetProductByIdResult.FromValidationErrors(null!)
+        );
+
+        // Assert
+        Assert.Equal("errors", ex.ParamName);
+    }
+
+    /// <summary>Verifies <see cref="GetPagedProductsResult.FromValidationErrors"/> rejects a null argument instead of wrapping it or failing later.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void FromValidationErrors_GetPagedProductsNullErrors_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            GetPagedProductsResult.FromValidationErrors(null!)
+        );
+
+        // Assert
+        Assert.Equal("errors", ex.ParamName);
     }
 }

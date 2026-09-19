@@ -56,10 +56,8 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     private const string UpdateOperation = "Update";
     private const string AuthenticationType = "Test";
 
-    // SWEEP-AMBIGUITY: the framework's AuthorizeAsync(principal, resource, policyName) is the member under test
-    // and OwnerAuthorizationHandler has no null guards of its own (a null resource fails with a
-    // NullReferenceException) / null arguments should throw ArgumentNullException, but no such test is written
-    // because that behavior belongs to the framework and production does not add it.
+    // Null-argument guards on OwnerAuthorizationHandler are covered by OwnerAuthorizationHandlerTests; this class
+    // tests the framework's OR-across-handlers evaluation, so framework null handling is deliberately not asserted here.
     private readonly ServiceProvider _provider;
     private readonly IAuthorizationService _authorizationService;
 

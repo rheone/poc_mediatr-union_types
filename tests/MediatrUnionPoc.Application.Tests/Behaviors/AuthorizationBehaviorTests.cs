@@ -65,10 +65,6 @@ public sealed class AuthorizationBehaviorTests : IDisposable
     private const string AdministratorRole = "Administrator";
     private const string ViewerRole = "Viewer";
 
-    // SWEEP-AMBIGUITY: the ctor's authorizationService and logger and Handle(request, next, cancellationToken)
-    // have no ArgumentNullException guards (a null request fails with a NullReferenceException; a null next fails
-    // only when invoked) / each null reference-type parameter should throw ArgumentNullException, but no such
-    // test is written because production does not do that.
     private readonly ServiceProvider _provider;
     private readonly AuthorizationBehavior<ArbitraryAdminCommand, ArbitraryAdminOutcome> _sut;
 
@@ -166,6 +162,56 @@ public sealed class AuthorizationBehaviorTests : IDisposable
         // Assert
         Assert.Equal(cts.Token, received);
     }
+
+    /// <summary>Verifies the constructor rejects a null authorization service instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullAuthorizationService_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => new AuthorizationBehavior<ArbitraryAdminCommand, ArbitraryAdminOutcome>(null!, NullLogger<AuthorizationBehavior<ArbitraryAdminCommand, ArbitraryAdminOutcome>>.Instance));
+
+        // Assert
+        Assert.Equal("authorizationService", ex.ParamName);
+    }
+
+    /// <summary>Verifies the constructor rejects a null logger instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullLogger_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => new AuthorizationBehavior<ArbitraryAdminCommand, ArbitraryAdminOutcome>(_provider.GetRequiredService<IAuthorizationService>(), null!));
+
+        // Assert
+        Assert.Equal("logger", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null request is rejected with <see cref="ArgumentNullException"/> instead of a <see cref="NullReferenceException"/> when reading its principal.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullRequest_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(null!, _ => Task.FromResult<ArbitraryAdminOutcome>(new Success()), CancellationToken.None));
+
+        // Assert
+        Assert.Equal("request", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null <c>next</c> delegate is rejected with <see cref="ArgumentNullException"/> up front, even for an authorized caller who would otherwise reach it.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullNext_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(new ArbitraryAdminCommand(PrincipalMother.WithRoles(AdministratorRole)), null!, CancellationToken.None));
+
+        // Assert
+        Assert.Equal("next", ex.ParamName);
+    }
 }
 
 /// <summary>
@@ -178,8 +224,6 @@ public sealed class AuthorizationBehaviorTests : IDisposable
 /// </summary>
 public sealed class AuthorizationBehaviorPolicyNameTests
 {
-    // SWEEP-AMBIGUITY: see AuthorizationBehaviorTests; the same unguarded null parameters apply to this class's
-    // subject, and no null-parameter test is written because production does not guard them.
     private readonly IAuthorizationService _authorizationService =
         Substitute.For<IAuthorizationService>();
 
@@ -264,5 +308,33 @@ public sealed class AuthorizationBehaviorPolicyNameTests
         await _authorizationService
             .DidNotReceive()
             .AuthorizeAsync(principal, null, AuthorizationPolicies.Administrator);
+    }
+
+    /// <summary>Verifies a null request is rejected with <see cref="ArgumentNullException"/> before <see cref="IAuthorizationService"/> is consulted.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullRequest_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(null!, _ => Task.FromResult<ArbitraryAdminOutcome>(new Success()), CancellationToken.None));
+
+        // Assert
+        Assert.Equal("request", ex.ParamName);
+        await _authorizationService.DidNotReceive().AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>());
+    }
+
+    /// <summary>Verifies a null <c>next</c> delegate is rejected with <see cref="ArgumentNullException"/> before <see cref="IAuthorizationService"/> is consulted.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullNext_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(new ArbitraryPolicyCommand(PrincipalMother.Anonymous()), null!, CancellationToken.None));
+
+        // Assert
+        Assert.Equal("next", ex.ParamName);
+        await _authorizationService.DidNotReceive().AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>());
     }
 }

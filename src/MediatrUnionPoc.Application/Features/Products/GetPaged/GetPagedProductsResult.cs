@@ -34,6 +34,14 @@ public union GetPagedProductsResult(PagedResult<ProductDto>, Error) : IValidatab
 {
     /// <inheritdoc/>
     /// <remarks>Maps validation failures onto <see cref="Error"/> since this union has no <see cref="ValidationErrors"/> case of its own.</remarks>
-    public static GetPagedProductsResult FromValidationErrors(ValidationErrors errors) =>
-        new Error($"Invalid paging request: {errors.ToErrorMessage()}", Error.ValidationFailureCode);
+    /// <exception cref="ArgumentNullException"><paramref name="errors"/> is <see langword="null"/>.</exception>
+    public static GetPagedProductsResult FromValidationErrors(ValidationErrors errors)
+    {
+        ArgumentNullException.ThrowIfNull(errors);
+
+        return new Error(
+            $"Invalid paging request: {errors.ToErrorMessage()}",
+            Error.ValidationFailureCode
+        );
+    }
 }

@@ -16,9 +16,15 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 /// command deliberately does not implement <see cref="IRequiresAuthorization"/> — that pipeline
 /// path runs before any resource is loaded, too early for an ownership check.
 /// </param>
+/// <exception cref="ArgumentNullException"><paramref name="Principal"/> is <see langword="null"/>.</exception>
 public sealed record UpdateProductCommand(
     Guid Id,
     string Name,
     decimal Price,
     ClaimsPrincipal Principal
-) : ITransactionalCommand<UpdateProductResult>;
+) : ITransactionalCommand<UpdateProductResult>
+{
+    /// <summary>The caller's identity, checked by <see cref="UpdateProductHandler"/> after loading the product; never <see langword="null"/>.</summary>
+    public ClaimsPrincipal Principal { get; init; } =
+        Principal ?? throw new ArgumentNullException(nameof(Principal));
+}

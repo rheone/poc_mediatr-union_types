@@ -16,9 +16,6 @@ public class GetProductByIdHandlerTests
     private const string ProductName = "Widget";
     private const decimal ProductPrice = 9.99m;
 
-    // SWEEP-AMBIGUITY: the ctor's repository and Handle(request, cancellationToken) have no ArgumentNullException
-    // guards (a null request fails with a NullReferenceException) / each null reference-type parameter should throw
-    // ArgumentNullException, but no such test is written because production does not do that.
     private static readonly Guid MissingProductGuid = Guid.Parse(
         "33333333-3333-3333-3333-333333333333"
     );
@@ -78,5 +75,33 @@ public class GetProductByIdHandlerTests
         await _repository
             .Received(1)
             .GetByIdAsync(ProductId.From(MissingProductGuid), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Verifies the constructor rejects a null repository instead of failing on first use.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullRepository_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => new GetProductByIdHandler(null!));
+
+        // Assert
+        Assert.Equal("repository", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null request is rejected with <see cref="ArgumentNullException"/> before the repository is touched.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Handle_NullRequest_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _sut.Handle(null!, CancellationToken.None)
+        );
+
+        // Assert
+        Assert.Equal("request", ex.ParamName);
+        Assert.Empty(_repository.ReceivedCalls());
     }
 }

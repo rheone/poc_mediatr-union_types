@@ -19,5 +19,11 @@ namespace MediatrUnionPoc.Application.Features.Products.Delete;
 /// </summary>
 /// <param name="Id">The product's identity.</param>
 /// <param name="Principal">The caller's identity, checked by <see cref="DeleteProductHandler"/> after loading the product.</param>
+/// <exception cref="ArgumentNullException"><paramref name="Principal"/> is <see langword="null"/>.</exception>
 public sealed record DeleteProductCommand(Guid Id, ClaimsPrincipal Principal)
-    : ITransactionalCommand<DeleteProductResult>;
+    : ITransactionalCommand<DeleteProductResult>
+{
+    /// <summary>The caller's identity, checked by <see cref="DeleteProductHandler"/> after loading the product; never <see langword="null"/>.</summary>
+    public ClaimsPrincipal Principal { get; init; } =
+        Principal ?? throw new ArgumentNullException(nameof(Principal));
+}

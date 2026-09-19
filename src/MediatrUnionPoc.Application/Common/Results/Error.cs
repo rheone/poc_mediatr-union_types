@@ -11,6 +11,7 @@ namespace MediatrUnionPoc.Application.Common.Results;
 /// Deliberately excluded from serialization (<see cref="JsonIgnoreAttribute"/>): it's never meant
 /// to reach an API consumer, only whoever is looking at this <see cref="Error"/> in a debugger or a log.
 /// </param>
+/// <exception cref="ArgumentNullException"><paramref name="Message"/> is <see langword="null"/>.</exception>
 [DebuggerDisplay("{DebuggerDisplayText,nq}")]
 public sealed record Error(
     string Message,
@@ -18,6 +19,10 @@ public sealed record Error(
     [property: JsonIgnore] Exception? Cause = null
 )
 {
+    /// <summary>A human-readable description of what went wrong; never <see langword="null"/>.</summary>
+    public string Message { get; init; } =
+        Message ?? throw new ArgumentNullException(nameof(Message));
+
     /// <summary>
     /// The <see cref="Code"/> an <see cref="Error"/> carries when a union with no
     /// <see cref="ValidationErrors"/> case of its own folds a validation failure into <see cref="Error"/>

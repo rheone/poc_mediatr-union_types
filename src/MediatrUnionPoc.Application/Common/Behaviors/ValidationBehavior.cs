@@ -15,6 +15,9 @@ namespace MediatrUnionPoc.Application.Common.Behaviors;
 /// </summary>
 /// <typeparam name="TRequest">The MediatR request type being validated.</typeparam>
 /// <typeparam name="TResponse">The request's response union type, which must implement <see cref="IValidatable{TSelf}"/>.</typeparam>
+/// <param name="validators">Every validator registered for <typeparamref name="TRequest"/>; may be empty.</param>
+/// <param name="logger">The logger validation failures are written to.</param>
+/// <exception cref="ArgumentNullException"><paramref name="validators"/> or <paramref name="logger"/> is <see langword="null"/>.</exception>
 public sealed class ValidationBehavior<TRequest, TResponse>(
     IEnumerable<IValidator<TRequest>> validators,
     ILogger<ValidationBehavior<TRequest, TResponse>> logger
@@ -22,14 +25,23 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
     where TRequest : IRequest<TResponse>
     where TResponse : IValidatable<TResponse>
 {
+    private readonly IEnumerable<IValidator<TRequest>> _validators =
+        validators ?? throw new ArgumentNullException(nameof(validators));
+    private readonly ILogger<ValidationBehavior<TRequest, TResponse>> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
+
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> or <paramref name="next"/> is <see langword="null"/>.</exception>
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken
     )
     {
-        if (!validators.Any())
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(next);
+
+        if (!_validators.Any())
         {
             // No validators registered for TRequest — skip building a ValidationContext and
             // running FluentValidation's async machinery for nothing.
@@ -38,7 +50,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
 
         var context = new ValidationContext<TRequest>(request);
         var results = await Task.WhenAll(
-            validators.Select(v => v.ValidateAsync(context, cancellationToken))
+            _validators.Select(v => v.ValidateAsync(context, cancellationToken))
         );
 
         var failures = results
@@ -48,7 +60,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
 
         if (failures.Count > 0)
         {
-            logger.LogWarning(
+            _logger.LogWarning(
                 "Validation failed for {RequestName} with {Count} error(s)",
                 typeof(TRequest).Name,
                 failures.Count

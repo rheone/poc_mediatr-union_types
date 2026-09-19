@@ -17,6 +17,9 @@ namespace MediatrUnionPoc.Application.Common.Behaviors;
 /// </summary>
 /// <typeparam name="TRequest">The MediatR request type being authorized.</typeparam>
 /// <typeparam name="TResponse">The request's response union type, which must implement <see cref="IAuthorizable{TSelf}"/>.</typeparam>
+/// <param name="authorizationService">The framework service the request's policy is evaluated with.</param>
+/// <param name="logger">The logger denials are written to.</param>
+/// <exception cref="ArgumentNullException"><paramref name="authorizationService"/> or <paramref name="logger"/> is <see langword="null"/>.</exception>
 public sealed class AuthorizationBehavior<TRequest, TResponse>(
     IAuthorizationService authorizationService,
     ILogger<AuthorizationBehavior<TRequest, TResponse>> logger
@@ -24,21 +27,30 @@ public sealed class AuthorizationBehavior<TRequest, TResponse>(
     where TRequest : IRequest<TResponse>, IRequiresAuthorization
     where TResponse : IUnion, IAuthorizable<TResponse>
 {
+    private readonly IAuthorizationService _authorizationService =
+        authorizationService ?? throw new ArgumentNullException(nameof(authorizationService));
+    private readonly ILogger<AuthorizationBehavior<TRequest, TResponse>> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
+
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> or <paramref name="next"/> is <see langword="null"/>.</exception>
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken
     )
     {
-        var authorizationResult = await authorizationService.AuthorizeAsync(
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(next);
+
+        var authorizationResult = await _authorizationService.AuthorizeAsync(
             request.Principal,
             request.PolicyName
         );
 
         if (!authorizationResult.Succeeded)
         {
-            logger.LogWarning(
+            _logger.LogWarning(
                 "{RequestName} denied: caller does not satisfy the {Policy} policy",
                 typeof(TRequest).Name,
                 request.PolicyName

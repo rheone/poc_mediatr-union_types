@@ -45,11 +45,22 @@ public union UpdateProductResult(Success, NotFound<ProductId>, ValidationErrors,
         IAuthorizable<UpdateProductResult>
 {
     /// <inheritdoc/>
-    public static UpdateProductResult FromValidationErrors(ValidationErrors errors) => errors;
+    /// <exception cref="ArgumentNullException"><paramref name="errors"/> is <see langword="null"/>.</exception>
+    public static UpdateProductResult FromValidationErrors(ValidationErrors errors)
+    {
+        ArgumentNullException.ThrowIfNull(errors);
+
+        return errors;
+    }
 
     /// <inheritdoc/>
-    public static UpdateProductResult FromNotAuthorized(NotAuthorized notAuthorized) =>
-        notAuthorized;
+    /// <exception cref="ArgumentNullException"><paramref name="notAuthorized"/> is <see langword="null"/>.</exception>
+    public static UpdateProductResult FromNotAuthorized(NotAuthorized notAuthorized)
+    {
+        ArgumentNullException.ThrowIfNull(notAuthorized);
+
+        return notAuthorized;
+    }
 
     /// <inheritdoc/>
     /// <remarks>
