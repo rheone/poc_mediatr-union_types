@@ -25,6 +25,9 @@ node tools/validate-mermaid.mjs --mode parse --mermaid-version 11.16.1
 # Your own diagrams, against a target release
 node tools/validate-mermaid.mjs --files docs/architecture.md,docs/flow.mmd --mode parse --mermaid-version 11.16.1
 
+# Replay the escaping matrix and report drift from the baseline
+node tools/validate-mermaid.mjs --escaping --mermaid-version 12.0.0
+
 # Machine-readable output
 node tools/validate-mermaid.mjs --json | jq .
 
@@ -92,6 +95,26 @@ First check whether the example itself is wrong. Test candidate syntax directly 
 ```markdown
 <!-- mermaid-validate: skip reason="<diagram> has parser issues in vX.Y.Z" -->
 ```
+
+## Escaping matrix
+
+The escaping rules in `references/general/authoring-rules.md` and each type's "Escaping" section come from a matrix: every special character (`" # & ; : < > | ( ) [ ] { }` and a backtick) in every label position of every diagram family, written raw and in each escape spelling (`#n;`, `&#n;`, `#name;`, `&name;`). `--escaping` replays it (about 2,700 cases, ~30s) in headless Chromium and records one outcome per case:
+
+- **pass** - parsed, rendered, and the expected label text is in the SVG.
+- **fail** - a parse or render error.
+- **altered text** - rendered without error, but the text is missing or changed. These silent failures are why "no error" is not proof a label is right.
+
+Outcomes are compared with `tools/escaping-baseline.json`, which holds one string per Mermaid major version (recorded on 12.0.0 and 11.16.1). Any difference prints as `DRIFT` and exits 1, meaning the guidance in `references/` may be stale.
+
+```bash
+node tools/validate-mermaid.mjs --escaping                                  # against the pin (12.x baseline)
+node tools/validate-mermaid.mjs --escaping --mermaid-version 11.16.1        # against the 11.x baseline
+node tools/validate-mermaid.mjs --escaping --update-baseline                # record this release as the baseline
+```
+
+After a Mermaid bump, run it, read each drift, update the rules the drift contradicts, then `--update-baseline`. Adding a label position or character means editing `tools/escaping-cases.mjs`; the case list is hashed, so the tool asks for a new baseline when it changes.
+
+Two caveats when reading a drift. "Altered text" also covers types whose SVG is not XML-parseable (event modeling, Wardley) and renderers that draw text outside the SVG text nodes, and a one-service architecture diagram does not render on 11.16.1 whatever its label. Those outcomes are stable per release, so they are useful as drift signals but do not mean the escaping itself changed - 11.17.2 drifts from the 11.16.1 baseline only in C4 (text becomes extractable) and architecture for exactly this reason.
 
 ## Manual validation
 

@@ -4,7 +4,7 @@ Escaping rules and the pre-delivery self-check that apply once a diagram type is
 
 ## Escaping and quoting
 
-The rules in this section were tested by putting each special character into each label position of each diagram family, then rendering on Mermaid 12.0.0 and 11.16.1 and reading the label text back out of the SVG. Results are identical on both versions for every type that exists in both. A label can *parse* and still render wrong, so "no error" is not proof the text is right.
+The rules in this section were tested by putting each special character into each label position of each diagram family, then rendering on Mermaid 12.0.0 and 11.16.1 and reading the label text back out of the SVG. Results are identical on both versions for every type that exists in both. A label can *parse* and still render wrong, so "no error" is not proof the text is right. Inside this skill's repository the matrix is replayable: `node tools/validate-mermaid.mjs --escaping` reports any case that no longer matches the recorded baseline (see `tools/README.md`).
 
 **1. Quote by default.** Wrap any label in double quotes: `A["text"]`, `A -->|"text"| B`, `subgraph S["text"]`, `state "text" as s1`, `Person(p, "text")`. Quoting is always safe and removes most collisions. Unquoted text breaks on the characters in the table below, so when unsure, quote.
 

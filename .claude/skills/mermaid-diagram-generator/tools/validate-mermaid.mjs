@@ -11,12 +11,14 @@
  *   node tools/validate-mermaid.mjs --only architecture,treeview
  *   node tools/validate-mermaid.mjs --mermaid-version 11.16.1   check the same blocks against another release
  *   node tools/validate-mermaid.mjs --json
+ *   node tools/validate-mermaid.mjs --escaping                    replay the escaping matrix; report drift from the baseline
  *   node tools/validate-mermaid.mjs --clean         delete the temp dependency cache
  *
  * Exit code 0 when everything passed, 1 otherwise.
  */
 
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -65,7 +67,7 @@ const REQUIRED_SECTIONS = [
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const opts = { mode: 'render', only: null, json: false, clean: false, verbose: false, mermaidVersion: null, files: [] };
+  const opts = { mode: 'render', only: null, json: false, clean: false, verbose: false, mermaidVersion: null, files: [], escaping: false, updateBaseline: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--mode') opts.mode = argv[++i];
@@ -76,6 +78,8 @@ function parseArgs(argv) {
     else if (a.startsWith('--mermaid-version=')) opts.mermaidVersion = a.slice(18);
     else if (a === '--files') opts.files.push(...argv[++i].split(',').map((f) => f.trim()).filter(Boolean));
     else if (a.startsWith('--files=')) opts.files.push(...a.slice(8).split(',').map((f) => f.trim()).filter(Boolean));
+    else if (a === '--escaping') opts.escaping = true;
+    else if (a === '--update-baseline') opts.updateBaseline = true;
     else if (a === '--json') opts.json = true;
     else if (a === '--clean') opts.clean = true;
     else if (a === '--verbose' || a === '-v') opts.verbose = true;
@@ -107,6 +111,9 @@ const HELP = `validate-mermaid.mjs - verify every Mermaid example in this skill
                   (blocks annotated since=/until= run only on the releases they name)
   --files a.md,b.mmd  check the diagram blocks in these files (paths relative to the current directory)
                   instead of the skill's own references; structure/keyword checks are skipped
+  --escaping      replay the escaping matrix (every special character in every label position, raw and
+                  escaped) on the selected release and report drift from tools/escaping-baseline.json
+  --update-baseline  with --escaping: record this release's outcomes as the new baseline
   --json          machine-readable report on stdout
   --clean         remove the temp dependency cache and exit
   --verbose       print PASS lines too, and the npm install output
@@ -614,6 +621,98 @@ function collectFiles() {
   return files;
 }
 
+// ---------------------------------------------------------------------------
+// Escaping matrix (--escaping)
+// ---------------------------------------------------------------------------
+
+const BASELINE_PATH = path.join(HERE, 'escaping-baseline.json');
+
+/**
+ * Renders every case from escaping-cases.mjs in headless Chromium and records one outcome per case:
+ * P = parsed, rendered and the expected label text is in the SVG; F = parse or render error;
+ * M = rendered, but the label text is missing or altered (the silent failures - "no error" is not proof
+ * the text survived). Outcomes are compared with the committed baseline for the release's major version.
+ */
+async function runEscaping(target, opts) {
+  assertNodeVersion();
+  const { buildCases } = await import(pathToFileURL(path.join(HERE, 'escaping-cases.mjs')).href);
+  const cases = buildCases();
+  const idsHash = crypto.createHash('sha1').update(cases.map((c) => c[0]).join('\n')).digest('hex').slice(0, 12);
+  const major = target.split('.')[0];
+
+  const dir = ensureDeps(target, [`mermaid@${target}`, 'puppeteer'], opts);
+  const puppeteerDir = resolveInCache(dir, 'puppeteer');
+  const mermaidDir = resolveInCache(dir, 'mermaid');
+  if (!puppeteerDir || !mermaidDir) die('escaping: puppeteer/mermaid not present in the dependency cache');
+  const puppeteer = (await import(pathToFileURL(path.join(puppeteerDir, 'lib', 'puppeteer', 'puppeteer.js')).href)).default;
+  const bundle = pickMermaidUmd(mermaidDir);
+
+  process.stderr.write(`${C.bold(`replaying ${cases.length} escaping cases`)} against mermaid ${target}\n\n`);
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  let outcomes = '';
+  const detail = [];
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<!doctype html><html><body></body></html>');
+    await page.addScriptTag({ path: bundle });
+    await page.evaluate(() => window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', suppressErrorRendering: true }));
+    for (let i = 0; i < cases.length; i++) {
+      const [, code, expect] = cases[i];
+      const r = await page.evaluate(async (src, id, want) => {
+        try { await window.mermaid.parse(src); } catch (e) { return 'F'; }
+        try {
+          const { svg } = await window.mermaid.render(id, src);
+          if (svg.includes('aria-roledescription="error"')) return 'F';
+          if (want == null) return 'P';
+          const text = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement.textContent.replace(/\s+/g, ' ');
+          return text.includes(want.replace(/\s+/g, ' ')) ? 'P' : 'M';
+        } catch (e) { return 'F'; }
+      }, code, `esc-${i}`, expect);
+      outcomes += r;
+    }
+  } finally {
+    await browser.close();
+  }
+
+  let baseline = fs.existsSync(BASELINE_PATH) ? JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf8')) : null;
+  const count = (ch) => [...outcomes].filter((o) => o === ch).length;
+  const summary = `mermaid ${target}: cases=${cases.length} pass=${count('P')} fail=${count('F')} altered-text=${count('M')}`;
+
+  if (opts.updateBaseline) {
+    const keep = baseline && baseline.ids === idsHash ? baseline.results : {};
+    const next = { ids: idsHash, count: cases.length, results: { ...keep, [major]: outcomes } };
+    fs.writeFileSync(BASELINE_PATH, JSON.stringify(next, null, 2) + '\n', 'utf8');
+    process.stdout.write(`${summary}\nbaseline for Mermaid ${major}.x written to ${rel(BASELINE_PATH)}\n`);
+    return 0;
+  }
+
+  const problems = [];
+  if (!baseline) problems.push('no baseline yet - run with --update-baseline');
+  else if (baseline.ids !== idsHash) problems.push('the case list changed since the baseline was recorded - run with --update-baseline');
+  else if (!baseline.results[major]) problems.push(`no baseline for Mermaid ${major}.x - run with --update-baseline`);
+  else {
+    const want = baseline.results[major];
+    const label = { P: 'pass', F: 'fail', M: 'altered text' };
+    for (let i = 0; i < cases.length; i++) {
+      if (want[i] !== outcomes[i]) problems.push(`${cases[i][0]}: baseline ${label[want[i]]}, now ${label[outcomes[i]]}`);
+    }
+  }
+
+  if (opts.json) {
+    process.stdout.write(JSON.stringify({ mode: 'escaping', target, cases: cases.length, drift: problems }, null, 2) + '\n');
+    return problems.length ? 1 : 0;
+  }
+  process.stdout.write(`${summary}\n`);
+  if (problems.length) {
+    process.stdout.write(`\n${C.red(`${problems.length} drift from baseline`)} - the escaping guidance in references/ may be stale:\n`);
+    for (const m of problems.slice(0, 60)) process.stdout.write(`  ${C.red('DRIFT')} ${m}\n`);
+    if (problems.length > 60) process.stdout.write(`  ... and ${problems.length - 60} more\n`);
+    return 1;
+  }
+  process.stdout.write(`${C.green('OK')} - every case matches the baseline\n`);
+  return 0;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
@@ -637,6 +736,8 @@ async function main() {
     }
     return 0;
   }
+
+  if (opts.escaping) return runEscaping(target, opts);
 
   const userFiles = opts.files.length > 0;
   const files = userFiles ? collectUserFiles(opts.files) : collectFiles();

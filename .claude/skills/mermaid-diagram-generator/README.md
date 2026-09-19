@@ -78,6 +78,8 @@ mermaid-diagram-generator/
 ├── README.md                      # This file
 ├── tools/
 │   ├── validate-mermaid.mjs       # Replayable validator (see tools/README.md)
+│   ├── escaping-cases.mjs         # Escaping matrix data for --escaping
+│   ├── escaping-baseline.json     # Recorded outcomes per Mermaid major version
 │   └── README.md
 ├── research/                      # Dated primary-source notes behind the v12 update
 │   ├── mermaid-v12-research.md    #   what changed in Mermaid 12, per type
@@ -637,6 +639,9 @@ node tools/validate-mermaid.mjs
 
 # The same blocks against Mermaid 11, to check the fallbacks
 node tools/validate-mermaid.mjs --mode parse --mermaid-version 11.16.1
+
+# Replay the escaping matrix; reports drift from the recorded baseline
+node tools/validate-mermaid.mjs --escaping
 ```
 
 Needs Node 22.12 or later. All blocks pass under Mermaid 12.0.0 in parse and render modes, and under
