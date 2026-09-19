@@ -12,12 +12,12 @@ namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 [Trait("Category", "Integration")]
 public class ValueConvertersTests
 {
-    private static readonly Guid GuidValue = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private const decimal DecimalValue = 9.99m;
+    private static readonly Guid GuidValue = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     /// <summary>Verifies <see cref="ProductIdValueConverter"/> converts a <see cref="ProductId"/> to its underlying <see cref="Guid"/>.</summary>
     [Fact]
-    public void ProductIdValueConverter_given_a_product_id_converts_to_the_underlying_guid()
+    public void ConvertToProvider_ProductId_ReturnsUnderlyingGuid_Test()
     {
         // Arrange
         var id = ProductId.From(GuidValue);
@@ -32,7 +32,7 @@ public class ValueConvertersTests
 
     /// <summary>Verifies <see cref="ProductIdValueConverter"/> converts a raw <see cref="Guid"/> back into the equivalent <see cref="ProductId"/>.</summary>
     [Fact]
-    public void ProductIdValueConverter_given_a_guid_converts_from_the_underlying_guid()
+    public void ConvertFromProvider_Guid_ReturnsEquivalentProductId_Test()
     {
         // Arrange
         var converter = new ProductIdValueConverter();
@@ -44,10 +44,10 @@ public class ValueConvertersTests
         Assert.Equal(ProductId.From(GuidValue), converted);
     }
 
-    // Auto Generated, verify expected behavior: a stored empty guid fails ProductId validation on read.
     /// <summary>Verifies <see cref="ProductIdValueConverter"/> rejects an empty <see cref="Guid"/> read back from storage.</summary>
+    // Auto Generated, verify expected behavior: a stored empty guid fails ProductId validation on read.
     [Fact]
-    public void ProductIdValueConverter_given_an_empty_guid_throws_ValueObjectValidationException()
+    public void ConvertFromProvider_EmptyGuid_ThrowsValueObjectValidationException_Test()
     {
         // Arrange
         var converter = new ProductIdValueConverter();
@@ -62,7 +62,7 @@ public class ValueConvertersTests
 
     /// <summary>Verifies <see cref="MoneyValueConverter"/> converts a <see cref="Money"/> to its underlying <see cref="decimal"/>.</summary>
     [Fact]
-    public void MoneyValueConverter_given_a_money_converts_to_the_underlying_decimal()
+    public void ConvertToProvider_Money_ReturnsUnderlyingDecimal_Test()
     {
         // Arrange
         var money = Money.From(DecimalValue);
@@ -77,7 +77,7 @@ public class ValueConvertersTests
 
     /// <summary>Verifies <see cref="MoneyValueConverter"/> converts a raw <see cref="decimal"/> back into the equivalent <see cref="Money"/>.</summary>
     [Fact]
-    public void MoneyValueConverter_given_a_decimal_converts_from_the_underlying_decimal()
+    public void ConvertFromProvider_Decimal_ReturnsEquivalentMoney_Test()
     {
         // Arrange
         var converter = new MoneyValueConverter();
@@ -89,10 +89,10 @@ public class ValueConvertersTests
         Assert.Equal(Money.From(DecimalValue), converted);
     }
 
-    // Auto Generated, verify expected behavior: a stored negative amount fails Money validation on read.
     /// <summary>Verifies <see cref="MoneyValueConverter"/> rejects a negative <see cref="decimal"/> read back from storage.</summary>
+    // Auto Generated, verify expected behavior: a stored negative amount fails Money validation on read.
     [Fact]
-    public void MoneyValueConverter_given_a_negative_decimal_throws_ValueObjectValidationException()
+    public void ConvertFromProvider_NegativeDecimal_ThrowsValueObjectValidationException_Test()
     {
         // Arrange
         var converter = new MoneyValueConverter();

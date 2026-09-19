@@ -34,12 +34,12 @@ happens to be fast in practice.
 
 **Key packages:**
 
-- `xunit` / `xunit.runner.visualstudio` — test framework and runner.
+- `xunit` / `xunit.runner.visualstudio` — test framework and runner (`xunit.analyzers` supplies the xUnit-specific Roslyn rules).
 - `coverlet.collector` / `Microsoft.NET.Test.Sdk` — coverage collection and the `dotnet test` host.
 - `Microsoft.EntityFrameworkCore.InMemory` comes transitively via the `Infrastructure` project
   reference.
 
-Also carries the repo-wide analyzer package set (`AsyncFixer`, `IDisposableAnalyzers`,
+Also carries the repo-wide analyzer package set (`AsyncFixer`, `IDisposableAnalyzers`, `xunit.analyzers`,
 `Microsoft.VisualStudio.Threading.Analyzers`, `SonarAnalyzer.CSharp`, `StyleCop.Analyzers`), and a
 global `Using Include="Xunit"` so test files don't each need `using Xunit;`.
 

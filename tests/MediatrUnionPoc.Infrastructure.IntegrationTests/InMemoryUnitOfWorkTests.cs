@@ -24,7 +24,7 @@ public class InMemoryUnitOfWorkTests
     /// <summary>Verifies a committed unit of work's changes are visible to a fresh context.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task CommitAsync_after_adding_a_product_persists_it_for_a_fresh_context()
+    public async Task CommitAsync_AddedProduct_PersistsForFreshContext_Test()
     {
         // Arrange
         var databaseName = DatabaseName();
@@ -46,7 +46,7 @@ public class InMemoryUnitOfWorkTests
     /// <summary>Verifies a rolled-back unit of work's changes never reach the database.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task RollbackAsync_after_adding_a_product_discards_it()
+    public async Task RollbackAsync_AddedProduct_DiscardsProduct_Test()
     {
         // Arrange
         var databaseName = DatabaseName();
@@ -68,7 +68,7 @@ public class InMemoryUnitOfWorkTests
     /// <summary>Verifies a rollback leaves nothing in the change tracker, so a later commit cannot persist it.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task RollbackAsync_then_CommitAsync_does_not_persist_the_rolled_back_product()
+    public async Task RollbackAsync_FollowedByCommitAsync_DoesNotPersistRolledBackProduct_Test()
     {
         // Arrange
         var databaseName = DatabaseName();
@@ -90,7 +90,7 @@ public class InMemoryUnitOfWorkTests
     /// <summary>Verifies a rollback detaches every tracked entity, including unmodified ones loaded from the database.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task RollbackAsync_with_a_tracked_unmodified_product_detaches_it()
+    public async Task RollbackAsync_TrackedUnmodifiedProduct_DetachesProduct_Test()
     {
         // Arrange
         var databaseName = DatabaseName();
@@ -110,7 +110,7 @@ public class InMemoryUnitOfWorkTests
     /// <summary>Verifies a rollback discards an in-place update to a tracked product.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task RollbackAsync_after_updating_a_tracked_product_keeps_the_stored_values()
+    public async Task RollbackAsync_UpdatedTrackedProduct_KeepsStoredValues_Test()
     {
         // Arrange
         var databaseName = DatabaseName();
@@ -134,11 +134,11 @@ public class InMemoryUnitOfWorkTests
         Assert.Equal(product.Name, stored.Name);
     }
 
-    // Auto Generated, verify expected behavior: the update path of CommitAsync.
     /// <summary>Verifies committing an in-place update to a tracked product persists the new values.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior: the update path of CommitAsync.
     [Fact]
-    public async Task CommitAsync_after_updating_a_tracked_product_persists_the_update()
+    public async Task CommitAsync_UpdatedTrackedProduct_PersistsUpdate_Test()
     {
         // Arrange
         var databaseName = DatabaseName();
@@ -165,11 +165,11 @@ public class InMemoryUnitOfWorkTests
         );
     }
 
-    // Auto Generated, verify expected behavior: CommitAsync does not require BeginTransactionAsync first.
     /// <summary>Verifies committing without a prior <see cref="InMemoryUnitOfWork.BeginTransactionAsync"/> still saves staged changes.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior: CommitAsync does not require BeginTransactionAsync first.
     [Fact]
-    public async Task CommitAsync_without_BeginTransactionAsync_persists_staged_changes()
+    public async Task CommitAsync_WithoutBeginTransactionAsync_PersistsStagedChanges_Test()
     {
         // Arrange
         var databaseName = DatabaseName();
@@ -187,11 +187,11 @@ public class InMemoryUnitOfWorkTests
         Assert.NotNull(await verifyContext.Products.SingleOrDefaultAsync(p => p.Id == product.Id));
     }
 
-    // Auto Generated, verify expected behavior: the token reaches SaveChangesAsync.
     /// <summary>Verifies a cancelled token stops <see cref="InMemoryUnitOfWork.CommitAsync"/> before anything is saved.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior: the token reaches SaveChangesAsync.
     [Fact]
-    public async Task CommitAsync_with_a_cancelled_token_throws_and_persists_nothing()
+    public async Task CommitAsync_CancelledToken_ThrowsAndPersistsNothing_Test()
     {
         // Arrange
         var databaseName = DatabaseName();
@@ -211,11 +211,11 @@ public class InMemoryUnitOfWorkTests
         Assert.Empty(await verifyContext.Products.ToListAsync());
     }
 
-    // Auto Generated, verify expected behavior: the swallowed provider exception documented on BeginTransactionAsync.
     /// <summary>Verifies the InMemory provider's lack of transaction support is swallowed rather than surfaced.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior: the swallowed provider exception documented on BeginTransactionAsync.
     [Fact]
-    public async Task BeginTransactionAsync_on_a_provider_without_transactions_completes_without_throwing()
+    public async Task BeginTransactionAsync_ProviderWithoutTransactions_CompletesWithoutThrowing_Test()
     {
         // Arrange
         await using var dbContext = DbContextMother.Create(DatabaseName());
@@ -230,11 +230,11 @@ public class InMemoryUnitOfWorkTests
         Assert.Null(exception);
     }
 
-    // Auto Generated, verify expected behavior: dispose with nothing to clean up is a no-op.
     /// <summary>Verifies <see cref="InMemoryUnitOfWork.DisposeAsync"/> is safe when no transaction is held.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior: dispose with nothing to clean up is a no-op.
     [Fact]
-    public async Task DisposeAsync_with_no_transaction_completes_without_throwing()
+    public async Task DisposeAsync_NoTransaction_CompletesWithoutThrowing_Test()
     {
         // Arrange
         await using var dbContext = DbContextMother.Create(DatabaseName());
@@ -247,10 +247,10 @@ public class InMemoryUnitOfWorkTests
         Assert.Null(exception);
     }
 
-    // Auto Generated, verify expected behavior: dispose with nothing to clean up is a no-op.
     /// <summary>Verifies <see cref="InMemoryUnitOfWork.Dispose"/> is safe when no transaction is held.</summary>
+    // Auto Generated, verify expected behavior: dispose with nothing to clean up is a no-op.
     [Fact]
-    public void Dispose_with_no_transaction_completes_without_throwing()
+    public void Dispose_NoTransaction_CompletesWithoutThrowing_Test()
     {
         // Arrange
         using var dbContext = DbContextMother.Create(DatabaseName());
@@ -262,6 +262,11 @@ public class InMemoryUnitOfWorkTests
         // Assert
         Assert.Null(exception);
     }
+
+    // SWEEP-AMBIGUITY: InMemoryUnitOfWork's constructor takes no null check on AppDbContext (primary
+    // constructor), so `new InMemoryUnitOfWork(null!)` succeeds and fails later with a
+    // NullReferenceException on first use. It should arguably throw ArgumentNullException up front;
+    // no test asserts either behavior.
 
     // SWEEP-AMBIGUITY: BeginTransactionAsync's "dispose a held transaction first" branch and every
     // `_transaction is not null` branch in Commit/Rollback/Dispose are unreachable under the InMemory

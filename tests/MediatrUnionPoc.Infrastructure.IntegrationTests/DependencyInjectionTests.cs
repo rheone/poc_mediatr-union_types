@@ -19,10 +19,10 @@ public class DependencyInjectionTests
                 new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true }
             );
 
-    // Auto Generated, verify expected behavior: AddInfrastructure returns the same collection for chaining.
     /// <summary>Verifies <see cref="DependencyInjection.AddInfrastructure"/> returns the collection it was given.</summary>
+    // Auto Generated, verify expected behavior: AddInfrastructure returns the same collection for chaining.
     [Fact]
-    public void AddInfrastructure_given_a_service_collection_returns_the_same_collection()
+    public void AddInfrastructure_ServiceCollection_ReturnsSameCollection_Test()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -34,10 +34,10 @@ public class DependencyInjectionTests
         Assert.Same(services, result);
     }
 
-    // Auto Generated, verify expected behavior: the two abstractions map to the Infrastructure implementations.
     /// <summary>Verifies the repository and unit-of-work abstractions resolve to their Infrastructure implementations.</summary>
+    // Auto Generated, verify expected behavior: the two abstractions map to the Infrastructure implementations.
     [Fact]
-    public void AddInfrastructure_given_a_scope_resolves_the_infrastructure_implementations()
+    public void AddInfrastructure_Scope_ResolvesInfrastructureImplementations_Test()
     {
         // Arrange
         using var provider = BuildProvider();
@@ -54,10 +54,10 @@ public class DependencyInjectionTests
         );
     }
 
-    // Auto Generated, verify expected behavior: services are scoped, not singleton or transient.
     /// <summary>Verifies each service is scoped: same instance within a scope, a new one in the next.</summary>
+    // Auto Generated, verify expected behavior: services are scoped, not singleton or transient.
     [Fact]
-    public void AddInfrastructure_given_two_scopes_resolves_one_repository_per_scope()
+    public void AddInfrastructure_TwoScopes_ResolvesOneRepositoryPerScope_Test()
     {
         // Arrange
         using var provider = BuildProvider();
@@ -73,11 +73,11 @@ public class DependencyInjectionTests
         Assert.Multiple(() => Assert.Same(first, firstAgain), () => Assert.NotSame(first, second));
     }
 
-    // Auto Generated, verify expected behavior: repository and unit of work share one context per scope.
     /// <summary>Verifies a product staged by the scoped repository is persisted by the scoped unit of work.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior: repository and unit of work share one context per scope.
     [Fact]
-    public async Task CommitAsync_after_staging_through_the_scoped_repository_persists_for_a_new_scope()
+    public async Task CommitAsync_StagedThroughScopedRepository_PersistsForNewScope_Test()
     {
         // Arrange
         using var provider = BuildProvider();
@@ -99,4 +99,8 @@ public class DependencyInjectionTests
             .GetByIdAsync(product.Id, CancellationToken.None);
         Assert.NotNull(stored);
     }
+
+    // SWEEP-AMBIGUITY: AddInfrastructure has no null guard on its `services` parameter, so a null
+    // collection fails inside AddDbContext with a NullReferenceException. It should arguably throw
+    // ArgumentNullException("services") up front; no test pins either behavior.
 }

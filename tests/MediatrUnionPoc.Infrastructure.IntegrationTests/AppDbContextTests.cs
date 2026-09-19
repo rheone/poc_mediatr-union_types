@@ -23,10 +23,10 @@ public class AppDbContextTests
         return dbContext.Model.FindEntityType(typeof(Product))!;
     }
 
-    // Auto Generated, verify expected behavior: Id is the primary key.
     /// <summary>Verifies <see cref="Product.Id"/> is the entity's primary key.</summary>
+    // Auto Generated, verify expected behavior: Id is the primary key.
     [Fact]
-    public void Model_for_product_uses_id_as_the_primary_key()
+    public void Model_Product_UsesIdAsPrimaryKey_Test()
     {
         // Arrange
         var entity = ProductEntity();
@@ -38,13 +38,13 @@ public class AppDbContextTests
         Assert.Equal([nameof(Product.Id)], keyProperties);
     }
 
-    // Auto Generated, verify expected behavior: name and owner id are capped at 200 characters and required.
     /// <summary>Verifies <see cref="Product.Name"/> and <see cref="Product.OwnerId"/> are required and capped at 200 characters.</summary>
     /// <param name="propertyName">The property under test.</param>
+    // Auto Generated, verify expected behavior: name and owner id are capped at 200 characters and required.
     [Theory]
     [InlineData(nameof(Product.Name))]
     [InlineData(nameof(Product.OwnerId))]
-    public void Model_for_product_requires_string_property_and_caps_its_length(string propertyName)
+    public void Model_StringProperty_IsRequiredAndLengthCapped_Test(string propertyName)
     {
         // Arrange
         var entity = ProductEntity();
@@ -59,10 +59,10 @@ public class AppDbContextTests
         );
     }
 
-    // Auto Generated, verify expected behavior: value objects are stored as their primitive underlying type.
     /// <summary>Verifies the Vogen value objects are stored through the hand-written converters.</summary>
+    // Auto Generated, verify expected behavior: value objects are stored as their primitive underlying type.
     [Fact]
-    public void Model_for_product_stores_id_and_price_through_their_value_converters()
+    public void Model_IdAndPrice_UseValueConverters_Test()
     {
         // Arrange
         var entity = ProductEntity();
