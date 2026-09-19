@@ -16,7 +16,10 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 /// </summary>
 public sealed class ProductsApiFactory : WebApplicationFactory<Program>
 {
-    private readonly string _databaseName = Guid.NewGuid().ToString();
+    private static int _instanceCount;
+
+    private readonly string _databaseName =
+        $"ProductsApiFactory-{Interlocked.Increment(ref _instanceCount)}";
 
     /// <summary>Replaces the app's <see cref="AppDbContext"/> registration with one pointed at this factory's uniquely-named InMemory database.</summary>
     /// <param name="builder">The host builder being configured for the test server.</param>

@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using MediatrUnionPoc.Api.Contracts;
+using MediatrUnionPoc.Api.Controllers;
+using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Domain;
 
@@ -12,8 +15,18 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 /// mapping each controller action's <c>switch</c> performs. A fresh <see cref="ProductsApiFactory"/>
 /// per test gives each test its own InMemory database, so tests never see each other's data.
 /// </summary>
+/// <remarks>
+/// SWEEP-AMBIGUITY: <see cref="ProductsController"/> is exercised only over HTTP, so the
+/// "null reference parameter throws ArgumentNullException" rule maps to a null request body, which
+/// the framework answers with 400 rather than an exception. The primary constructor's
+/// <c>ISender</c> has no null guard and is unreachable from HTTP (the DI container never supplies
+/// null), so no null-guard test is written for it.
+/// </remarks>
+[Trait("Category", "Integration")]
 public sealed class ProductsControllerTests : IDisposable
 {
+    private const string ProductsUri = "/api/products";
+
     private readonly ProductsApiFactory _factory = new();
     private readonly HttpClient _client;
 
@@ -23,6 +36,13 @@ public sealed class ProductsControllerTests : IDisposable
         _client = _factory.CreateClient();
     }
 
+    /// <summary>Gets the rows for <see cref="DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test"/>: an upper-case "TRUE" (the header is case-insensitive) is an administrator, "false" is not.</summary>
+    public static TheoryData<
+        string,
+        HttpStatusCode
+    > DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test_Data =>
+        new() { { "TRUE", HttpStatusCode.NoContent }, { "false", HttpStatusCode.Forbidden } };
+
     /// <summary>Disposes the test's <see cref="HttpClient"/> and its backing <see cref="ProductsApiFactory"/>.</summary>
     public void Dispose()
     {
@@ -30,70 +50,216 @@ public sealed class ProductsControllerTests : IDisposable
         _factory.Dispose();
     }
 
-    /// <summary>Verifies a create returns 201 with the created product and a Location header that resolves to it.</summary>
+    /// <summary>Verifies a valid create returns 201 with the created product.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Create_with_valid_body_returns_201_and_resolvable_location_header()
+    public async Task CreateAsync_ValidBody_Returns201WithCreatedProduct_Test()
     {
+        // Arrange
+        var request = ProductRequestMother.Widget();
+
+        // Act
         using var response = await _client.PostAsJsonAsync(
-            "/api/products",
-            new CreateProductRequest("Widget", 9.99m)
+            ProductsUri,
+            request,
+            CancellationToken.None
         );
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var dto = await response.Content.ReadFromJsonAsync<ProductDto>();
+        // Assert
+        var dto = await response.Content.ReadFromJsonAsync<ProductDto>(CancellationToken.None);
         Assert.NotNull(dto);
-        Assert.Equal("Widget", dto.Name);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.Created, response.StatusCode),
+            () => Assert.Equal(ProductRequestMother.WidgetName, dto.Name),
+            () => Assert.Equal(ProductRequestMother.WidgetPrice, dto.Price)
+        );
+    }
 
-        // CreatedAtAction resolves its target by action name; the Location header only works if
-        // nameof(GetByIdAsync) matches the name MVC registered (SuppressAsyncSuffixInActionNames = false).
-        using var located = await _client.GetAsync(response.Headers.Location);
+    /// <summary>
+    /// Verifies a valid create's Location header resolves to the created product. CreatedAtAction
+    /// resolves its target by action name, so the header only works if <c>nameof(GetByIdAsync)</c>
+    /// matches the name MVC registered (<c>SuppressAsyncSuffixInActionNames = false</c>).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task CreateAsync_ValidBody_LocationHeaderResolvesToProduct_Test()
+    {
+        // Arrange
+        using var created = await _client.PostAsJsonAsync(
+            ProductsUri,
+            ProductRequestMother.Widget(),
+            CancellationToken.None
+        );
+
+        // Act
+        using var located = await _client.GetAsync(
+            created.Headers.Location,
+            CancellationToken.None
+        );
+
+        // Assert
         Assert.Equal(HttpStatusCode.OK, located.StatusCode);
     }
 
     /// <summary>Verifies an invalid create request returns 400 with per-field validation errors.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Create_with_invalid_body_returns_400_with_per_field_errors()
+    public async Task CreateAsync_InvalidBody_Returns400WithPerFieldErrors_Test()
     {
+        // Arrange
+        var request = ProductRequestMother.InvalidCreate();
+
+        // Act
         using var response = await _client.PostAsJsonAsync(
-            "/api/products",
-            new CreateProductRequest(string.Empty, -5m)
+            ProductsUri,
+            request,
+            CancellationToken.None
         );
 
+        // Assert
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode),
+            () => Assert.Contains("Name", body, StringComparison.Ordinal),
+            () => Assert.Contains("Price", body, StringComparison.Ordinal)
+        );
+    }
+
+    /// <summary>Verifies a null, empty, whitespace, tab, or newline product name is rejected with 400.</summary>
+    /// <param name="name">The invalid product name to send.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("\t")]
+    [InlineData("\n")]
+    public async Task CreateAsync_BlankName_Returns400_Test(string? name)
+    {
+        // Arrange
+        var request = new CreateProductRequest(name!, ProductRequestMother.WidgetPrice);
+
+        // Act
+        using var response = await _client.PostAsJsonAsync(
+            ProductsUri,
+            request,
+            CancellationToken.None
+        );
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("Name", body);
-        Assert.Contains("Price", body);
+    }
+
+    /// <summary>Verifies a request whose body is the JSON literal <c>null</c> is rejected with 400 rather than reaching the handler.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task CreateAsync_NullBody_Returns400_Test()
+    {
+        // Arrange
+        using var content = new StringContent("null", Encoding.UTF8, "application/json");
+
+        // Act
+        using var response = await _client.PostAsync(ProductsUri, content, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     /// <summary>Verifies a missing product returns 404.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetById_for_missing_product_returns_404()
+    public async Task GetByIdAsync_MissingProduct_Returns404_Test()
     {
-        using var response = await _client.GetAsync($"/api/products/{Guid.NewGuid()}");
+        // Arrange
+        var uri = $"{ProductsUri}/{ProductRequestMother.UnknownId}";
 
+        // Act
+        using var response = await _client.GetAsync(uri, CancellationToken.None);
+
+        // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>Verifies an existing product returns 200 with that product.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task GetByIdAsync_ExistingProduct_Returns200WithProduct_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(ProductRequestMother.Widget());
+
+        // Act
+        using var response = await _client.GetAsync(
+            $"{ProductsUri}/{created.Id.Value}",
+            CancellationToken.None
+        );
+
+        // Assert
+        var dto = await response.Content.ReadFromJsonAsync<ProductDto>(CancellationToken.None);
+        Assert.NotNull(dto);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.OK, response.StatusCode),
+            () => Assert.Equal(created.Id, dto.Id),
+            () => Assert.Equal(ProductRequestMother.WidgetName, dto.Name),
+            () => Assert.Equal(ProductRequestMother.WidgetPrice, dto.Price)
+        );
     }
 
     /// <summary>Verifies paging only returns products from this test's own isolated database.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetPaged_after_one_create_returns_only_that_product()
+    public async Task GetPagedAsync_OneCreatedProduct_ReturnsOnlyThatProduct_Test()
     {
-        using var createResponse = await _client.PostAsJsonAsync(
-            "/api/products",
-            new CreateProductRequest("Widget", 9.99m)
+        // Arrange
+        await CreateProductAsync(ProductRequestMother.Widget());
+
+        // Act
+        using var response = await _client.GetAsync(
+            $"{ProductsUri}?pageNumber=1&pageSize=10",
+            CancellationToken.None
         );
 
-        using var response = await _client.GetAsync("/api/products?pageNumber=1&pageSize=10");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var page = await response.Content.ReadFromJsonAsync<PagedResult<ProductDto>>();
+        // Assert
+        var page = await response.Content.ReadFromJsonAsync<PagedResult<ProductDto>>(
+            CancellationToken.None
+        );
         Assert.NotNull(page);
-        Assert.Single(page.Items);
-        Assert.Equal("Widget", page.Items[0].Name);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.OK, response.StatusCode),
+            () => Assert.Single(page.Items),
+            () => Assert.Equal(ProductRequestMother.WidgetName, page.Items[0].Name)
+        );
+    }
+
+    /// <summary>Verifies products created out of alphabetical order are listed ordered by name.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task GetPagedAsync_ProductsCreatedOutOfOrder_ReturnsOrderedByName_Test()
+    {
+        // Arrange
+        await CreateProductAsync(ProductRequestMother.Named("Bravo"));
+        await CreateProductAsync(ProductRequestMother.Named("Alpha"));
+
+        // Act
+        using var response = await _client.GetAsync(
+            $"{ProductsUri}?pageNumber=1&pageSize=10",
+            CancellationToken.None
+        );
+
+        // Assert
+        var page = await response.Content.ReadFromJsonAsync<PagedResult<ProductDto>>(
+            CancellationToken.None
+        );
+        Assert.NotNull(page);
+        Assert.Collection(
+            page.Items,
+            first => Assert.Equal("Alpha", first.Name),
+            second => Assert.Equal("Bravo", second.Name)
+        );
     }
 
     /// <summary>Verifies out-of-range paging parameters return 400 rather than 500.</summary>
@@ -103,99 +269,145 @@ public sealed class ProductsControllerTests : IDisposable
     [InlineData("pageNumber=0&pageSize=10")]
     [InlineData("pageNumber=1&pageSize=0")]
     [InlineData("pageNumber=1&pageSize=101")]
-    public async Task GetPaged_with_out_of_range_paging_returns_400(string query)
+    public async Task GetPagedAsync_OutOfRangePaging_Returns400_Test(string query)
     {
-        using var response = await _client.GetAsync($"/api/products?{query}");
+        // Arrange
+        var uri = $"{ProductsUri}?{query}";
 
+        // Act
+        using var response = await _client.GetAsync(uri, CancellationToken.None);
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     /// <summary>Verifies updating a missing product returns 404.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_for_missing_product_returns_404()
+    public async Task UpdateAsync_MissingProduct_Returns404_Test()
     {
+        // Arrange
+        var uri = $"{ProductsUri}/{ProductRequestMother.UnknownId}";
+
+        // Act
         using var response = await _client.PutAsJsonAsync(
-            $"/api/products/{Guid.NewGuid()}",
-            new UpdateProductRequest("Widget Pro", 19.99m)
+            uri,
+            ProductRequestMother.WidgetPro(),
+            CancellationToken.None
         );
 
+        // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <summary>Verifies an owner's update with an invalid body returns 400 with per-field validation errors (authorization runs before validation, so the caller must own the product).</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_by_owner_with_invalid_body_returns_400_with_per_field_errors()
+    public async Task UpdateAsync_OwnerWithInvalidBody_Returns400WithPerFieldErrors_Test()
     {
-        using var created = await PostAsCallerAsync("owner-1");
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
+        );
 
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{dto!.Id.Value}")
-        {
-            Content = JsonContent.Create(new UpdateProductRequest(string.Empty, -5m)),
-        };
-        request.Headers.Add("X-Caller-Id", "owner-1");
-        using var response = await _client.SendAsync(request);
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            $"{ProductsUri}/{created.Id.Value}",
+            ProductRequestMother.InvalidUpdate(),
+            ProductRequestMother.OwnerId
+        );
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("Name", body);
-        Assert.Contains("Price", body);
+        // Assert
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode),
+            () => Assert.Contains("Name", body, StringComparison.Ordinal),
+            () => Assert.Contains("Price", body, StringComparison.Ordinal)
+        );
     }
 
     /// <summary>Verifies an owner's update returns 204 and its changes are visible to a subsequent GetById.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_by_owner_returns_204_and_persists_changes()
+    public async Task UpdateAsync_Owner_Returns204AndPersistsChanges_Test()
     {
-        using var created = await PostAsCallerAsync("owner-1");
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
-
-        using var updateResponse = await PutAsCallerAsync(
-            $"/api/products/{dto!.Id.Value}",
-            "owner-1"
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
         );
-        Assert.Equal(HttpStatusCode.NoContent, updateResponse.StatusCode);
+        var uri = $"{ProductsUri}/{created.Id.Value}";
 
-        var fetched = await _client.GetFromJsonAsync<ProductDto>($"/api/products/{dto.Id.Value}");
-        Assert.Equal("Widget Pro", fetched!.Name);
-        Assert.Equal(19.99m, fetched.Price);
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            uri,
+            ProductRequestMother.WidgetPro(),
+            ProductRequestMother.OwnerId
+        );
+
+        // Assert
+        var fetched = await _client.GetFromJsonAsync<ProductDto>(uri, CancellationToken.None);
+        Assert.NotNull(fetched);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode),
+            () => Assert.Equal(ProductRequestMother.WidgetProName, fetched.Name),
+            () => Assert.Equal(ProductRequestMother.WidgetProPrice, fetched.Price)
+        );
     }
 
     /// <summary>Verifies a non-owner's update returns 403 and leaves the product untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_by_non_owner_returns_403_and_leaves_product_untouched()
+    public async Task UpdateAsync_NonOwner_Returns403AndLeavesProductUntouched_Test()
     {
-        using var created = await PostAsCallerAsync("owner-1");
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
-
-        using var updateResponse = await PutAsCallerAsync(
-            $"/api/products/{dto!.Id.Value}",
-            "owner-2"
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
         );
-        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
+        var uri = $"{ProductsUri}/{created.Id.Value}";
 
-        var fetched = await _client.GetFromJsonAsync<ProductDto>($"/api/products/{dto.Id.Value}");
-        Assert.Equal("Widget", fetched!.Name);
-        Assert.Equal(9.99m, fetched.Price);
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            uri,
+            ProductRequestMother.WidgetPro(),
+            ProductRequestMother.OtherCallerId
+        );
+
+        // Assert
+        var fetched = await _client.GetFromJsonAsync<ProductDto>(uri, CancellationToken.None);
+        Assert.NotNull(fetched);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode),
+            () => Assert.Equal(ProductRequestMother.WidgetName, fetched.Name),
+            () => Assert.Equal(ProductRequestMother.WidgetPrice, fetched.Price)
+        );
     }
 
     /// <summary>Verifies an update with no caller identity at all returns 403, since an anonymous caller never matches any product's owner.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_without_caller_id_header_returns_403()
+    public async Task UpdateAsync_NoCallerIdHeader_Returns403_Test()
     {
-        using var created = await PostAsCallerAsync("owner-1");
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
-
-        using var updateResponse = await _client.PutAsJsonAsync(
-            $"/api/products/{dto!.Id.Value}",
-            new UpdateProductRequest("Widget Pro", 19.99m)
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
         );
 
-        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
+        // Act
+        using var response = await _client.PutAsJsonAsync(
+            $"{ProductsUri}/{created.Id.Value}",
+            ProductRequestMother.WidgetPro(),
+            CancellationToken.None
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>
@@ -206,152 +418,202 @@ public sealed class ProductsControllerTests : IDisposable
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Update_of_unowned_product_by_anonymous_caller_returns_403()
+    public async Task UpdateAsync_UnownedProductAnonymousCaller_Returns403_Test()
     {
-        using var created = await _client.PostAsJsonAsync(
-            "/api/products",
-            new CreateProductRequest("Widget", 9.99m)
-        );
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
+        // Arrange
+        var created = await CreateProductAsync(ProductRequestMother.Widget());
 
-        using var updateResponse = await _client.PutAsJsonAsync(
-            $"/api/products/{dto!.Id.Value}",
-            new UpdateProductRequest("Widget Pro", 19.99m)
+        // Act
+        using var response = await _client.PutAsJsonAsync(
+            $"{ProductsUri}/{created.Id.Value}",
+            ProductRequestMother.WidgetPro(),
+            CancellationToken.None
         );
 
-        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     /// <summary>Verifies an administrator's delete returns 204 and the product subsequently returns 404 from GetById.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_by_administrator_returns_204_and_product_is_then_gone()
+    public async Task DeleteAsync_Administrator_Returns204AndProductIsGone_Test()
     {
-        using var created = await _client.PostAsJsonAsync(
-            "/api/products",
-            new CreateProductRequest("Widget", 9.99m)
+        // Arrange
+        var created = await CreateProductAsync(ProductRequestMother.Widget());
+        var uri = $"{ProductsUri}/{created.Id.Value}";
+
+        // Act
+        using var response = await SendAsync(HttpMethod.Delete, uri, adminHeader: "true");
+
+        // Assert
+        using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode),
+            () => Assert.Equal(HttpStatusCode.NotFound, afterDelete.StatusCode)
         );
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
-
-        using var deleteResponse = await DeleteAsAdminAsync($"/api/products/{dto!.Id.Value}");
-        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
-
-        using var afterDelete = await _client.GetAsync($"/api/products/{dto.Id.Value}");
-        Assert.Equal(HttpStatusCode.NotFound, afterDelete.StatusCode);
     }
 
     /// <summary>Verifies an administrator deleting a missing product returns 404.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_for_missing_product_returns_404()
+    public async Task DeleteAsync_MissingProduct_Returns404_Test()
     {
-        using var response = await DeleteAsAdminAsync($"/api/products/{Guid.NewGuid()}");
+        // Arrange
+        var uri = $"{ProductsUri}/{ProductRequestMother.UnknownId}";
 
+        // Act
+        using var response = await SendAsync(HttpMethod.Delete, uri, adminHeader: "true");
+
+        // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <summary>Verifies a delete without the X-Admin header or a matching X-Caller-Id returns 403, and the product is left untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_without_admin_or_owner_headers_returns_403_and_leaves_product_untouched()
+    public async Task DeleteAsync_NoAdminOrOwnerHeaders_Returns403AndLeavesProductUntouched_Test()
     {
-        using var created = await _client.PostAsJsonAsync(
-            "/api/products",
-            new CreateProductRequest("Widget", 9.99m)
+        // Arrange
+        var created = await CreateProductAsync(ProductRequestMother.Widget());
+        var uri = $"{ProductsUri}/{created.Id.Value}";
+
+        // Act
+        using var response = await _client.DeleteAsync(uri, CancellationToken.None);
+
+        // Assert
+        using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode),
+            () => Assert.Equal(HttpStatusCode.OK, afterDelete.StatusCode)
         );
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
-
-        using var deleteResponse = await _client.DeleteAsync($"/api/products/{dto!.Id.Value}");
-        Assert.Equal(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
-
-        using var afterDelete = await _client.GetAsync($"/api/products/{dto.Id.Value}");
-        Assert.Equal(HttpStatusCode.OK, afterDelete.StatusCode);
     }
 
     /// <summary>Verifies the product's owner can delete it without the X-Admin header, via the X-Caller-Id header alone.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_by_owner_without_admin_header_returns_204()
+    public async Task DeleteAsync_OwnerWithoutAdminHeader_Returns204AndProductIsGone_Test()
     {
-        using var created = await PostAsCallerAsync("owner-1");
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
-
-        using var deleteResponse = await DeleteAsCallerAsync(
-            $"/api/products/{dto!.Id.Value}",
-            "owner-1"
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
         );
-        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+        var uri = $"{ProductsUri}/{created.Id.Value}";
 
-        using var afterDelete = await _client.GetAsync($"/api/products/{dto.Id.Value}");
-        Assert.Equal(HttpStatusCode.NotFound, afterDelete.StatusCode);
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            uri,
+            callerId: ProductRequestMother.OwnerId
+        );
+
+        // Assert
+        using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode),
+            () => Assert.Equal(HttpStatusCode.NotFound, afterDelete.StatusCode)
+        );
     }
 
     /// <summary>Verifies a caller who neither owns the product nor presents the X-Admin header gets 403, and the product is left untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Delete_by_non_owner_non_administrator_returns_403_and_leaves_product_untouched()
+    public async Task DeleteAsync_NonOwnerNonAdministrator_Returns403AndLeavesProductUntouched_Test()
     {
-        using var created = await PostAsCallerAsync("owner-1");
-        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
-
-        using var deleteResponse = await DeleteAsCallerAsync(
-            $"/api/products/{dto!.Id.Value}",
-            "owner-2"
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
         );
-        Assert.Equal(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
+        var uri = $"{ProductsUri}/{created.Id.Value}";
 
-        using var afterDelete = await _client.GetAsync($"/api/products/{dto.Id.Value}");
-        Assert.Equal(HttpStatusCode.OK, afterDelete.StatusCode);
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            uri,
+            callerId: ProductRequestMother.OtherCallerId
+        );
+
+        // Assert
+        using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode),
+            () => Assert.Equal(HttpStatusCode.OK, afterDelete.StatusCode)
+        );
     }
 
-    /// <summary>Sends a DELETE request carrying the <c>X-Admin: true</c> header the API treats as proof of administrator identity.</summary>
+    /// <summary>Verifies the X-Admin header grants administrator rights only for a case-insensitive "true".</summary>
+    /// <param name="adminHeader">The X-Admin header value to present.</param>
+    /// <param name="expectedStatus">The status the delete is expected to return.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Theory]
+    [MemberData(nameof(DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test_Data))]
+    public async Task DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test(
+        string adminHeader,
+        HttpStatusCode expectedStatus
+    )
+    {
+        // Arrange
+        var created = await CreateProductAsync(ProductRequestMother.Widget());
+
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            $"{ProductsUri}/{created.Id.Value}",
+            adminHeader: adminHeader
+        );
+
+        // Assert
+        Assert.Equal(expectedStatus, response.StatusCode);
+    }
+
+    /// <summary>Creates a product through the API and returns the created representation.</summary>
+    /// <param name="request">The create request to send.</param>
+    /// <param name="callerId">The <c>X-Caller-Id</c> header value to present, or <see langword="null"/> to create an unowned product.</param>
+    /// <returns>The created product.</returns>
+    private async Task<ProductDto> CreateProductAsync(
+        CreateProductRequest request,
+        string? callerId = null
+    )
+    {
+        using var response = await SendAsync(HttpMethod.Post, ProductsUri, request, callerId);
+        var dto = await response.Content.ReadFromJsonAsync<ProductDto>(CancellationToken.None);
+        return dto!;
+    }
+
+    /// <summary>Sends a request carrying whichever identity headers the API treats as proof of caller identity.</summary>
+    /// <param name="method">The HTTP method.</param>
     /// <param name="requestUri">The request URI.</param>
+    /// <param name="body">The JSON body, or <see langword="null"/> for none.</param>
+    /// <param name="callerId">The <c>X-Caller-Id</c> header value, or <see langword="null"/> to omit it.</param>
+    /// <param name="adminHeader">The <c>X-Admin</c> header value, or <see langword="null"/> to omit it.</param>
     /// <returns>The response to the request.</returns>
-    private async Task<HttpResponseMessage> DeleteAsAdminAsync(string requestUri)
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method,
+        string requestUri,
+        object? body = null,
+        string? callerId = null,
+        string? adminHeader = null
+    )
     {
-        using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
-        request.Headers.Add("X-Admin", "true");
-        return await _client.SendAsync(request);
-    }
-
-    /// <summary>Sends a DELETE request carrying the <c>X-Caller-Id</c> header the API treats as proof of caller identity.</summary>
-    /// <param name="requestUri">The request URI.</param>
-    /// <param name="callerId">The <c>X-Caller-Id</c> header value to present.</param>
-    /// <returns>The response to the request.</returns>
-    private async Task<HttpResponseMessage> DeleteAsCallerAsync(string requestUri, string callerId)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
-        request.Headers.Add("X-Caller-Id", callerId);
-        return await _client.SendAsync(request);
-    }
-
-    /// <summary>
-    /// Creates a "Widget" product carrying the <c>X-Caller-Id</c> header the API treats as proof
-    /// of caller identity, so the created product's owner is <paramref name="callerId"/>.
-    /// </summary>
-    /// <param name="callerId">The <c>X-Caller-Id</c> header value to present.</param>
-    /// <returns>The response to the request.</returns>
-    private async Task<HttpResponseMessage> PostAsCallerAsync(string callerId)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/products")
+        using var request = new HttpRequestMessage(method, requestUri);
+        if (body is not null)
         {
-            Content = JsonContent.Create(new CreateProductRequest("Widget", 9.99m)),
-        };
-        request.Headers.Add("X-Caller-Id", callerId);
-        return await _client.SendAsync(request);
-    }
+            request.Content = JsonContent.Create(body, body.GetType());
+        }
 
-    /// <summary>Sends a PUT request carrying the <c>X-Caller-Id</c> header the API treats as proof of caller identity.</summary>
-    /// <param name="requestUri">The request URI.</param>
-    /// <param name="callerId">The <c>X-Caller-Id</c> header value to present.</param>
-    /// <returns>The response to the request.</returns>
-    private async Task<HttpResponseMessage> PutAsCallerAsync(string requestUri, string callerId)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Put, requestUri)
+        if (callerId is not null)
         {
-            Content = JsonContent.Create(new UpdateProductRequest("Widget Pro", 19.99m)),
-        };
-        request.Headers.Add("X-Caller-Id", callerId);
-        return await _client.SendAsync(request);
+            request.Headers.Add(ProductsController.CallerIdHeaderName, callerId);
+        }
+
+        if (adminHeader is not null)
+        {
+            request.Headers.Add(ProductsController.AdminHeaderName, adminHeader);
+        }
+
+        return await _client.SendAsync(request, CancellationToken.None);
     }
 }
