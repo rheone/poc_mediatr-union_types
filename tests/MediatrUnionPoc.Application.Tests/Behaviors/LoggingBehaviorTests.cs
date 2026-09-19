@@ -14,7 +14,14 @@ public class LoggingBehaviorTests
 {
     private const string ProductName = "Widget";
     private const decimal ProductPrice = 9.99m;
+    private const string ErrorMessage = "boom";
+    private const string ErrorCode = "BOOM";
+    private const string InfrastructureFailureMessage = "infra failure";
 
+    // SWEEP-AMBIGUITY: the ctor's logger and Handle(request, next, cancellationToken) have no ArgumentNullException
+    // guards (a null request is never dereferenced except via typeof; a null next fails with a NullReferenceException) /
+    // each null reference-type parameter should throw ArgumentNullException, but no such test is written because
+    // production does not do that.
     private readonly LoggingBehavior<CreateProductCommand, CreateProductResult> _sut = new(
         NullLogger<LoggingBehavior<CreateProductCommand, CreateProductResult>>.Instance
     );
@@ -22,10 +29,10 @@ public class LoggingBehaviorTests
     /// <summary>Verifies the union response returned by <c>next</c> passes through unchanged.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task Handle_union_response_passes_through_unchanged()
+    public async Task Handle_UnionResponse_PassesThroughUnchanged_Test()
     {
         // Arrange
-        CreateProductResult expected = new Error("boom", "BOOM");
+        CreateProductResult expected = new Error(ErrorMessage, ErrorCode);
 
         // Act
         var result = await _sut.Handle(
@@ -41,7 +48,7 @@ public class LoggingBehaviorTests
     /// <summary>Verifies <c>next</c> is invoked exactly once per call.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task Handle_invokes_next_exactly_once()
+    public async Task Handle_AnyRequest_InvokesNextExactlyOnce_Test()
     {
         // Arrange
         var callCount = 0;
@@ -52,7 +59,7 @@ public class LoggingBehaviorTests
             _ =>
             {
                 callCount++;
-                CreateProductResult response = new Error("boom", "BOOM");
+                CreateProductResult response = new Error(ErrorMessage, ErrorCode);
                 return Task.FromResult(response);
             },
             CancellationToken.None
@@ -65,10 +72,10 @@ public class LoggingBehaviorTests
     /// <summary>Verifies an exception thrown by <c>next</c> propagates rather than being swallowed or logged-and-suppressed.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task Handle_exception_thrown_by_next_propagates()
+    public async Task Handle_NextThrows_PropagatesException_Test()
     {
         // Arrange
-        const string message = "infra failure";
+        const string message = InfrastructureFailureMessage;
 
         // Act
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>

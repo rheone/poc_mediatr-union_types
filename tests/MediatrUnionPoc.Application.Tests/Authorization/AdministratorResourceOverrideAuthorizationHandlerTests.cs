@@ -14,6 +14,10 @@ namespace MediatrUnionPoc.Application.Tests.Authorization;
 /// </summary>
 public sealed class AdministratorResourceOverrideAuthorizationHandlerTests
 {
+    // SWEEP-AMBIGUITY: the ctor's allowedOperationNames array and HandleAsync(context) have no
+    // ArgumentNullException guard (a null array or context fails later with a NullReferenceException) / each null
+    // reference-type parameter should throw ArgumentNullException, but no such test is written because production
+    // does not do that.
     private const string Administrator = "Administrator";
     private const string Viewer = "Viewer";
     private const string Delete = "Delete";
@@ -30,7 +34,7 @@ public sealed class AdministratorResourceOverrideAuthorizationHandlerTests
         string[],
         string,
         bool
-    > HandleAsync_role_and_operation_name_Test_Data =>
+    > HandleAsync_RoleAndOperationName_DeterminesAuthorizationResult_Test_Data =>
         new()
         {
             { [Administrator], [], Delete, true },
@@ -52,8 +56,8 @@ public sealed class AdministratorResourceOverrideAuthorizationHandlerTests
     /// <param name="expectedSuccess">Whether the requirement is expected to succeed for this combination.</param>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Theory]
-    [MemberData(nameof(HandleAsync_role_and_operation_name_Test_Data))]
-    public async Task HandleAsync_role_and_operation_name_determine_authorization_result(
+    [MemberData(nameof(HandleAsync_RoleAndOperationName_DeterminesAuthorizationResult_Test_Data))]
+    public async Task HandleAsync_RoleAndOperationName_DeterminesAuthorizationResult_Test(
         string[] userRoles,
         string[] allowedOperationNames,
         string requirementName,

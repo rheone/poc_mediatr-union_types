@@ -62,6 +62,13 @@ public sealed record ArbitraryPolicyCommand(ClaimsPrincipal Principal)
 /// </summary>
 public sealed class AuthorizationBehaviorTests : IDisposable
 {
+    private const string AdministratorRole = "Administrator";
+    private const string ViewerRole = "Viewer";
+
+    // SWEEP-AMBIGUITY: the ctor's authorizationService and logger and Handle(request, next, cancellationToken)
+    // have no ArgumentNullException guards (a null request fails with a NullReferenceException; a null next fails
+    // only when invoked) / each null reference-type parameter should throw ArgumentNullException, but no such
+    // test is written because production does not do that.
     private readonly ServiceProvider _provider;
     private readonly AuthorizationBehavior<ArbitraryAdminCommand, ArbitraryAdminOutcome> _sut;
 
@@ -73,7 +80,7 @@ public sealed class AuthorizationBehaviorTests : IDisposable
         services.AddAuthorizationCore(options =>
             options.AddPolicy(
                 AuthorizationPolicies.Administrator,
-                policy => policy.Requirements.Add(new AdministratorRequirement("Administrator"))
+                policy => policy.Requirements.Add(new AdministratorRequirement(AdministratorRole))
             )
         );
         services.AddSingleton<IAuthorizationHandler, AdministratorAuthorizationHandler>();
@@ -91,10 +98,10 @@ public sealed class AuthorizationBehaviorTests : IDisposable
     /// <summary>Verifies the handler runs and its response passes through unchanged when the caller is an administrator.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Handle_administrator_caller_calls_next_and_passes_the_response_through()
+    public async Task Handle_AdministratorCaller_PassesResponseThrough_Test()
     {
         // Arrange
-        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles("Administrator"));
+        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles(AdministratorRole));
         ArbitraryAdminOutcome expected = new Success();
 
         // Act
@@ -111,10 +118,10 @@ public sealed class AuthorizationBehaviorTests : IDisposable
     /// <summary>Verifies the handler never runs and the response short-circuits to <see cref="NotAuthorized"/> when the caller isn't an administrator.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Handle_non_administrator_caller_short_circuits_to_NotAuthorized_without_calling_next()
+    public async Task Handle_NonAdministratorCaller_ShortCircuitsToNotAuthorized_Test()
     {
         // Arrange
-        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles("Viewer"));
+        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles(ViewerRole));
         var nextWasCalled = false;
 
         // Act
@@ -134,14 +141,14 @@ public sealed class AuthorizationBehaviorTests : IDisposable
         Assert.Contains(AuthorizationPolicies.Administrator, Assert.Single(notAuthorized.Reasons));
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies the caller's cancellation token is forwarded to <c>next</c> rather than replaced.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public async Task Handle_administrator_caller_forwards_the_cancellation_token_to_next()
+    public async Task Handle_AdministratorCaller_ForwardsCancellationTokenToNext_Test()
     {
         // Arrange
-        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles("Administrator"));
+        var command = new ArbitraryAdminCommand(PrincipalMother.WithRoles(AdministratorRole));
         using var cts = new CancellationTokenSource();
         CancellationToken? received = null;
 
@@ -171,6 +178,8 @@ public sealed class AuthorizationBehaviorTests : IDisposable
 /// </summary>
 public sealed class AuthorizationBehaviorPolicyNameTests
 {
+    // SWEEP-AMBIGUITY: see AuthorizationBehaviorTests; the same unguarded null parameters apply to this class's
+    // subject, and no null-parameter test is written because production does not guard them.
     private readonly IAuthorizationService _authorizationService =
         Substitute.For<IAuthorizationService>();
 
@@ -190,14 +199,14 @@ public sealed class AuthorizationBehaviorPolicyNameTests
     /// </summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Handle_named_policy_succeeds_calls_next_and_passes_the_response_through()
+    public async Task Handle_NamedPolicySucceeds_PassesResponseThrough_Test()
     {
         // Arrange
         var principal = PrincipalMother.Anonymous();
         var command = new ArbitraryPolicyCommand(principal);
         ArbitraryAdminOutcome expected = new Success();
         _authorizationService
-            .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy)
+            .AuthorizeAsync(principal, null, ArbitraryPolicyCommand.SomeOtherPolicy)
             .Returns(AuthorizationResult.Success());
 
         // Act
@@ -211,7 +220,7 @@ public sealed class AuthorizationBehaviorPolicyNameTests
         Assert.Equal(expected, result);
         await _authorizationService
             .Received(1)
-            .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy);
+            .AuthorizeAsync(principal, null, ArbitraryPolicyCommand.SomeOtherPolicy);
     }
 
     /// <summary>
@@ -221,14 +230,14 @@ public sealed class AuthorizationBehaviorPolicyNameTests
     /// </summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task Handle_named_policy_fails_short_circuits_to_NotAuthorized_without_calling_next()
+    public async Task Handle_NamedPolicyFails_ShortCircuitsToNotAuthorized_Test()
     {
         // Arrange
         var principal = PrincipalMother.Anonymous();
         var command = new ArbitraryPolicyCommand(principal);
         var nextWasCalled = false;
         _authorizationService
-            .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy)
+            .AuthorizeAsync(principal, null, ArbitraryPolicyCommand.SomeOtherPolicy)
             .Returns(AuthorizationResult.Failed());
 
         // Act
@@ -251,9 +260,9 @@ public sealed class AuthorizationBehaviorPolicyNameTests
         );
         await _authorizationService
             .Received(1)
-            .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy);
+            .AuthorizeAsync(principal, null, ArbitraryPolicyCommand.SomeOtherPolicy);
         await _authorizationService
             .DidNotReceive()
-            .AuthorizeAsync(principal, AuthorizationPolicies.Administrator);
+            .AuthorizeAsync(principal, null, AuthorizationPolicies.Administrator);
     }
 }

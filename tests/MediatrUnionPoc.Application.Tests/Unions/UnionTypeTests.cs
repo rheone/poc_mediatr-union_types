@@ -17,6 +17,11 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// </summary>
 public class UnionTypeTests
 {
+    private const string ProductName = "Widget";
+    private const decimal ProductPrice = 9.99m;
+    private const string ErrorMessage = "boom";
+    private const string ErrorCode = "BOOM";
+
     private static readonly ProductId SomeProductId = ProductId.From(
         Guid.Parse("99999999-9999-9999-9999-999999999999")
     );
@@ -27,12 +32,12 @@ public class UnionTypeTests
     /// unboxed, through <see cref="IUnion.Value"/>.
     /// </summary>
     [Fact]
-    public void Conversion_each_declared_case_type_converts_implicitly_into_the_union()
+    public void ImplicitConversion_EachDeclaredCaseType_ExposesCaseThroughUnionValue_Test()
     {
         // Arrange
-        var dto = new ProductDto(SomeProductId, "Widget", 9.99m);
+        var dto = new ProductDto(SomeProductId, ProductName, ProductPrice);
         var validationErrors = new ValidationErrors([new ValidationError("Name", "required")]);
-        var error = new Error("boom", "BOOM");
+        var error = new Error(ErrorMessage, ErrorCode);
 
         // Act
         CreateProductResult fromDto = dto;
@@ -40,9 +45,11 @@ public class UnionTypeTests
         CreateProductResult fromError = error;
 
         // Assert
-        Assert.Same(dto, ((IUnion)fromDto).Value);
-        Assert.Same(validationErrors, ((IUnion)fromValidation).Value);
-        Assert.Same(error, ((IUnion)fromError).Value);
+        Assert.Multiple(
+            () => Assert.Same(dto, ((IUnion)fromDto).Value),
+            () => Assert.Same(validationErrors, ((IUnion)fromValidation).Value),
+            () => Assert.Same(error, ((IUnion)fromError).Value)
+        );
     }
 
     /// <summary>
@@ -50,10 +57,10 @@ public class UnionTypeTests
     /// any explicit unwrapping step.
     /// </summary>
     [Fact]
-    public void Switch_pattern_matching_unwraps_to_the_contained_case_type()
+    public void Switch_PatternMatchingOnUnion_UnwrapsToContainedCaseType_Test()
     {
         // Arrange
-        CreateProductResult result = new ProductDto(SomeProductId, "Widget", 9.99m);
+        CreateProductResult result = new ProductDto(SomeProductId, ProductName, ProductPrice);
 
         // Act
         var description = result switch
@@ -64,7 +71,7 @@ public class UnionTypeTests
         };
 
         // Assert
-        Assert.Equal("created:Widget", description);
+        Assert.Equal($"created:{ProductName}", description);
     }
 
     /// <summary>
@@ -72,7 +79,7 @@ public class UnionTypeTests
     /// runtime assertion is secondary; the compile itself is the guarantee under test.
     /// </summary>
     [Fact]
-    public void Switch_over_every_declared_case_is_exhaustive_without_a_discard_arm()
+    public void Switch_EveryDeclaredCaseCovered_CompilesWithoutDiscardArm_Test()
     {
         // Arrange
         // This is a compile-time assertion as much as a runtime one: if CreateProductResult ever
@@ -87,10 +94,10 @@ public class UnionTypeTests
             };
 
         // Act
-        var description = Describe(new Error("boom", "BOOM"));
+        var description = Describe(new Error(ErrorMessage, ErrorCode));
 
         // Assert
-        Assert.Equal("error:BOOM", description);
+        Assert.Equal($"error:{ErrorCode}", description);
     }
 
     /// <summary>
@@ -100,7 +107,7 @@ public class UnionTypeTests
     /// unions can be mixed-and-matched per endpoint rather than sharing one fixed "Result" shape.
     /// </summary>
     [Fact]
-    public void Conversion_a_different_mix_of_case_types_works_on_another_union()
+    public void ImplicitConversion_DifferentCaseMixOnAnotherUnion_ExposesCaseThroughUnionValue_Test()
     {
         // Arrange
         // UpdateProductResult mixes Success/NotFound/ValidationErrors/Error/NotAuthorized — a
@@ -121,9 +128,11 @@ public class UnionTypeTests
         };
 
         // Assert
-        Assert.IsType<Success>(((IUnion)success).Value);
-        Assert.IsType<NotFound<ProductId>>(((IUnion)notFound).Value);
-        Assert.Equal("ok", successDescription);
+        Assert.Multiple(
+            () => Assert.IsType<Success>(((IUnion)success).Value),
+            () => Assert.IsType<NotFound<ProductId>>(((IUnion)notFound).Value),
+            () => Assert.Equal("ok", successDescription)
+        );
     }
 
     /// <summary>
@@ -133,7 +142,7 @@ public class UnionTypeTests
     /// mechanism <c>ValidationBehavior&lt;TRequest,TResponse&gt;</c> depends on.
     /// </summary>
     [Fact]
-    public void FromValidationErrors_generic_code_builds_the_ValidationErrors_case_via_the_static_abstract_factory()
+    public void FromValidationErrors_GenericCode_BuildsValidationErrorsCase_Test()
     {
         // Arrange
         // This is what ValidationBehavior<TRequest,TResponse> relies on: given only the

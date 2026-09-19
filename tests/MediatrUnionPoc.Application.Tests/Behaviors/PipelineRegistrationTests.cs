@@ -21,7 +21,7 @@ public class PipelineRegistrationTests
 {
     /// <summary>Verifies the resolved pipeline behaviors run in Logging, then Validation, then Transaction order.</summary>
     [Fact]
-    public void GetServices_create_command_resolves_Logging_then_Validation_then_Transaction()
+    public void GetServices_CreateCommand_ResolvesLoggingThenValidationThenTransaction_Test()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -60,7 +60,7 @@ public class PipelineRegistrationTests
     /// gated request.
     /// </summary>
     [Fact]
-    public void GetServices_delete_command_resolves_Logging_then_Validation_then_Transaction()
+    public void GetServices_DeleteCommand_ResolvesLoggingThenValidationThenTransaction_Test()
     {
         // Arrange
         var services = new ServiceCollection();

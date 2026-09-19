@@ -45,8 +45,16 @@ public union ArbitraryOutcome(Success, SomeDevsOwnCaseType) : ITransactionOutcom
 /// <summary>Verifies commit/rollback is decided purely by which union case the handler returned — no exceptions involved for the expected error cases.</summary>
 public class TransactionBehaviorTests
 {
+    private const string ErrorMessage = "boom";
+    private const string ErrorCode = "BOOM";
+    private const string InfrastructureFailureMessage = "infra failure";
+
     private static readonly Guid ProductGuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
+    // SWEEP-AMBIGUITY: the ctor's unitOfWork and logger and Handle(request, next, cancellationToken) have no
+    // ArgumentNullException guards (a null next fails with a NullReferenceException after the transaction has begun) /
+    // each null reference-type parameter should throw ArgumentNullException before any transaction work, but no such
+    // test is written because production does not do that.
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
     private readonly TransactionBehavior<DeleteProductCommand, DeleteProductResult> _sut;
 
@@ -58,18 +66,17 @@ public class TransactionBehaviorTests
             NullLogger<TransactionBehavior<DeleteProductCommand, DeleteProductResult>>.Instance);
     }
 
-    /// <summary>The error cases <see cref="Handle_error_case_rolls_back_and_does_not_commit(DeleteProductResult)"/> is theorized over.</summary>
-    /// <returns>A <see cref="TheoryData{T}"/> of <see cref="DeleteProductResult"/> error cases.</returns>
-    public static TheoryData<DeleteProductResult> ErrorCases() =>
+    /// <summary>The error cases <see cref="Handle_ErrorCase_RollsBackAndDoesNotCommit_Test(DeleteProductResult)"/> is theorized over.</summary>
+    public static TheoryData<DeleteProductResult> Handle_ErrorCase_RollsBackAndDoesNotCommit_Test_Data =>
         [
             new DeleteProductResult(new NotFound<ProductId>(ProductId.From(ProductGuid))),
-            new DeleteProductResult(new Error("boom", "BOOM")),
+            new DeleteProductResult(new Error(ErrorMessage, ErrorCode)),
         ];
 
     /// <summary>Verifies <see cref="IUnitOfWork.CommitAsync(CancellationToken)"/> is called, and rollback is not, when the handler returns a success case.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task Handle_success_case_commits_and_does_not_roll_back()
+    public async Task Handle_SuccessCase_CommitsAndDoesNotRollBack_Test()
     {
         // Arrange
         DeleteProductResult response = new Success();
@@ -82,12 +89,12 @@ public class TransactionBehaviorTests
         await _unitOfWork.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
     }
 
-    /// <summary>Verifies rollback is called, and commit is not, when the handler returns any error case from <see cref="ErrorCases"/>.</summary>
+    /// <summary>Verifies rollback is called, and commit is not, when the handler returns any error case from <see cref="Handle_ErrorCase_RollsBackAndDoesNotCommit_Test_Data"/>.</summary>
     /// <param name="response">The error-case response the handler returns.</param>
     /// <returns>The asynchronous test operation.</returns>
     [Theory]
-    [MemberData(nameof(ErrorCases))]
-    public async Task Handle_error_case_rolls_back_and_does_not_commit(DeleteProductResult response)
+    [MemberData(nameof(Handle_ErrorCase_RollsBackAndDoesNotCommit_Test_Data))]
+    public async Task Handle_ErrorCase_RollsBackAndDoesNotCommit_Test(DeleteProductResult response)
     {
         // Arrange
         var command = DeleteCommand();
@@ -103,7 +110,7 @@ public class TransactionBehaviorTests
     /// <summary>Verifies rollback is decided by asking <see cref="ArbitraryOutcome.ShouldCommit(ArbitraryOutcome)"/>, not by recognizing <see cref="SomeDevsOwnCaseType"/> as a known case type.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task Handle_arbitrary_case_type_the_behavior_has_never_seen_rolls_back()
+    public async Task Handle_ArbitraryCaseType_RollsBack_Test()
     {
         // Arrange
         var sut = new TransactionBehavior<ArbitraryCommand, ArbitraryOutcome>(
@@ -125,10 +132,10 @@ public class TransactionBehaviorTests
     /// <summary>Verifies rollback is called and the exception propagates when the handler throws instead of returning a union case.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task Handle_handler_throws_rolls_back_and_rethrows_the_original_exception()
+    public async Task Handle_HandlerThrows_RollsBackAndRethrows_Test()
     {
         // Arrange
-        const string message = "infra failure";
+        const string message = InfrastructureFailureMessage;
         static Task<DeleteProductResult> ThrowingAsync(CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException(message);
 
@@ -142,11 +149,11 @@ public class TransactionBehaviorTests
         await _unitOfWork.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies the transaction is begun before the handler's response is classified, so commit never precedes begin.</summary>
     /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public async Task Handle_success_case_begins_the_transaction_before_committing()
+    public async Task Handle_SuccessCase_BeginsTransactionBeforeCommit_Test()
     {
         // Arrange
         DeleteProductResult response = new Success();
@@ -157,16 +164,16 @@ public class TransactionBehaviorTests
         // Assert
         Received.InOrder(() =>
         {
-            _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>());
-            _unitOfWork.CommitAsync(Arg.Any<CancellationToken>());
+            _ = _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>());
+            _ = _unitOfWork.CommitAsync(Arg.Any<CancellationToken>());
         });
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies the caller's cancellation token is passed to begin, <c>next</c>, and commit rather than replaced.</summary>
     /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public async Task Handle_success_case_forwards_the_cancellation_token_to_the_unit_of_work_and_next()
+    public async Task Handle_SuccessCase_ForwardsCancellationToken_Test()
     {
         // Arrange
         using var cts = new CancellationTokenSource();

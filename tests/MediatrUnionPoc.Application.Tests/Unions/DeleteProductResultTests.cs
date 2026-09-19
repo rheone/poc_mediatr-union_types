@@ -13,31 +13,41 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// </summary>
 public class DeleteProductResultTests
 {
+    // SWEEP-AMBIGUITY: FromNotAuthorized(notAuthorized) has no ArgumentNullException guard (a null argument is
+    // silently wrapped into the union) / a null NotAuthorized should throw ArgumentNullException naming
+    // "notAuthorized", but no such test is written because production does not do that.
+    private const string ErrorMessage = "boom";
+    private const string ErrorCode = "BOOM";
+    private const string NotAnAdministrator = "not an administrator";
+
     private static readonly ProductId SomeProductId = ProductId.From(
         Guid.Parse("66666666-6666-6666-6666-666666666666")
     );
 
     /// <summary>Rows: one per declared case, with whether that case should commit — only <see cref="Success"/> does.</summary>
-    public static TheoryData<DeleteProductResult, bool> ShouldCommit_Test_Data =>
+    public static TheoryData<
+        DeleteProductResult,
+        bool
+    > ShouldCommit_EachDeclaredCase_CommitsOnlyForSuccess_Test_Data =>
         new()
         {
             { new Success(), true },
             { new NotFound<ProductId>(SomeProductId), false },
-            { new Error("boom", "BOOM"), false },
-            { new NotAuthorized(["not an administrator"]), false },
+            { new Error(ErrorMessage, ErrorCode), false },
+            { new NotAuthorized([NotAnAdministrator]), false },
         };
 
     /// <summary>Verifies <see cref="DeleteProductResult.ShouldCommit"/> commits only for its <see cref="Success"/> case.</summary>
     /// <param name="response">The union instance to classify.</param>
     /// <param name="expected">Whether the case is expected to commit.</param>
     [Theory]
-    [MemberData(nameof(ShouldCommit_Test_Data))]
-    public void ShouldCommit_commits_only_for_the_Success_case(
+    [MemberData(nameof(ShouldCommit_EachDeclaredCase_CommitsOnlyForSuccess_Test_Data))]
+    public void ShouldCommit_EachDeclaredCase_CommitsOnlyForSuccess_Test(
         DeleteProductResult response,
         bool expected
     )
     {
-        // Arrange (response supplied by ShouldCommit_Test_Data)
+        // Arrange (response supplied by ShouldCommit_EachDeclaredCase_CommitsOnlyForSuccess_Test_Data)
 
         // Act
         var shouldCommit = DeleteProductResult.ShouldCommit(response);
@@ -48,16 +58,16 @@ public class DeleteProductResultTests
 
     /// <summary>Verifies <see cref="DeleteProductResult.FromNotAuthorized"/> builds a union instance carrying the given <see cref="NotAuthorized"/>.</summary>
     [Fact]
-    public void FromNotAuthorized_carries_the_given_reasons()
+    public void FromNotAuthorized_GivenNotAuthorized_CarriesReasons_Test()
     {
         // Arrange
-        var notAuthorized = new NotAuthorized(["not an administrator"]);
+        var notAuthorized = new NotAuthorized([NotAnAdministrator]);
 
         // Act
         DeleteProductResult result = DeleteProductResult.FromNotAuthorized(notAuthorized);
 
         // Assert
         var reasons = Assert.IsType<NotAuthorized>(((IUnion)result).Value).Reasons;
-        Assert.Equal(["not an administrator"], reasons);
+        Assert.Equal([NotAnAdministrator], reasons);
     }
 }

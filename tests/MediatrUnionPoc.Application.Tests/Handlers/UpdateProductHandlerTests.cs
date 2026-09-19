@@ -27,7 +27,13 @@ public sealed class UpdateProductHandlerTests : IDisposable
     private const decimal OriginalPrice = 9.99m;
     private const string NewName = "Widget Pro";
     private const decimal NewPrice = 19.99m;
+    private const string MissingProductName = "Name";
+    private const decimal MissingProductPrice = 1m;
 
+    // SWEEP-AMBIGUITY: the ctor's repository and resourceAuthorizationService and Handle(request,
+    // cancellationToken) have no ArgumentNullException guards (a null request fails with a NullReferenceException) /
+    // each null reference-type parameter should throw ArgumentNullException, but no such test is written because
+    // production does not do that.
     private static readonly Guid MissingProductGuid = Guid.Parse(
         "44444444-4444-4444-4444-444444444444"
     );
@@ -67,7 +73,7 @@ public sealed class UpdateProductHandlerTests : IDisposable
     /// <summary>Verifies an existing product owned by the caller is updated and the handler returns Success.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_caller_owns_the_product_updates_it_and_returns_Success()
+    public async Task Handle_CallerOwnsProduct_UpdatesProductAndReturnsSuccess_Test()
     {
         // Arrange
         var product = StoredProduct();
@@ -85,14 +91,17 @@ public sealed class UpdateProductHandlerTests : IDisposable
 
         // Assert
         Assert.IsType<Success>(((IUnion)result).Value);
-        Assert.Equal(NewName, product.Name);
-        Assert.Equal(NewPrice, product.Price.Value);
+        Assert.Multiple(
+            () => Assert.Equal(NewName, product.Name),
+            () => Assert.Equal(NewPrice, product.Price.Value)
+        );
+        await _repository.Received(1).GetByIdAsync(product.Id, Arg.Any<CancellationToken>());
     }
 
     /// <summary>Verifies a caller who doesn't own the product gets NotAuthorized and nothing is updated.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_caller_does_not_own_the_product_returns_NotAuthorized_and_leaves_it_unchanged()
+    public async Task Handle_CallerDoesNotOwnProduct_ReturnsNotAuthorizedAndLeavesProductUnchanged_Test()
     {
         // Arrange
         var product = StoredProduct();
@@ -110,14 +119,17 @@ public sealed class UpdateProductHandlerTests : IDisposable
 
         // Assert
         Assert.IsType<NotAuthorized>(((IUnion)result).Value);
-        Assert.Equal(OriginalName, product.Name);
-        Assert.Equal(OriginalPrice, product.Price.Value);
+        Assert.Multiple(
+            () => Assert.Equal(OriginalName, product.Name),
+            () => Assert.Equal(OriginalPrice, product.Price.Value)
+        );
+        await _repository.Received(1).GetByIdAsync(product.Id, Arg.Any<CancellationToken>());
     }
 
     /// <summary>Verifies a missing product returns NotFound, before any ownership check runs.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_product_is_missing_returns_NotFound()
+    public async Task Handle_MissingProduct_ReturnsNotFound_Test()
     {
         // Arrange
         // A concrete ProductId, not Arg.Any<ProductId>(): NSubstitute can't disambiguate two
@@ -130,8 +142,8 @@ public sealed class UpdateProductHandlerTests : IDisposable
         var result = await _sut.Handle(
             new UpdateProductCommand(
                 MissingProductGuid,
-                "Name",
-                1m,
+                MissingProductName,
+                MissingProductPrice,
                 PrincipalMother.WithId(OwnerId)
             ),
             CancellationToken.None
@@ -140,6 +152,9 @@ public sealed class UpdateProductHandlerTests : IDisposable
         // Assert
         var notFound = Assert.IsType<NotFound<ProductId>>(((IUnion)result).Value);
         Assert.Equal(ProductId.From(MissingProductGuid), notFound.Id);
+        await _repository
+            .Received(1)
+            .GetByIdAsync(ProductId.From(MissingProductGuid), Arg.Any<CancellationToken>());
     }
 
     private Product StoredProduct()

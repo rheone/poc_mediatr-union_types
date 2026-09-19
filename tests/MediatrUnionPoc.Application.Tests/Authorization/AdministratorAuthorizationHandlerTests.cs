@@ -16,6 +16,9 @@ public class AdministratorAuthorizationHandlerTests
     private const string SuperUser = "SuperUser";
     private const string Viewer = "Viewer";
 
+    // SWEEP-AMBIGUITY: HandleAsync(context) has no ArgumentNullException guard (a null context surfaces as a
+    // NullReferenceException from the framework base class) / a null context should throw ArgumentNullException
+    // naming "context", but no such test is written because production does not do that.
     private readonly AdministratorAuthorizationHandler _sut = new();
 
     /// <summary>
@@ -24,7 +27,11 @@ public class AdministratorAuthorizationHandlerTests
     /// roles configured (automatically succeeds); allowed roles configured but caller has none
     /// (fails).
     /// </summary>
-    public static TheoryData<string[], string[], bool> HandleAsync_role_membership_Test_Data =>
+    public static TheoryData<
+        string[],
+        string[],
+        bool
+    > HandleAsync_RoleMembership_DeterminesAuthorizationResult_Test_Data =>
         new()
         {
             { [Administrator], [Administrator], true },
@@ -43,8 +50,8 @@ public class AdministratorAuthorizationHandlerTests
     /// <param name="expectedSuccess">Whether the requirement is expected to succeed for this combination.</param>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Theory]
-    [MemberData(nameof(HandleAsync_role_membership_Test_Data))]
-    public async Task HandleAsync_role_membership_determines_authorization_result(
+    [MemberData(nameof(HandleAsync_RoleMembership_DeterminesAuthorizationResult_Test_Data))]
+    public async Task HandleAsync_RoleMembership_DeterminesAuthorizationResult_Test(
         string[] allowedRoles,
         string[] userRoles,
         bool expectedSuccess

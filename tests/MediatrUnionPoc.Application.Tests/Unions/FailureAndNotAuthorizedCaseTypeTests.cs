@@ -39,15 +39,20 @@ public union AdminActionResult(Success, Failure, NotAuthorized) : ITransactionOu
 /// </summary>
 public class FailureAndNotAuthorizedCaseTypeTests
 {
+    private const string InsufficientStock = "insufficient stock";
+    private const string ProductDiscontinued = "product discontinued";
+    private const string MissingAdminRole = "missing admin role";
+    private const string BusinessRuleViolated = "business rule violated";
+
     /// <summary>
     /// Verifies <see cref="Failure"/> implicitly converts into the union and unwraps via pattern
     /// matching exactly like any other declared case type.
     /// </summary>
     [Fact]
-    public void Failure_converts_implicitly_into_the_union_and_unwraps()
+    public void ImplicitConversion_Failure_UnwrapsViaValueWithSameReasons_Test()
     {
         // Arrange
-        var expectedReasons = new[] { "insufficient stock", "product discontinued" };
+        var expectedReasons = new[] { InsufficientStock, ProductDiscontinued };
 
         // Act
         AdminActionResult result = new Failure(expectedReasons);
@@ -62,10 +67,10 @@ public class FailureAndNotAuthorizedCaseTypeTests
     /// pattern matching exactly like any other declared case type.
     /// </summary>
     [Fact]
-    public void NotAuthorized_converts_implicitly_into_the_union_and_unwraps()
+    public void ImplicitConversion_NotAuthorized_UnwrapsViaValueWithSameReasons_Test()
     {
         // Arrange
-        var expectedReasons = new[] { "missing admin role" };
+        var expectedReasons = new[] { MissingAdminRole };
 
         // Act
         AdminActionResult result = new NotAuthorized(expectedReasons);
@@ -76,10 +81,10 @@ public class FailureAndNotAuthorizedCaseTypeTests
     }
 
     /// <summary>Rows: a <see cref="Failure"/> and a <see cref="NotAuthorized"/> — different case types, both rollback.</summary>
-    public static TheoryData<AdminActionResult> ShouldCommit_rollback_Test_Data =>
+    public static TheoryData<AdminActionResult> ShouldCommit_FailureOrNotAuthorized_ReturnsFalse_Test_Data =>
         [
-            new AdminActionResult(new Failure(["business rule violated"])),
-            new AdminActionResult(new NotAuthorized(["missing admin role"])),
+            new AdminActionResult(new Failure([BusinessRuleViolated])),
+            new AdminActionResult(new NotAuthorized([MissingAdminRole])),
         ];
 
     /// <summary>
@@ -88,12 +93,12 @@ public class FailureAndNotAuthorizedCaseTypeTests
     /// </summary>
     /// <param name="response">The rollback-case instance under test.</param>
     [Theory]
-    [MemberData(nameof(ShouldCommit_rollback_Test_Data))]
-    public void ShouldCommit_Failure_and_NotAuthorized_classify_as_rollback(
+    [MemberData(nameof(ShouldCommit_FailureOrNotAuthorized_ReturnsFalse_Test_Data))]
+    public void ShouldCommit_FailureOrNotAuthorized_ReturnsFalse_Test(
         AdminActionResult response
     )
     {
-        // Arrange (response supplied by ShouldCommit_rollback_Test_Data)
+        // Arrange (response supplied by ShouldCommit_FailureOrNotAuthorized_ReturnsFalse_Test_Data)
 
         // Act
         var shouldCommit = AdminActionResult.ShouldCommit(response);
@@ -107,7 +112,7 @@ public class FailureAndNotAuthorizedCaseTypeTests
     /// <see cref="NotAuthorized"/> are added to the same union's case set.
     /// </summary>
     [Fact]
-    public void ShouldCommit_Success_classifies_as_commit_alongside_the_other_cases()
+    public void ShouldCommit_Success_ReturnsTrue_Test()
     {
         // Arrange
         AdminActionResult response = new Success();

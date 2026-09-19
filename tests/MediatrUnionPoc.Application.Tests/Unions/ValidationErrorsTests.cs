@@ -10,17 +10,20 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// </summary>
 public class ValidationErrorsTests
 {
+    private const string MustNotBeEmpty = "must not be empty";
+    private const string MustBeNonNegative = "must be greater than or equal to 0";
+
     /// <summary>
     /// Verifies <see cref="ValidationErrors.ToErrorMessage"/> joins multiple error messages with
     /// "; ".
     /// </summary>
     [Fact]
-    public void ToErrorMessage_multiple_errors_joins_messages_with_a_semicolon()
+    public void ToErrorMessage_MultipleErrors_JoinsMessagesWithSemicolon_Test()
     {
         // Arrange
         var errors = new ValidationErrors([
-            new ValidationError("Name", "must not be empty"),
-            new ValidationError("Price", "must be greater than or equal to 0"),
+            new ValidationError("Name", MustNotBeEmpty),
+            new ValidationError("Price", MustBeNonNegative),
         ]);
 
         // Act
@@ -35,22 +38,22 @@ public class ValidationErrorsTests
     /// as-is, with no separator applied.
     /// </summary>
     [Fact]
-    public void ToErrorMessage_single_error_returns_the_message_unchanged()
+    public void ToErrorMessage_SingleError_ReturnsMessageUnchanged_Test()
     {
         // Arrange
-        var errors = new ValidationErrors([new ValidationError("Id", "must not be empty")]);
+        var errors = new ValidationErrors([new ValidationError("Id", MustNotBeEmpty)]);
 
         // Act
         var message = errors.ToErrorMessage();
 
         // Assert
-        Assert.Equal("must not be empty", message);
+        Assert.Equal(MustNotBeEmpty, message);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies <see cref="ValidationErrors.ToErrorMessage"/> returns an empty string when there are no errors.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void ToErrorMessage_no_errors_returns_an_empty_string()
+    public void ToErrorMessage_NoErrors_ReturnsEmptyString_Test()
     {
         // Arrange
         var errors = new ValidationErrors([]);
@@ -62,13 +65,13 @@ public class ValidationErrorsTests
         Assert.Equal(string.Empty, message);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies <see cref="ValidationErrors.ToErrorMessage"/> drops property names, keeping only messages.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void ToErrorMessage_omits_property_names()
+    public void ToErrorMessage_ErrorWithPropertyName_OmitsPropertyName_Test()
     {
         // Arrange
-        var errors = new ValidationErrors([new ValidationError("Name", "must not be empty")]);
+        var errors = new ValidationErrors([new ValidationError("Name", MustNotBeEmpty)]);
 
         // Act
         var message = errors.ToErrorMessage();

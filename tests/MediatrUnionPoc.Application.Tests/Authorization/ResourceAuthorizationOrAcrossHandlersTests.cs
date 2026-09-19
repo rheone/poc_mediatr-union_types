@@ -19,6 +19,12 @@ namespace MediatrUnionPoc.Application.Tests.Authorization;
 public sealed class OverrideClaimAuthorizationHandler<TResource>
     : AuthorizationHandler<OperationAuthorizationRequirement, TResource>
 {
+    /// <summary>The claim type whose value <see cref="ClaimValue"/> makes this handler succeed.</summary>
+    public const string ClaimType = "SupportOverride";
+
+    /// <summary>The claim value that makes this handler succeed when carried on <see cref="ClaimType"/>.</summary>
+    public const string ClaimValue = "true";
+
     /// <inheritdoc/>
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
@@ -26,7 +32,7 @@ public sealed class OverrideClaimAuthorizationHandler<TResource>
         TResource resource
     )
     {
-        if (context.User.HasClaim("SupportOverride", "true"))
+        if (context.User.HasClaim(ClaimType, ClaimValue))
         {
             context.Succeed(requirement);
         }
@@ -47,7 +53,13 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     private const string PolicyName = "TestResourceUpdate";
     private const string OwnerId = "user-1";
     private const string OtherUserId = "user-2";
+    private const string UpdateOperation = "Update";
+    private const string AuthenticationType = "Test";
 
+    // SWEEP-AMBIGUITY: the framework's AuthorizeAsync(principal, resource, policyName) is the member under test
+    // and OwnerAuthorizationHandler has no null guards of its own (a null resource fails with a
+    // NullReferenceException) / null arguments should throw ArgumentNullException, but no such test is written
+    // because that behavior belongs to the framework and production does not add it.
     private readonly ServiceProvider _provider;
     private readonly IAuthorizationService _authorizationService;
 
@@ -61,7 +73,7 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
                 PolicyName,
                 policy =>
                     policy.Requirements.Add(
-                        new OperationAuthorizationRequirement { Name = "Update" }
+                        new OperationAuthorizationRequirement { Name = UpdateOperation }
                     )
             )
         );
@@ -80,7 +92,7 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     /// <summary>Verifies ownership alone, via <see cref="OwnerAuthorizationHandler{TResource}"/>, is enough to succeed.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task AuthorizeAsync_owning_caller_without_override_claim_succeeds()
+    public async Task AuthorizeAsync_OwningCallerWithoutOverrideClaim_Succeeds_Test()
     {
         // Arrange
         var resource = new TestResource(OwnerId);
@@ -96,7 +108,7 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     /// <summary>Verifies the override claim alone, via <see cref="OverrideClaimAuthorizationHandler{TResource}"/>, is enough to succeed even for a non-owner.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task AuthorizeAsync_non_owner_with_override_claim_succeeds()
+    public async Task AuthorizeAsync_NonOwnerWithOverrideClaim_Succeeds_Test()
     {
         // Arrange
         var resource = new TestResource(OwnerId);
@@ -104,9 +116,12 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
             new ClaimsIdentity(
                 [
                     new Claim(ClaimTypes.NameIdentifier, OtherUserId),
-                    new Claim("SupportOverride", "true"),
+                    new Claim(
+                        OverrideClaimAuthorizationHandler<TestResource>.ClaimType,
+                        OverrideClaimAuthorizationHandler<TestResource>.ClaimValue
+                    ),
                 ],
-                authenticationType: "Test"
+                authenticationType: AuthenticationType
             )
         );
 
@@ -120,7 +135,7 @@ public sealed class ResourceAuthorizationOrAcrossHandlersTests : IDisposable
     /// <summary>Verifies the policy fails when neither handler succeeds.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task AuthorizeAsync_non_owner_without_override_claim_fails()
+    public async Task AuthorizeAsync_NonOwnerWithoutOverrideClaim_Fails_Test()
     {
         // Arrange
         var resource = new TestResource(OwnerId);

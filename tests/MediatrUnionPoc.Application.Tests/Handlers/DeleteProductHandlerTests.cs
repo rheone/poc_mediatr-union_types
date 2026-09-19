@@ -26,7 +26,14 @@ public sealed class DeleteProductHandlerTests : IDisposable
     private const string OwnerId = "owner-1";
     private const string OtherUserId = "owner-2";
     private const string DeleteOperation = "Delete";
+    private const string AdministratorRole = "Administrator";
+    private const string ProductName = "Widget";
+    private const decimal ProductPrice = 9.99m;
 
+    // SWEEP-AMBIGUITY: the ctor's repository and resourceAuthorizationService and Handle(request,
+    // cancellationToken) have no ArgumentNullException guards (a null request fails with a NullReferenceException) /
+    // each null reference-type parameter should throw ArgumentNullException, but no such test is written because
+    // production does not do that.
     private static readonly Guid MissingProductGuid = Guid.Parse(
         "22222222-2222-2222-2222-222222222222"
     );
@@ -71,7 +78,7 @@ public sealed class DeleteProductHandlerTests : IDisposable
     /// <summary>Verifies the product's owner can remove it and the handler returns Success.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_caller_owns_the_product_removes_it_and_returns_Success()
+    public async Task Handle_CallerOwnsProduct_RemovesProductAndReturnsSuccess_Test()
     {
         // Arrange
         var product = StoredProduct();
@@ -85,31 +92,36 @@ public sealed class DeleteProductHandlerTests : IDisposable
         // Assert
         Assert.IsType<Success>(((IUnion)result).Value);
         _repository.Received(1).Remove(product);
+        await _repository.Received(1).GetByIdAsync(product.Id, Arg.Any<CancellationToken>());
     }
 
     /// <summary>Verifies an administrator can remove a product they don't own and the handler returns Success.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_caller_is_administrator_but_not_owner_removes_the_product_and_returns_Success()
+    public async Task Handle_CallerIsAdministratorButNotOwner_RemovesProductAndReturnsSuccess_Test()
     {
         // Arrange
         var product = StoredProduct();
 
         // Act
         var result = await _sut.Handle(
-            new DeleteProductCommand(product.Id.Value, PrincipalMother.WithRoles("Administrator")),
+            new DeleteProductCommand(
+                product.Id.Value,
+                PrincipalMother.WithRoles(AdministratorRole)
+            ),
             CancellationToken.None
         );
 
         // Assert
         Assert.IsType<Success>(((IUnion)result).Value);
         _repository.Received(1).Remove(product);
+        await _repository.Received(1).GetByIdAsync(product.Id, Arg.Any<CancellationToken>());
     }
 
     /// <summary>Verifies a caller who neither owns the product nor is an administrator gets NotAuthorized and nothing is removed.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_caller_neither_owns_the_product_nor_is_administrator_returns_NotAuthorized_and_removes_nothing()
+    public async Task Handle_CallerNeitherOwnerNorAdministrator_ReturnsNotAuthorizedAndRemovesNothing_Test()
     {
         // Arrange
         var product = StoredProduct();
@@ -123,12 +135,13 @@ public sealed class DeleteProductHandlerTests : IDisposable
         // Assert
         Assert.IsType<NotAuthorized>(((IUnion)result).Value);
         _repository.DidNotReceive().Remove(Arg.Any<Product>());
+        await _repository.Received(1).GetByIdAsync(product.Id, Arg.Any<CancellationToken>());
     }
 
     /// <summary>Verifies a missing product returns NotFound and nothing is removed, before any authorization check runs.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_product_is_missing_returns_NotFound_and_removes_nothing()
+    public async Task Handle_MissingProduct_ReturnsNotFoundAndRemovesNothing_Test()
     {
         // Arrange
         // A concrete ProductId, not Arg.Any<ProductId>(): NSubstitute can't disambiguate two
@@ -147,11 +160,14 @@ public sealed class DeleteProductHandlerTests : IDisposable
         var notFound = Assert.IsType<NotFound<ProductId>>(((IUnion)result).Value);
         Assert.Equal(ProductId.From(MissingProductGuid), notFound.Id);
         _repository.DidNotReceive().Remove(Arg.Any<Product>());
+        await _repository
+            .Received(1)
+            .GetByIdAsync(ProductId.From(MissingProductGuid), Arg.Any<CancellationToken>());
     }
 
     private Product StoredProduct()
     {
-        var product = Product.Create("Widget", Money.From(9.99m), ownerId: OwnerId);
+        var product = Product.Create(ProductName, Money.From(ProductPrice), ownerId: OwnerId);
         _repository.GetByIdAsync(product.Id, Arg.Any<CancellationToken>()).Returns(product);
         return product;
     }

@@ -13,6 +13,12 @@ namespace MediatrUnionPoc.Application.Tests.Handlers;
 /// </summary>
 public class GetProductByIdHandlerTests
 {
+    private const string ProductName = "Widget";
+    private const decimal ProductPrice = 9.99m;
+
+    // SWEEP-AMBIGUITY: the ctor's repository and Handle(request, cancellationToken) have no ArgumentNullException
+    // guards (a null request fails with a NullReferenceException) / each null reference-type parameter should throw
+    // ArgumentNullException, but no such test is written because production does not do that.
     private static readonly Guid MissingProductGuid = Guid.Parse(
         "33333333-3333-3333-3333-333333333333"
     );
@@ -26,10 +32,10 @@ public class GetProductByIdHandlerTests
     /// <summary>Verifies an existing product is returned as a <see cref="ProductDto"/>.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_product_exists_returns_its_ProductDto()
+    public async Task Handle_ProductExists_ReturnsProductDto_Test()
     {
         // Arrange
-        var product = Product.Create("Widget", Money.From(9.99m));
+        var product = Product.Create(ProductName, Money.From(ProductPrice));
         _repository.GetByIdAsync(product.Id, Arg.Any<CancellationToken>()).Returns(product);
 
         // Act
@@ -42,15 +48,16 @@ public class GetProductByIdHandlerTests
         var dto = Assert.IsType<ProductDto>(((IUnion)result).Value);
         Assert.Multiple(
             () => Assert.Equal(product.Id, dto.Id),
-            () => Assert.Equal("Widget", dto.Name),
-            () => Assert.Equal(9.99m, dto.Price)
+            () => Assert.Equal(ProductName, dto.Name),
+            () => Assert.Equal(ProductPrice, dto.Price)
         );
+        await _repository.Received(1).GetByIdAsync(product.Id, Arg.Any<CancellationToken>());
     }
 
     /// <summary>Verifies a missing product returns the NotFound union case.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_product_is_missing_returns_NotFound()
+    public async Task Handle_MissingProduct_ReturnsNotFound_Test()
     {
         // Arrange
         // A concrete ProductId, not Arg.Any<ProductId>(): NSubstitute can't disambiguate two
@@ -68,5 +75,8 @@ public class GetProductByIdHandlerTests
         // Assert
         var notFound = Assert.IsType<NotFound<ProductId>>(((IUnion)result).Value);
         Assert.Equal(ProductId.From(MissingProductGuid), notFound.Id);
+        await _repository
+            .Received(1)
+            .GetByIdAsync(ProductId.From(MissingProductGuid), Arg.Any<CancellationToken>());
     }
 }

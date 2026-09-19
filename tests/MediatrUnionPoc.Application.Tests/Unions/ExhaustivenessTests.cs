@@ -29,6 +29,7 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// <see cref="BuildScratchProjectAsync"/> falls back to spawning `dotnet build` itself whenever
 /// the capture file is absent.
 /// </remarks>
+[Trait("Category", "Integration")]
 public class ExhaustivenessTests
 {
     /// <summary>
@@ -37,7 +38,7 @@ public class ExhaustivenessTests
     /// </summary>
     /// <returns>A task that completes when the scratch build finishes and the assertions run.</returns>
     [Fact]
-    public async Task Build_non_exhaustive_switch_over_a_union_fails_with_CS8509()
+    public async Task Build_NonExhaustiveUnionSwitch_FailsWithCS8509_Test()
     {
         // Arrange
         const string project = "NonExhaustive";
@@ -51,12 +52,12 @@ public class ExhaustivenessTests
     }
 
     /// <summary>
-    /// Proves the exhaustive counterpart of <see cref="Build_non_exhaustive_switch_over_a_union_fails_with_CS8509"/>
+    /// Proves the exhaustive counterpart of <see cref="Build_NonExhaustiveUnionSwitch_FailsWithCS8509_Test"/>
     /// — the same union, switched over with every case covered — compiles with no CS8509.
     /// </summary>
     /// <returns>A task that completes when the scratch build finishes and the assertions run.</returns>
     [Fact]
-    public async Task Build_exhaustive_switch_over_the_same_union_succeeds()
+    public async Task Build_ExhaustiveUnionSwitch_Succeeds_Test()
     {
         // Arrange
         const string project = "Exhaustive";
@@ -70,7 +71,7 @@ public class ExhaustivenessTests
     }
 
     /// <summary>
-    /// The same proof as <see cref="Build_non_exhaustive_switch_over_a_union_fails_with_CS8509"/>, but for
+    /// The same proof as <see cref="Build_NonExhaustiveUnionSwitch_FailsWithCS8509_Test"/>, but for
     /// <c>ITransactionOutcome&lt;TSelf&gt;.ShouldCommit</c> specifically — this is what guarantees
     /// commit/rollback can't silently misclassify an arbitrary, previously-unseen case type: the
     /// case must be declared on the union, and the union's own <c>ShouldCommit</c> switch must
@@ -78,7 +79,7 @@ public class ExhaustivenessTests
     /// </summary>
     /// <returns>A task that completes when the scratch build finishes and the assertions run.</returns>
     [Fact]
-    public async Task Build_non_exhaustive_ShouldCommit_switch_fails_with_CS8509()
+    public async Task Build_NonExhaustiveShouldCommitSwitch_FailsWithCS8509_Test()
     {
         // Arrange
         const string project = "ShouldCommitNonExhaustive";
@@ -93,12 +94,12 @@ public class ExhaustivenessTests
 
     /// <summary>
     /// Proves the exhaustive counterpart of
-    /// <see cref="Build_non_exhaustive_ShouldCommit_switch_fails_with_CS8509"/> — every case classified in
+    /// <see cref="Build_NonExhaustiveShouldCommitSwitch_FailsWithCS8509_Test"/> — every case classified in
     /// <c>ShouldCommit</c> — compiles with no CS8509.
     /// </summary>
     /// <returns>A task that completes when the scratch build finishes and the assertions run.</returns>
     [Fact]
-    public async Task Build_exhaustive_ShouldCommit_switch_succeeds()
+    public async Task Build_ExhaustiveShouldCommitSwitch_Succeeds_Test()
     {
         // Arrange
         const string project = "ShouldCommitExhaustive";

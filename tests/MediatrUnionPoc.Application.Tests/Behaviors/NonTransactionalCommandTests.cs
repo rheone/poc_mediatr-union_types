@@ -36,7 +36,7 @@ public class NonTransactionalCommandTests
 {
     /// <summary>Verifies the resolved pipeline for <see cref="NotifyCommand"/> contains only <see cref="LoggingBehavior{TRequest,TResponse}"/>, with neither <see cref="ValidationBehavior{TRequest,TResponse}"/> nor <see cref="TransactionBehavior{TRequest,TResponse}"/> present.</summary>
     [Fact]
-    public void GetServices_plain_command_pipeline_excludes_TransactionBehavior()
+    public void GetServices_PlainCommandPipeline_ExcludesTransactionBehavior_Test()
     {
         // Arrange
         var services = new ServiceCollection();

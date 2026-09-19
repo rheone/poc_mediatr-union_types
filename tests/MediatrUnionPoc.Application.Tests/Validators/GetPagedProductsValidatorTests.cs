@@ -6,6 +6,9 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 /// <summary>Exercises <see cref="GetPagedProductsValidator"/>'s validation rules directly.</summary>
 public class GetPagedProductsValidatorTests
 {
+    // SWEEP-AMBIGUITY: validating a null command throws InvalidOperationException ("Cannot pass null model to
+    // Validate") from FluentValidation rather than ArgumentNullException / a null command should throw
+    // ArgumentNullException naming "instance", but no such test is written because production does not do that.
     private const int ValidPageNumber = 1;
     private const int ValidPageSize = 10;
 
@@ -16,7 +19,7 @@ public class GetPagedProductsValidatorTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Validate_page_number_below_1_fails(int pageNumber)
+    public void Validate_PageNumberBelow1_FailsPageNumberRule_Test(int pageNumber)
     {
         // Arrange
         var query = new GetPagedProductsQuery(pageNumber, ValidPageSize);
@@ -34,7 +37,7 @@ public class GetPagedProductsValidatorTests
     [InlineData(0)]
     [InlineData(-1)]
     [InlineData(101)]
-    public void Validate_page_size_outside_1_to_100_range_fails(int pageSize)
+    public void Validate_PageSizeOutside1To100Range_FailsPageSizeRule_Test(int pageSize)
     {
         // Arrange
         var query = new GetPagedProductsQuery(ValidPageNumber, pageSize);
@@ -53,7 +56,7 @@ public class GetPagedProductsValidatorTests
     [InlineData(1, 1)]
     [InlineData(1, 100)]
     [InlineData(5, 50)]
-    public void Validate_valid_paging_parameters_produce_no_errors(int pageNumber, int pageSize)
+    public void Validate_ValidPagingParameters_ProducesNoErrors_Test(int pageNumber, int pageSize)
     {
         // Arrange
         var query = new GetPagedProductsQuery(pageNumber, pageSize);

@@ -17,6 +17,11 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// </summary>
 public class ResultShouldCommitTests
 {
+    private const string ProductName = "Widget";
+    private const decimal ProductPrice = 9.99m;
+    private const string ErrorMessage = "boom";
+    private const string ErrorCode = "BOOM";
+
     private static readonly ProductId SomeProductId = ProductId.From(
         Guid.Parse("77777777-7777-7777-7777-777777777777")
     );
@@ -25,25 +30,25 @@ public class ResultShouldCommitTests
     public static TheoryData<
         CreateProductResult,
         bool
-    > CreateProductResult_ShouldCommit_Test_Data =>
+    > ShouldCommit_CreateProductResultCases_CommitsOnlyForProductDto_Test_Data =>
         new()
         {
-            { new ProductDto(SomeProductId, "Widget", 9.99m), true },
+            { new ProductDto(SomeProductId, ProductName, ProductPrice), true },
             { new ValidationErrors([new ValidationError("Name", "required")]), false },
-            { new Error("boom", "BOOM"), false },
+            { new Error(ErrorMessage, ErrorCode), false },
         };
 
     /// <summary>Rows: one per <see cref="UpdateProductResult"/> case, with whether it should commit — only <see cref="Success"/> does.</summary>
     public static TheoryData<
         UpdateProductResult,
         bool
-    > UpdateProductResult_ShouldCommit_Test_Data =>
+    > ShouldCommit_UpdateProductResultCases_CommitsOnlyForSuccess_Test_Data =>
         new()
         {
             { new Success(), true },
             { new NotFound<ProductId>(SomeProductId), false },
             { new ValidationErrors([new ValidationError("Price", "must be >= 0")]), false },
-            { new Error("boom", "BOOM"), false },
+            { new Error(ErrorMessage, ErrorCode), false },
             { new NotAuthorized(["not the owner"]), false },
         };
 
@@ -51,13 +56,13 @@ public class ResultShouldCommitTests
     /// <param name="response">The union instance to classify.</param>
     /// <param name="expected">Whether the case is expected to commit.</param>
     [Theory]
-    [MemberData(nameof(CreateProductResult_ShouldCommit_Test_Data))]
-    public void CreateProductResult_ShouldCommit_commits_only_for_the_ProductDto_case(
+    [MemberData(nameof(ShouldCommit_CreateProductResultCases_CommitsOnlyForProductDto_Test_Data))]
+    public void ShouldCommit_CreateProductResultCases_CommitsOnlyForProductDto_Test(
         CreateProductResult response,
         bool expected
     )
     {
-        // Arrange (response supplied by CreateProductResult_ShouldCommit_Test_Data)
+        // Arrange (response supplied by ShouldCommit_CreateProductResultCases_CommitsOnlyForProductDto_Test_Data)
 
         // Act
         var shouldCommit = CreateProductResult.ShouldCommit(response);
@@ -70,13 +75,13 @@ public class ResultShouldCommitTests
     /// <param name="response">The union instance to classify.</param>
     /// <param name="expected">Whether the case is expected to commit.</param>
     [Theory]
-    [MemberData(nameof(UpdateProductResult_ShouldCommit_Test_Data))]
-    public void UpdateProductResult_ShouldCommit_commits_only_for_the_Success_case(
+    [MemberData(nameof(ShouldCommit_UpdateProductResultCases_CommitsOnlyForSuccess_Test_Data))]
+    public void ShouldCommit_UpdateProductResultCases_CommitsOnlyForSuccess_Test(
         UpdateProductResult response,
         bool expected
     )
     {
-        // Arrange (response supplied by UpdateProductResult_ShouldCommit_Test_Data)
+        // Arrange (response supplied by ShouldCommit_UpdateProductResultCases_CommitsOnlyForSuccess_Test_Data)
 
         // Act
         var shouldCommit = UpdateProductResult.ShouldCommit(response);

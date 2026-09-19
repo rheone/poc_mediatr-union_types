@@ -10,6 +10,9 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 /// </summary>
 public class CreateProductValidatorTests
 {
+    // SWEEP-AMBIGUITY: validating a null command throws InvalidOperationException ("Cannot pass null model to
+    // Validate") from FluentValidation rather than ArgumentNullException / a null command should throw
+    // ArgumentNullException naming "instance", but no such test is written because production does not do that.
     private const string ValidName = "Widget";
     private const decimal ValidPrice = 10m;
     private const int MaxNameLength = 200;
@@ -26,7 +29,7 @@ public class CreateProductValidatorTests
     [InlineData("\t")]
     [InlineData("\n")]
     [InlineData("\r")]
-    public void Validate_null_empty_or_whitespace_name_fails(string? name)
+    public void Validate_NullEmptyOrWhitespaceName_FailsNameRule_Test(string? name)
     {
         // Arrange
         var command = new CreateProductCommand(name!, ValidPrice);
@@ -40,7 +43,7 @@ public class CreateProductValidatorTests
 
     /// <summary>Verifies a name over 200 characters fails validation.</summary>
     [Fact]
-    public void Validate_name_over_200_characters_fails()
+    public void Validate_NameOver200Characters_FailsNameRule_Test()
     {
         // Arrange
         var command = new CreateProductCommand(new string('a', MaxNameLength + 1), ValidPrice);
@@ -52,10 +55,10 @@ public class CreateProductValidatorTests
         result.ShouldHaveValidationErrorFor(x => x.Name);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies a name of exactly 200 characters is accepted — the upper boundary of the length rule.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void Validate_name_of_exactly_200_characters_passes()
+    public void Validate_NameOfExactly200Characters_PassesNameRule_Test()
     {
         // Arrange
         var command = new CreateProductCommand(new string('a', MaxNameLength), ValidPrice);
@@ -72,7 +75,7 @@ public class CreateProductValidatorTests
     [Theory]
     [InlineData(-0.01)]
     [InlineData(-1000)]
-    public void Validate_negative_price_fails(decimal price)
+    public void Validate_NegativePrice_FailsPriceRule_Test(decimal price)
     {
         // Arrange
         var command = new CreateProductCommand(ValidName, price);
@@ -90,7 +93,7 @@ public class CreateProductValidatorTests
     [InlineData(0)]
     [InlineData(0.01)]
     [InlineData(9999.99)]
-    public void Validate_valid_command_produces_no_errors(decimal price)
+    public void Validate_ValidCommand_ProducesNoErrors_Test(decimal price)
     {
         // Arrange
         var command = new CreateProductCommand(ValidName, price);

@@ -15,16 +15,22 @@ namespace MediatrUnionPoc.Application.Tests.Unions;
 /// don't fold it into an <see cref="Error"/> carrying <see cref="Error.ValidationFailureCode"/>.
 /// <c>ValidationBehavior</c> depends on either shape being produced generically.
 /// </summary>
-// Auto Generated, verify expected behavior:
 public class FromValidationErrorsTests
 {
+    private const string PropertyName = "Name";
+    private const string ErrorMessage = "must not be empty";
+
+    // SWEEP-AMBIGUITY: each FromValidationErrors(errors) has no ArgumentNullException guard (a null argument is
+    // wrapped as-is or fails later in ToErrorMessage with a NullReferenceException) / a null ValidationErrors should
+    // throw ArgumentNullException naming "errors", but no such test is written because production does not do that.
     private static readonly ValidationErrors SomeErrors = new([
-        new ValidationError("Name", "must not be empty"),
+        new ValidationError(PropertyName, ErrorMessage),
     ]);
 
     /// <summary>Verifies unions that declare a <see cref="ValidationErrors"/> case carry the given errors through unchanged.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void FromValidationErrors_union_with_a_ValidationErrors_case_carries_the_errors_unchanged()
+    public void FromValidationErrors_UnionWithValidationErrorsCase_CarriesErrorsUnchanged_Test()
     {
         // Arrange
         // (SomeErrors)
@@ -34,13 +40,16 @@ public class FromValidationErrorsTests
         var update = UpdateProductResult.FromValidationErrors(SomeErrors);
 
         // Assert
-        Assert.Same(SomeErrors, ((IUnion)create).Value);
-        Assert.Same(SomeErrors, ((IUnion)update).Value);
+        Assert.Multiple(
+            () => Assert.Same(SomeErrors, ((IUnion)create).Value),
+            () => Assert.Same(SomeErrors, ((IUnion)update).Value)
+        );
     }
 
     /// <summary>Verifies unions without their own <see cref="ValidationErrors"/> case fold it into an <see cref="Error"/> coded <see cref="Error.ValidationFailureCode"/> whose message includes the validation messages.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void FromValidationErrors_union_without_a_ValidationErrors_case_folds_into_a_coded_Error()
+    public void FromValidationErrors_UnionWithoutValidationErrorsCase_FoldsIntoCodedError_Test()
     {
         // Arrange
         // (SomeErrors)

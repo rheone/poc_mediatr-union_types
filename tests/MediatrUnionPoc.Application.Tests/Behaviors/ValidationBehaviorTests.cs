@@ -15,7 +15,13 @@ public class ValidationBehaviorTests
 {
     private const string InvalidPropertyName = "Name";
     private const string InvalidPropertyMessage = "Name is required";
+    private const string ValidName = "Widget";
+    private const decimal ValidPrice = 10m;
 
+    // SWEEP-AMBIGUITY: the ctor's validators and logger and Handle(request, next, cancellationToken) have no
+    // ArgumentNullException guards (a null validators sequence or null request fails with a NullReferenceException,
+    // a null next only when invoked) / each null reference-type parameter should throw ArgumentNullException, but no
+    // such test is written because production does not do that.
     private readonly ValidationBehavior<CreateProductCommand, CreateProductResult> _sut;
     private readonly IValidator<CreateProductCommand> _validator;
     private bool _nextWasCalled;
@@ -33,7 +39,7 @@ public class ValidationBehaviorTests
     /// <summary>Verifies a failing <see cref="IValidator{T}"/> result short-circuits to the <see cref="ValidationErrors"/> case, that <c>next</c> is never invoked, and that the failures surface unchanged.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task Handle_invalid_request_short_circuits_to_ValidationErrors_without_calling_next()
+    public async Task Handle_InvalidRequest_ShortCircuitsToValidationErrors_Test()
     {
         // Arrange
         _validator
@@ -46,7 +52,7 @@ public class ValidationBehaviorTests
                     new ValidationFailure(InvalidPropertyName, InvalidPropertyMessage),
                 ])
             );
-        var command = new CreateProductCommand(string.Empty, 10m);
+        var command = new CreateProductCommand(string.Empty, ValidPrice);
 
         // Act
         var result = await _sut.Handle(command, NextAsync, CancellationToken.None);
@@ -57,12 +63,20 @@ public class ValidationBehaviorTests
         var error = Assert.Single(errors.Errors);
         Assert.Equal(InvalidPropertyName, error.PropertyName);
         Assert.Equal(InvalidPropertyMessage, error.ErrorMessage);
+        await _validator
+            .Received(1)
+            .ValidateAsync(
+                Arg.Is<ValidationContext<CreateProductCommand>>(context =>
+                    ReferenceEquals(context.InstanceToValidate, command)
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     /// <summary>Verifies a passing <see cref="IValidator{T}"/> result lets the request reach <c>next</c>, returning its result unchanged.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task Handle_valid_request_calls_next_and_returns_its_result_unchanged()
+    public async Task Handle_ValidRequest_CallsNextAndReturnsResultUnchanged_Test()
     {
         // Arrange
         _validator
@@ -71,7 +85,7 @@ public class ValidationBehaviorTests
                 Arg.Any<CancellationToken>()
             )
             .Returns(new ValidationResult());
-        var command = new CreateProductCommand("Widget", 10m);
+        var command = new CreateProductCommand(ValidName, ValidPrice);
 
         // Act
         var result = await _sut.Handle(command, NextAsync, CancellationToken.None);
@@ -79,20 +93,28 @@ public class ValidationBehaviorTests
         // Assert
         Assert.True(_nextWasCalled);
         Assert.IsType<Error>(((IUnion)result).Value);
+        await _validator
+            .Received(1)
+            .ValidateAsync(
+                Arg.Is<ValidationContext<CreateProductCommand>>(context =>
+                    ReferenceEquals(context.InstanceToValidate, command)
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies a request with no registered validators skips validation entirely and reaches <c>next</c>.</summary>
     /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public async Task Handle_no_registered_validators_calls_next()
+    public async Task Handle_NoRegisteredValidators_CallsNext_Test()
     {
         // Arrange
         var sut = new ValidationBehavior<CreateProductCommand, CreateProductResult>(
             [],
             NullLogger<ValidationBehavior<CreateProductCommand, CreateProductResult>>.Instance
         );
-        var command = new CreateProductCommand("Widget", 10m);
+        var command = new CreateProductCommand(ValidName, ValidPrice);
 
         // Act
         var result = await sut.Handle(command, NextAsync, CancellationToken.None);
@@ -102,11 +124,11 @@ public class ValidationBehaviorTests
         Assert.IsType<Error>(((IUnion)result).Value);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies failures from every registered validator are aggregated into one <see cref="ValidationErrors"/>, not just the first validator's.</summary>
     /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public async Task Handle_failures_from_multiple_validators_are_aggregated()
+    public async Task Handle_FailuresFromMultipleValidators_AreAggregated_Test()
     {
         // Arrange
         var second = Substitute.For<IValidator<CreateProductCommand>>();
@@ -126,20 +148,30 @@ public class ValidationBehaviorTests
             [_validator, second],
             NullLogger<ValidationBehavior<CreateProductCommand, CreateProductResult>>.Instance
         );
+        var command = new CreateProductCommand(string.Empty, -1m);
 
         // Act
-        var result = await sut.Handle(
-            new CreateProductCommand(string.Empty, -1m),
-            NextAsync,
-            CancellationToken.None
-        );
+        var result = await sut.Handle(command, NextAsync, CancellationToken.None);
 
         // Assert
         var errors = Assert.IsType<ValidationErrors>(((IUnion)result).Value);
-        Assert.Equal(
-            ["Name", "Price"],
-            errors.Errors.Select(e => e.PropertyName).Order().ToArray()
-        );
+        Assert.Equal(new[] { "Name", "Price" }, errors.Errors.Select(e => e.PropertyName).Order());
+        await _validator
+            .Received(1)
+            .ValidateAsync(
+                Arg.Is<ValidationContext<CreateProductCommand>>(context =>
+                    ReferenceEquals(context.InstanceToValidate, command)
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        await second
+            .Received(1)
+            .ValidateAsync(
+                Arg.Is<ValidationContext<CreateProductCommand>>(context =>
+                    ReferenceEquals(context.InstanceToValidate, command)
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     /// <summary>Stands in for the rest of the pipeline as a <see cref="RequestHandlerDelegate{TResponse}"/>, recording whether it was reached.</summary>

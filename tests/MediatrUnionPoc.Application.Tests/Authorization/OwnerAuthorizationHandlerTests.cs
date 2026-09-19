@@ -25,12 +25,15 @@ public sealed class OwnerAuthorizationHandlerTests
     private const string OtherUserId = "user-2";
     private const string UpdateOperation = "Update";
 
+    // SWEEP-AMBIGUITY: HandleAsync(context) has no ArgumentNullException guard (a null context surfaces as a
+    // NullReferenceException from the framework base class) / a null context should throw ArgumentNullException
+    // naming "context", but no such test is written because production does not do that.
     private readonly OwnerAuthorizationHandler<TestResource> _sut = new();
 
     /// <summary>Verifies the requirement succeeds when the caller's identifier claim equals the resource's owner.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task HandleAsync_caller_is_owner_succeeds()
+    public async Task HandleAsync_CallerIsOwner_Succeeds_Test()
     {
         // Arrange
         var context = ContextFor(PrincipalMother.WithId(OwnerId));
@@ -45,7 +48,7 @@ public sealed class OwnerAuthorizationHandlerTests
     /// <summary>Verifies the requirement does not succeed when the caller's identifier claim differs from the resource's owner.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task HandleAsync_caller_is_not_owner_fails()
+    public async Task HandleAsync_CallerIsNotOwner_Fails_Test()
     {
         // Arrange
         var context = ContextFor(PrincipalMother.WithId(OtherUserId));
@@ -60,7 +63,7 @@ public sealed class OwnerAuthorizationHandlerTests
     /// <summary>Verifies the requirement fails, rather than throwing, when the caller has no identifier claim at all.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
     [Fact]
-    public async Task HandleAsync_caller_without_identifier_claim_fails()
+    public async Task HandleAsync_CallerWithoutIdentifierClaim_Fails_Test()
     {
         // Arrange
         var context = ContextFor(PrincipalMother.Anonymous());
@@ -72,11 +75,11 @@ public sealed class OwnerAuthorizationHandlerTests
         Assert.False(context.HasSucceeded);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies ownership is compared case-sensitively — an identifier differing from the owner only by case is not the owner.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public async Task HandleAsync_owner_id_differing_only_by_case_fails()
+    public async Task HandleAsync_OwnerIdDifferingOnlyByCase_Fails_Test()
     {
         // Arrange
         var context = ContextFor(PrincipalMother.WithId(OwnerId.ToUpperInvariant()));

@@ -17,6 +17,10 @@ public class CreateProductHandlerTests
     private const decimal ProductPrice = 9.99m;
     private const string OwnerId = "owner-1";
 
+    // SWEEP-AMBIGUITY: the ctor's repository and Handle(request, cancellationToken) have no ArgumentNullException
+    // guards (a null request fails with a NullReferenceException; a null repository fails on first use) / each null
+    // reference-type parameter should throw ArgumentNullException, but no such test is written because production
+    // does not do that.
     private readonly IProductRepository _repository = Substitute.For<IProductRepository>();
     private readonly CreateProductHandler _sut;
 
@@ -26,7 +30,7 @@ public class CreateProductHandlerTests
     /// <summary>Verifies the handler adds the product to the repository and returns its DTO.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_valid_command_adds_the_product_and_returns_its_dto()
+    public async Task Handle_ValidCommand_AddsProductAndReturnsDto_Test()
     {
         // Arrange
         var command = new CreateProductCommand(ProductName, ProductPrice);
@@ -36,8 +40,10 @@ public class CreateProductHandlerTests
 
         // Assert
         var dto = Assert.IsType<ProductDto>(((IUnion)result).Value);
-        Assert.Equal(ProductName, dto.Name);
-        Assert.Equal(ProductPrice, dto.Price);
+        Assert.Multiple(
+            () => Assert.Equal(ProductName, dto.Name),
+            () => Assert.Equal(ProductPrice, dto.Price)
+        );
         await _repository
             .Received(1)
             .AddAsync(
@@ -51,7 +57,7 @@ public class CreateProductHandlerTests
     /// <summary>Verifies a product created without a <see cref="CreateProductCommand.Principal"/> gets an empty owner id.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_no_principal_assigns_an_empty_owner_id()
+    public async Task Handle_NoPrincipal_AssignsEmptyOwnerId_Test()
     {
         // Arrange
         var command = new CreateProductCommand(ProductName, ProductPrice);
@@ -71,7 +77,7 @@ public class CreateProductHandlerTests
     /// <summary>Verifies a product created with a principal carrying a name identifier claim is owned by that claim's value.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_principal_with_name_identifier_claim_assigns_it_as_the_owner_id()
+    public async Task Handle_PrincipalWithNameIdentifierClaim_AssignsClaimAsOwnerId_Test()
     {
         // Arrange
         var command = new CreateProductCommand(
@@ -89,11 +95,11 @@ public class CreateProductHandlerTests
             .AddAsync(Arg.Is<Product>(p => p.OwnerId == OwnerId), Arg.Any<CancellationToken>());
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies a principal with no name identifier claim yields an empty owner id rather than throwing.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public async Task Handle_principal_without_name_identifier_claim_assigns_an_empty_owner_id()
+    public async Task Handle_PrincipalWithoutNameIdentifierClaim_AssignsEmptyOwnerId_Test()
     {
         // Arrange
         var command = new CreateProductCommand(

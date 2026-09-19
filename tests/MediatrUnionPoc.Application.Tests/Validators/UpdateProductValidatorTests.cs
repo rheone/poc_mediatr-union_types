@@ -7,6 +7,9 @@ namespace MediatrUnionPoc.Application.Tests.Validators;
 /// <summary>Exercises <see cref="UpdateProductValidator"/>'s rules directly, including the id check that <see cref="MediatrUnionPoc.Application.Features.Products.Create.CreateProductValidator"/> doesn't need.</summary>
 public class UpdateProductValidatorTests
 {
+    // SWEEP-AMBIGUITY: validating a null command throws InvalidOperationException ("Cannot pass null model to
+    // Validate") from FluentValidation rather than ArgumentNullException / a null command should throw
+    // ArgumentNullException naming "instance", but no such test is written because production does not do that.
     private const string ValidName = "Widget";
     private const decimal ValidPrice = 10m;
     private const int MaxNameLength = 200;
@@ -17,7 +20,7 @@ public class UpdateProductValidatorTests
 
     /// <summary>Verifies an empty id fails validation.</summary>
     [Fact]
-    public void Validate_empty_id_fails()
+    public void Validate_EmptyId_FailsIdRule_Test()
     {
         // Arrange
         var command = Command(id: Guid.Empty);
@@ -39,7 +42,7 @@ public class UpdateProductValidatorTests
     [InlineData("\t")]
     [InlineData("\n")]
     [InlineData("\r")]
-    public void Validate_null_empty_or_whitespace_name_fails(string? name)
+    public void Validate_NullEmptyOrWhitespaceName_FailsNameRule_Test(string? name)
     {
         // Arrange
         var command = Command(name: name!);
@@ -51,10 +54,10 @@ public class UpdateProductValidatorTests
         result.ShouldHaveValidationErrorFor(x => x.Name);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies a name over 200 characters fails validation.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void Validate_name_over_200_characters_fails()
+    public void Validate_NameOver200Characters_FailsNameRule_Test()
     {
         // Arrange
         var command = Command(name: new string('a', MaxNameLength + 1));
@@ -66,10 +69,10 @@ public class UpdateProductValidatorTests
         result.ShouldHaveValidationErrorFor(x => x.Name);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies a name of exactly 200 characters is accepted — the upper boundary of the length rule.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void Validate_name_of_exactly_200_characters_passes()
+    public void Validate_NameOfExactly200Characters_PassesNameRule_Test()
     {
         // Arrange
         var command = Command(name: new string('a', MaxNameLength));
@@ -86,7 +89,7 @@ public class UpdateProductValidatorTests
     [Theory]
     [InlineData(-0.01)]
     [InlineData(-1000)]
-    public void Validate_negative_price_fails(decimal price)
+    public void Validate_NegativePrice_FailsPriceRule_Test(decimal price)
     {
         // Arrange
         var command = Command(price: price);
@@ -98,10 +101,10 @@ public class UpdateProductValidatorTests
         result.ShouldHaveValidationErrorFor(x => x.Price);
     }
 
-    // Auto Generated, verify expected behavior:
     /// <summary>Verifies a zero price is accepted — the lower boundary of the price rule.</summary>
+    // Auto Generated, verify expected behavior:
     [Fact]
-    public void Validate_zero_price_passes()
+    public void Validate_ZeroPrice_PassesPriceRule_Test()
     {
         // Arrange
         var command = Command(price: 0m);
@@ -115,7 +118,7 @@ public class UpdateProductValidatorTests
 
     /// <summary>Verifies a fully valid command produces no validation errors.</summary>
     [Fact]
-    public void Validate_valid_command_produces_no_errors()
+    public void Validate_ValidCommand_ProducesNoErrors_Test()
     {
         // Arrange
         var command = Command();
