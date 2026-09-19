@@ -215,7 +215,7 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Verifies a delete without the X-Admin header returns 403, and the product is left untouched.</summary>
+    /// <summary>Verifies a delete without the X-Admin header or a matching X-Caller-Id returns 403, and the product is left untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
     public async Task Delete_without_the_admin_header_returns_403_and_leaves_the_product_untouched()
@@ -233,6 +233,42 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, afterDelete.StatusCode);
     }
 
+    /// <summary>Verifies the product's owner can delete it without the X-Admin header, via the X-Caller-Id header alone.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Delete_by_the_products_owner_returns_204_without_the_admin_header()
+    {
+        using var created = await PostAsCallerAsync("owner-1");
+        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
+
+        using var deleteResponse = await DeleteAsCallerAsync(
+            $"/api/products/{dto!.Id.Value}",
+            "owner-1"
+        );
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        using var afterDelete = await _client.GetAsync($"/api/products/{dto.Id.Value}");
+        Assert.Equal(HttpStatusCode.NotFound, afterDelete.StatusCode);
+    }
+
+    /// <summary>Verifies a caller who neither owns the product nor presents the X-Admin header gets 403, and the product is left untouched.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Delete_by_a_non_owner_non_administrator_returns_403_and_leaves_the_product_untouched()
+    {
+        using var created = await PostAsCallerAsync("owner-1");
+        var dto = await created.Content.ReadFromJsonAsync<ProductDto>();
+
+        using var deleteResponse = await DeleteAsCallerAsync(
+            $"/api/products/{dto!.Id.Value}",
+            "owner-2"
+        );
+        Assert.Equal(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
+
+        using var afterDelete = await _client.GetAsync($"/api/products/{dto.Id.Value}");
+        Assert.Equal(HttpStatusCode.OK, afterDelete.StatusCode);
+    }
+
     /// <summary>Sends a DELETE request carrying the <c>X-Admin: true</c> header the API treats as proof of administrator identity.</summary>
     /// <param name="requestUri">The request URI.</param>
     /// <returns>The response to the request.</returns>
@@ -240,6 +276,17 @@ public sealed class ProductsControllerTests : IDisposable
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
         request.Headers.Add("X-Admin", "true");
+        return await _client.SendAsync(request);
+    }
+
+    /// <summary>Sends a DELETE request carrying the <c>X-Caller-Id</c> header the API treats as proof of caller identity.</summary>
+    /// <param name="requestUri">The request URI.</param>
+    /// <param name="callerId">The <c>X-Caller-Id</c> header value to present.</param>
+    /// <returns>The response to the request.</returns>
+    private async Task<HttpResponseMessage> DeleteAsCallerAsync(string requestUri, string callerId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
+        request.Headers.Add("X-Caller-Id", callerId);
         return await _client.SendAsync(request);
     }
 

@@ -21,4 +21,20 @@ public static class AuthorizationPolicies
     /// behavior runs before any resource is loaded.
     /// </summary>
     public const string ProductOwner = "ProductOwner";
+
+    /// <summary>
+    /// Requires the caller to either own the resource being acted on or hold the
+    /// <c>Administrator</c> role — evaluated as an OR across two independently-registered
+    /// <see cref="Microsoft.AspNetCore.Authorization.IAuthorizationHandler"/>s answering the same
+    /// <see cref="Microsoft.AspNetCore.Authorization.Infrastructure.OperationAuthorizationRequirement"/>:
+    /// <see cref="OwnerAuthorizationHandler{TResource}"/> (ownership) and
+    /// <see cref="AdministratorResourceOverrideAuthorizationHandler{TResource}"/> (the role bypass,
+    /// registered for this policy's <c>Delete</c> operation name only — <see cref="ProductOwner"/>'s
+    /// <c>Update</c> operation is unaffected by it). No OR logic lives in application code for
+    /// this; ASP.NET Core's own evaluation succeeds a requirement as soon as any one registered
+    /// handler succeeds it. Checked the same way <see cref="ProductOwner"/> is: explicitly, from
+    /// inside a handler, via <see cref="ResourceAuthorizationService"/>, once the resource has been
+    /// loaded.
+    /// </summary>
+    public const string ProductOwnerOrAdministrator = "ProductOwnerOrAdministrator";
 }

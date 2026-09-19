@@ -35,7 +35,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// claim — the identity <see cref="Application.Common.Authorization.OwnerAuthorizationHandler{TResource}"/>
     /// compares against a resource's owner, e.g. <see cref="Domain.Product.OwnerId"/>. A caller
     /// who created a product with a given <see cref="CallerIdHeaderName"/> value must present the
-    /// same value to update it.
+    /// same value to update or delete it.
     /// </summary>
     public const string CallerIdHeaderName = "X-Caller-Id";
 
@@ -199,16 +199,19 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     }
 
     /// <summary>
-    /// Deletes a product. Only an administrator may delete — this POC has no real
-    /// authentication, so the caller proves administrator identity by sending an
-    /// <c>X-Admin: true</c> request header; see <see cref="AdminHeaderName"/>.
+    /// Deletes a product. Either the product's owner or an administrator may delete it — this POC
+    /// has no real authentication, so the caller proves owner identity via the
+    /// <see cref="CallerIdHeaderName"/> header (the same one <see cref="UpdateAsync"/> uses) and/or
+    /// administrator identity via an <c>X-Admin: true</c> header; see
+    /// <see cref="AdminHeaderName"/>.
     /// </summary>
     /// <param name="id">The product's identity.</param>
     /// <param name="adminHeader">The <see cref="AdminHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
+    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
-    /// 204 on success; 403 if the caller isn't an administrator; 404 if the product doesn't
-    /// exist; 500 for any other <see cref="Error"/> case.
+    /// 204 on success; 403 if the caller neither owns the product nor is an administrator; 404 if
+    /// the product doesn't exist; 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -218,11 +221,12 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     public async Task<IActionResult> DeleteAsync(
         Guid id,
         [FromHeader(Name = AdminHeaderName)] string? adminHeader,
+        [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
         CancellationToken cancellationToken = default
     )
     {
         var result = await sender.Send(
-            new DeleteProductCommand(id, CallerPrincipal(adminHeader, callerIdHeader: null)),
+            new DeleteProductCommand(id, CallerPrincipal(adminHeader, callerIdHeader)),
             cancellationToken
         );
 

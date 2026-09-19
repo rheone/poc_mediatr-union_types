@@ -45,14 +45,19 @@ public class PipelineRegistrationTests
     }
 
     /// <summary>
-    /// Verifies the resolved pipeline behaviors run in Logging, then Authorization, then
-    /// Validation, then Transaction order for a command that opts into
-    /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> via <c>IRequiresAuthorization</c> —
-    /// a plain command that doesn't opt in (<c>CreateProductCommand</c>, above) resolves only the
-    /// other three.
+    /// Verifies <see cref="DeleteProductCommand"/> resolves the same Logging, Validation,
+    /// Transaction order as a plain command (<c>CreateProductCommand</c>, above) — a regression
+    /// guard for the fact that it deliberately does <b>not</b> implement <c>IRequiresAuthorization</c>
+    /// any more. Its owner-or-administrator check happens inside <c>DeleteProductHandler</c> via
+    /// <c>ResourceAuthorizationService</c>, after the product is loaded — too late for
+    /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/>'s pre-handler pipeline check, which
+    /// <c>UpdateProductCommand</c>'s equally resource-based check skips for the same reason. See
+    /// <see cref="AuthorizationBehaviorTests"/>/<c>ArbitraryAdminCommand</c> for
+    /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> still being exercised via a role-only
+    /// gated request.
     /// </summary>
     [Fact]
-    public void Behaviors_resolve_in_Logging_then_Authorization_then_Validation_then_Transaction_order_for_administrator_gated_commands()
+    public void Behaviors_resolve_in_Logging_then_Validation_then_Transaction_order_for_resource_based_commands()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -70,7 +75,6 @@ public class PipelineRegistrationTests
         Assert.Collection(
             behaviors,
             b => Assert.IsType<LoggingBehavior<DeleteProductCommand, DeleteProductResult>>(b),
-            b => Assert.IsType<AuthorizationBehavior<DeleteProductCommand, DeleteProductResult>>(b),
             b => Assert.IsType<ValidationBehavior<DeleteProductCommand, DeleteProductResult>>(b),
             b => Assert.IsType<TransactionBehavior<DeleteProductCommand, DeleteProductResult>>(b)
         );

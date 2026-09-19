@@ -17,9 +17,10 @@ public static class DependencyInjection
     public static readonly Assembly AssemblyReference = typeof(DependencyInjection).Assembly;
 
     /// <summary>
-    /// Registers MediatR, all FluentValidation validators, the role-based <c>Administrator</c> and
-    /// resource-based <c>ProductOwner</c> authorization policies (plus the
-    /// <see cref="ResourceAuthorizationService"/> the latter is checked through from inside a
+    /// Registers MediatR, all FluentValidation validators, the role-based <c>Administrator</c>,
+    /// resource-based <c>ProductOwner</c>, and resource-based-with-role-bypass
+    /// <c>ProductOwnerOrAdministrator</c> authorization policies (plus the
+    /// <see cref="ResourceAuthorizationService"/> the latter two are checked through from inside a
     /// handler), and the <see cref="LoggingBehavior{TRequest,TResponse}"/> →
     /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> → <see cref="ValidationBehavior{TRequest,TResponse}"/>
     /// → <see cref="TransactionBehavior{TRequest,TResponse}"/> pipeline, in that execution order.
@@ -44,12 +45,24 @@ public static class DependencyInjection
                         new OperationAuthorizationRequirement { Name = "Update" }
                     )
             );
+            options.AddPolicy(
+                AuthorizationPolicies.ProductOwnerOrAdministrator,
+                policy =>
+                    policy.Requirements.Add(
+                        new OperationAuthorizationRequirement { Name = "Delete" }
+                    )
+            );
         });
         services.AddSingleton<IAuthorizationHandler, AdministratorAuthorizationHandler>();
         services.AddSingleton<
             IAuthorizationHandler,
             OwnerAuthorizationHandler<OwnedProductResource>
         >();
+        services.AddSingleton<IAuthorizationHandler>(
+            _ => new AdministratorResourceOverrideAuthorizationHandler<OwnedProductResource>(
+                "Delete"
+            )
+        );
         services.AddScoped<ResourceAuthorizationService>();
 
         // Order matters: log the whole pipeline, then authorize, then validate, then (for
