@@ -29,6 +29,7 @@ public sealed class AuthorizationBehavior<TRequest, TResponse>(
 {
     private readonly IAuthorizationService _authorizationService =
         authorizationService ?? throw new ArgumentNullException(nameof(authorizationService));
+
     private readonly ILogger<AuthorizationBehavior<TRequest, TResponse>> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 

@@ -27,6 +27,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>(
 {
     private readonly IEnumerable<IValidator<TRequest>> _validators =
         validators ?? throw new ArgumentNullException(nameof(validators));
+
     private readonly ILogger<ValidationBehavior<TRequest, TResponse>> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 

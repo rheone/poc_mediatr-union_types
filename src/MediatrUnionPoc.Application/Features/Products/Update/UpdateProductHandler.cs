@@ -26,6 +26,7 @@ public sealed class UpdateProductHandler(
 {
     private readonly IProductRepository _repository =
         repository ?? throw new ArgumentNullException(nameof(repository));
+
     private readonly ResourceAuthorizationService _resourceAuthorizationService =
         resourceAuthorizationService
         ?? throw new ArgumentNullException(nameof(resourceAuthorizationService));

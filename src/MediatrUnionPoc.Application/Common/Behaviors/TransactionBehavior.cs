@@ -54,6 +54,7 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
 {
     private readonly IUnitOfWork _unitOfWork =
         unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+
     private readonly ILogger<TransactionBehavior<TRequest, TResponse>> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
