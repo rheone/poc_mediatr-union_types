@@ -26,7 +26,8 @@ tests never call into the projects' actual behavior.
 - `coverlet.collector` / `Microsoft.NET.Test.Sdk` — coverage collection and the `dotnet test` host.
 
 Also carries the repo-wide analyzer package set (`AsyncFixer`, `IDisposableAnalyzers`,
-`Microsoft.VisualStudio.Threading.Analyzers`, `SonarAnalyzer.CSharp`, `StyleCop.Analyzers`), and a
+`Microsoft.VisualStudio.Threading.Analyzers`, `SonarAnalyzer.CSharp`, `StyleCop.Analyzers`,
+`xunit.analyzers`), and a
 global `Using Include="Xunit"`.
 
 ```mermaid

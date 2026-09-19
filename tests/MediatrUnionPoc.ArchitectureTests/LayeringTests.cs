@@ -13,6 +13,13 @@ namespace MediatrUnionPoc.ArchitectureTests;
 /// </summary>
 public class LayeringTests
 {
+    private const string ApplicationNamespace = "MediatrUnionPoc.Application";
+    private const string InfrastructureNamespace = "MediatrUnionPoc.Infrastructure";
+    private const string ApiNamespace = "MediatrUnionPoc.Api";
+    private const string EntityFrameworkCoreNamespace = "Microsoft.EntityFrameworkCore";
+    private const string MediatRNamespace = "MediatR";
+    private const string AspNetCoreMvcNamespace = "Microsoft.AspNetCore.Mvc";
+
     private static readonly Assembly DomainAssembly = typeof(Product).Assembly;
 
     private static readonly Assembly ApplicationAssembly =
@@ -26,18 +33,17 @@ public class LayeringTests
     /// dependency on any other project in this solution.
     /// </summary>
     [Fact]
-    public void Domain_types_do_not_depend_on_application_infrastructure_or_api()
+    public void Domain_DependsOnOtherProjects_HasNone_Test()
     {
+        // Arrange
+        // Act
         var result = Types
             .InAssembly(DomainAssembly)
             .ShouldNot()
-            .HaveDependencyOnAny(
-                "MediatrUnionPoc.Application",
-                "MediatrUnionPoc.Infrastructure",
-                "MediatrUnionPoc.Api"
-            )
+            .HaveDependencyOnAny(ApplicationNamespace, InfrastructureNamespace, ApiNamespace)
             .GetResult();
 
+        // Assert
         AssertNoViolations(result);
     }
 
@@ -47,14 +53,17 @@ public class LayeringTests
     /// in <c>Common/</c> only, never on a specific persistence or presentation implementation.
     /// </summary>
     [Fact]
-    public void Application_types_do_not_depend_on_infrastructure_or_api()
+    public void Application_DependsOnInfrastructureOrApi_HasNone_Test()
     {
+        // Arrange
+        // Act
         var result = Types
             .InAssembly(ApplicationAssembly)
             .ShouldNot()
-            .HaveDependencyOnAny("MediatrUnionPoc.Infrastructure", "MediatrUnionPoc.Api")
+            .HaveDependencyOnAny(InfrastructureNamespace, ApiNamespace)
             .GetResult();
 
+        // Assert
         AssertNoViolations(result);
     }
 
@@ -64,14 +73,17 @@ public class LayeringTests
     /// controllers that consume them.
     /// </summary>
     [Fact]
-    public void Infrastructure_types_do_not_depend_on_api()
+    public void Infrastructure_DependsOnApi_HasNone_Test()
     {
+        // Arrange
+        // Act
         var result = Types
             .InAssembly(InfrastructureAssembly)
             .ShouldNot()
-            .HaveDependencyOnAny("MediatrUnionPoc.Api")
+            .HaveDependencyOnAny(ApiNamespace)
             .GetResult();
 
+        // Assert
         AssertNoViolations(result);
     }
 
@@ -82,14 +94,17 @@ public class LayeringTests
     /// reason to know about the persistence technology behind <c>IUnitOfWork</c>/<c>IProductRepository</c>.
     /// </summary>
     [Fact]
-    public void Only_infrastructure_depends_on_entity_framework_core()
+    public void DomainAndApplication_DependsOnEntityFrameworkCore_HasNone_Test()
     {
+        // Arrange
+        // Act
         var result = Types
             .InAssemblies([DomainAssembly, ApplicationAssembly])
             .ShouldNot()
-            .HaveDependencyOn("Microsoft.EntityFrameworkCore")
+            .HaveDependencyOn(EntityFrameworkCoreNamespace)
             .GetResult();
 
+        // Assert
         AssertNoViolations(result);
     }
 
@@ -98,14 +113,17 @@ public class LayeringTests
     /// independent of the request/response pipeline that only Application and Api participate in.
     /// </summary>
     [Fact]
-    public void Domain_types_do_not_depend_on_mediatr()
+    public void Domain_DependsOnMediatR_HasNone_Test()
     {
+        // Arrange
+        // Act
         var result = Types
             .InAssembly(DomainAssembly)
             .ShouldNot()
-            .HaveDependencyOn("MediatR")
+            .HaveDependencyOn(MediatRNamespace)
             .GetResult();
 
+        // Assert
         AssertNoViolations(result);
     }
 
@@ -115,14 +133,17 @@ public class LayeringTests
     /// <c>IActionResult</c> or controller types.
     /// </summary>
     [Fact]
-    public void Only_api_depends_on_aspnet_core_mvc()
+    public void DomainApplicationAndInfrastructure_DependsOnAspNetCoreMvc_HasNone_Test()
     {
+        // Arrange
+        // Act
         var result = Types
             .InAssemblies([DomainAssembly, ApplicationAssembly, InfrastructureAssembly])
             .ShouldNot()
-            .HaveDependencyOn("Microsoft.AspNetCore.Mvc")
+            .HaveDependencyOn(AspNetCoreMvcNamespace)
             .GetResult();
 
+        // Assert
         AssertNoViolations(result);
     }
 
