@@ -14,9 +14,17 @@ using Microsoft.AspNetCore.Mvc;
 namespace MediatrUnionPoc.Api.Controllers;
 
 /// <summary>
-/// Basic product CRUD. Every action's only job is to <c>switch</c> on the union MediatR returns
-/// and translate each case into a concrete HTTP response — see the README's "switch-and-unwrap"
-/// section for why that translation never skips this step.
+/// Product CRUD. Each action sends one request and <c>switch</c>es exhaustively over the union it
+/// returns; no expected outcome is signalled by an exception. Case-to-status mapping (also declared
+/// via <c>ProducesResponseType</c> on each action):
+/// <list type="table">
+/// <listheader><term>Action</term><description>Cases</description></listheader>
+/// <item><term>CreateAsync</term><description>ProductDto 201; ValidationErrors 400; Error 500.</description></item>
+/// <item><term>GetByIdAsync</term><description>ProductDto 200; NotFound 404; Error 500.</description></item>
+/// <item><term>GetPagedAsync</term><description>PagedResult 200; Error with <see cref="Error.ValidationFailureCode"/> 400; other Error 500.</description></item>
+/// <item><term>UpdateAsync</term><description>Success 204; NotFound 404; ValidationErrors 400; NotAuthorized 403; Error 500.</description></item>
+/// <item><term>DeleteAsync</term><description>Success 204; NotFound 404; NotAuthorized 403; Error 500.</description></item>
+/// </list>
 /// </summary>
 [ApiController]
 [Route("api/products")]
@@ -115,9 +123,14 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// <param name="pageNumber">1-based page number.</param>
     /// <param name="pageSize">Items per page (1-100).</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
-    /// <returns>200 with a <see cref="PagedResult{T}"/> of <see cref="ProductDto"/>; 400 if paging parameters are out of range.</returns>
+    /// <returns>
+    /// 200 with a <see cref="PagedResult{T}"/> of <see cref="ProductDto"/>; 400 if paging parameters
+    /// are out of range (the union reports that as an <see cref="Error"/> whose code is
+    /// <see cref="Error.ValidationFailureCode"/>); 500 for any other <see cref="Error"/>.
+    /// </returns>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetPagedAsync(
         [FromQuery] int pageNumber = 1,
@@ -133,6 +146,11 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         return result switch
         {
             PagedResult<ProductDto> page => Ok(page),
+            Error { Code: Error.ValidationFailureCode } error => Problem(
+                detail: error.Message,
+                statusCode: StatusCodes.Status400BadRequest,
+                title: error.Code
+            ),
             Error error => Problem(
                 detail: error.Message,
                 statusCode: StatusCodes.Status500InternalServerError,

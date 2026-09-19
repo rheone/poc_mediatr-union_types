@@ -5,15 +5,12 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
 // This project's async methods keep their "Async" suffix by convention; ASP.NET Core's default
 // (SuppressAsyncSuffixInActionNames = true) would otherwise register CreateAsync/GetByIdAsync/etc.
 // as action names with the suffix trimmed (e.g. "GetById"), silently breaking any nameof(...)
 // reference — such as CreatedAtAction(nameof(GetByIdAsync), ...) — used for link generation.
 builder.Services.AddControllers(options => options.SuppressAsyncSuffixInActionNames = false);
 
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi(options =>
     options.AddSchemaTransformer<ProductContractExampleTransformer>()
 );
@@ -23,7 +20,6 @@ builder.Services.AddInfrastructure();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

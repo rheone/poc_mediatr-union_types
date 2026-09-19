@@ -96,6 +96,20 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal("Widget", page.Items[0].Name);
     }
 
+    /// <summary>Verifies out-of-range paging parameters return 400 rather than 500.</summary>
+    /// <param name="query">The query string carrying invalid paging parameters.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Theory]
+    [InlineData("pageNumber=0&pageSize=10")]
+    [InlineData("pageNumber=1&pageSize=0")]
+    [InlineData("pageNumber=1&pageSize=101")]
+    public async Task GetPaged_returns_400_for_out_of_range_paging(string query)
+    {
+        using var response = await _client.GetAsync($"/api/products?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     /// <summary>Verifies updating a missing product returns 404.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
