@@ -27,13 +27,11 @@ public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The InMemory provider backing this POC doesn't support relational transactions and throws
-    /// on <c>DatabaseFacade.BeginTransactionAsync</c> depending on the EF Core version; that failure is swallowed here and treated as "no
-    /// transaction to manage" rather than propagated, since it's an expected provider limitation,
-    /// not an error condition. A real relational provider would get a genuine transaction instead.
-    /// Disposes any transaction already held before starting a new one — <see cref="IUnitOfWork"/>
-    /// is documented for exactly one begin/commit-or-rollback cycle per scope, but a second,
-    /// unexpected call to this method should never silently leak the first transaction.
+    /// The InMemory provider has no relational transactions, and
+    /// <c>DatabaseFacade.BeginTransactionAsync</c> may throw <see cref="NotSupportedException"/> or
+    /// <see cref="InvalidOperationException"/> depending on EF Core configuration. Either is
+    /// swallowed and treated as "no transaction to manage"; a relational provider would get a real
+    /// one. Disposes any transaction already held first, so a repeated call cannot leak it.
     /// </remarks>
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
@@ -69,10 +67,8 @@ public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
     /// <inheritdoc/>
     /// <remarks>
     /// Detaches every tracked entity in addition to rolling back the relational transaction (if
-    /// any), because <see cref="Microsoft.EntityFrameworkCore.DbContext.SaveChangesAsync(CancellationToken)"/>
-    /// was never called for this unit of work — without detaching, a staged-but-unsaved change would still be sitting in the change
-    /// tracker and could be persisted accidentally by a later, unrelated call to
-    /// <see cref="CommitAsync"/> on the same scoped context.
+    /// any). Without detaching, staged-but-unsaved changes would stay in the change tracker and
+    /// could be persisted by a later <see cref="CommitAsync"/> on the same scoped context.
     /// </remarks>
     public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {

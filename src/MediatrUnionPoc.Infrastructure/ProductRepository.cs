@@ -13,6 +13,7 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
     ) => dbContext.Products.SingleOrDefaultAsync(p => p.Id == id, cancellationToken);
 
     /// <inheritdoc/>
+    /// <remarks>Results are untracked (read-only path); ordered by name so paging is deterministic.</remarks>
     public async Task<PagedResult<Product>> GetPagedAsync(
         int pageNumber,
         int pageSize,
@@ -22,7 +23,8 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         var totalCount = await dbContext.Products.CountAsync(cancellationToken);
 
         var items = await dbContext
-            .Products.OrderBy(p => p.Name)
+            .Products.AsNoTracking()
+            .OrderBy(p => p.Name)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
