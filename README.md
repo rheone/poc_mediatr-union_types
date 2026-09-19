@@ -280,8 +280,9 @@ public interface ITransactionOutcome<TSelf> where TSelf : ITransactionOutcome<TS
 Each command's union implements it with a `switch` over **its own** cases:
 
 ```csharp
-public union UpdateProductResult(Success, NotFound, ValidationErrors, Error)
-    : IValidatable<UpdateProductResult>, ITransactionOutcome<UpdateProductResult>
+public union UpdateProductResult(Success, NotFound, ValidationErrors, Error, NotAuthorized)
+    : IValidatable<UpdateProductResult>, ITransactionOutcome<UpdateProductResult>,
+        IAuthorizable<UpdateProductResult>
 {
     public static bool ShouldCommit(UpdateProductResult response) => response switch
     {
@@ -289,6 +290,7 @@ public union UpdateProductResult(Success, NotFound, ValidationErrors, Error)
         NotFound => false,
         ValidationErrors => false,
         Error => false,
+        NotAuthorized => false,
     };
 }
 ```
@@ -944,19 +946,20 @@ endpoint-attribute-discovery step in this repo's authorization path for that fea
 
 ## Worked example: `UpdateProductCommand`, case by case
 
-The two diagrams above show the pipeline shape in the abstract. This one traces a single,
-concrete request — `PUT /api/products/{id}` — all the way through, branching at every point where
-a different case of [`UpdateProductResult`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductResult.cs)
-(`union(Success, NotFound, ValidationErrors, Error)`) could come back. Each terminal branch is
-tagged with the case type it produces («Success», «NotFound», «ValidationErrors», «Error») and
-color-coded so the same case is easy to follow from where it's created to the HTTP status it
-becomes.
+The diagrams above show the pipeline shape in the abstract. This one traces a single, concrete
+request — `PUT /api/products/{id}` — all the way through, branching at every point where a
+different case of [`UpdateProductResult`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductResult.cs)
+(`union(Success, NotFound, ValidationErrors, Error, NotAuthorized)`) could come back. Each terminal
+branch is tagged with the case type it produces («Success», «NotFound», «ValidationErrors»,
+«Error», «NotAuthorized») and color-coded so the same case is easy to follow from where it's
+created to the HTTP status it becomes.
 
-Three of the four cases are actually reachable from
+Four of the five cases are actually reachable from
 [`UpdateProductHandler`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductHandler.cs)
-as written today. `«Error»` is included because the union *declares* it as a possible outcome —
-reserved for a future unexpected-failure path — even though nothing in the current handler
-produces it; the diagram marks that branch as dashed for exactly this reason.
+as written today, including the resource-based `ProductOwner` check described in
+[Authorization](#authorization) above. `«Error»` is included because the union *declares* it as a
+possible outcome — reserved for a future unexpected-failure path — even though nothing in the
+current handler produces it; the diagram marks that branch as dashed for exactly this reason.
 
 ```mermaid
 flowchart TD
@@ -964,6 +967,7 @@ flowchart TD
     classDef notfound fill:#fff3bf,stroke:#e8590c,stroke-width:2px;
     classDef validation fill:#ffe3e3,stroke:#c92a2a,stroke-width:2px;
     classDef error fill:#f1f3f5,stroke:#495057,stroke-width:2px,stroke-dasharray: 4 3;
+    classDef notauthorized fill:#e5dbff,stroke:#7048e8,stroke-width:2px;
 
     Client(["PUT /api/products/{id}<br/>body: name, price"]) --> Ctrl["ProductsController.Update"]
     Ctrl --> Build["new UpdateProductCommand(id, name, price)"]
@@ -988,7 +992,15 @@ flowchart TD
     Log2b --> Map2["controller switch"]:::notfound
     Map2 --> R404["404 Not Found"]:::notfound
 
-    Lookup -->|"found"| Update["product.UpdateDetails(name, price)"]
+    Lookup -->|"found"| Own{"ResourceAuthorizationService.AuthorizeAsync:<br/>ProductOwner policy?"}
+
+    Own -->|"no"| NAuth["«NotAuthorized»<br/>UpdateProductResult.FromNotAuthorized(notAuthorized)"]:::notauthorized
+    NAuth --> Roll3["TransactionBehavior<br/>RollbackAsync()"]:::notauthorized
+    Roll3 --> Log2e["LoggingBehavior<br/>log: result = NotAuthorized"]:::notauthorized
+    Log2e --> Map5["controller switch"]:::notauthorized
+    Map5 --> R403["403 Forbidden"]:::notauthorized
+
+    Own -->|"yes"| Update["product.UpdateDetails(name, price)"]
     Update --> Ok["«Success»<br/>new Success()"]:::success
     Ok --> Commit["TransactionBehavior<br/>CommitAsync() then SaveChangesAsync()"]:::success
     Commit --> Log2c["LoggingBehavior<br/>log: result = Success"]:::success
@@ -1008,9 +1020,13 @@ Reading the diagram:
   rolls back or never opens a transaction at all.
 - **Red («ValidationErrors»)** short-circuits *before* `TransactionBehavior` even runs — no
   transaction is opened for input that never should have reached the handler.
-- **Yellow («NotFound»)** and **dashed grey («Error»)** both reach the handler, open a
-  transaction, and get rolled back — the difference between them is only which case type the
-  handler chose to return, not any `try`/`catch` structure.
+- **Yellow («NotFound»)**, **purple («NotAuthorized»)**, and **dashed grey («Error»)** all reach
+  the handler, open a transaction, and get rolled back — the difference between them is only which
+  case type the handler chose to return, not any `try`/`catch` structure.
+- **Purple («NotAuthorized»)** is the one branch that depends on a second lookup beyond the
+  entity's existence — the caller's identity has to match the product's owner, not just the
+  product having to exist — which is why it's checked only after `Lookup` already succeeded, the
+  same ordering [Authorization](#authorization) describes for resource-based checks generally.
 - Every branch still passes back through `LoggingBehavior` on the way out, so every outcome —
   success or not — gets logged exactly once, symmetrically.
 
