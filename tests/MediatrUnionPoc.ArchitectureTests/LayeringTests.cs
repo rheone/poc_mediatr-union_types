@@ -25,7 +25,7 @@ public class LayeringTests
     private static readonly Assembly ApplicationAssembly =
         typeof(MediatrUnionPoc.Application.DependencyInjection).Assembly;
 
-    private static readonly Assembly InfrastructureAssembly = typeof(InMemoryUnitOfWork).Assembly;
+    private static readonly Assembly InfrastructureAssembly = typeof(EfCoreUnitOfWork).Assembly;
 
     /// <summary>
     /// Verifies the Domain assembly has no type that depends on the Application, Infrastructure,

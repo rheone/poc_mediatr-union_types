@@ -521,8 +521,8 @@ whole unit of work happened, or none of it did.
 **What actually gets undone**: everything the underlying `DbContext`'s change tracker recorded
 during the handler's execution but never reached the database via `SaveChangesAsync` — inserts,
 updates, and deletes alike. Nothing about this repo's own handler code has to remember what to
-undo; the database (or, for the InMemory provider used here, `InMemoryUnitOfWork`'s own fallback —
-see [Notes and gotchas](#notes-and-gotchas)) does that bookkeeping.
+undo; the database (or, for a provider without transactions such as InMemory, `EfCoreUnitOfWork`'s
+change-tracker detach — see [Notes and gotchas](#notes-and-gotchas)) does that bookkeeping.
 
 **Why this is a benefit, not just a safety net**: it lets a handler write code that assumes success
 and bail out cleanly on any unexpected outcome, without manually tracking "what have I already done
@@ -1361,12 +1361,13 @@ checkout flow depends on.
   leaks a persistence concern into the Domain layer. This repo keeps Domain persistence-agnostic
   (`Conversions.SystemTextJson` only) and hand-writes `ValueConverter<T,TPrimitive>` classes in
   Infrastructure instead — see [`ValueConverters.cs`](src/MediatrUnionPoc.Infrastructure/ValueConverters.cs).
-- **EF Core InMemory provider doesn't support real transactions.** `InMemoryUnitOfWork.BeginTransactionAsync`
-  catches the resulting exception and falls back to "only call `SaveChangesAsync` on commit, detach
-  tracked entries on rollback." The class is named `InMemoryUnitOfWork`, not just `UnitOfWork`,
-  specifically to flag that this swallow-and-detach dance is a provider-specific workaround — a
-  future relational adapter (`SqlServerUnitOfWork`, say) would get a genuine transaction instead
-  and shouldn't replicate either behavior.
+- **EF Core InMemory provider doesn't support real transactions.** `EfCoreUnitOfWork.BeginTransactionAsync`
+  asks `Database.IsRelational()` and only opens a transaction when the provider is relational;
+  otherwise commit just calls `SaveChangesAsync`. Rollback detaches every tracked entry on every
+  provider, so "rollback discards staged changes" holds even where there is no transaction to undo.
+  The class is named for the persistence technology it adapts (EF Core), not for a provider: a
+  future NHibernate adapter would be a separate `IUnitOfWork` implementation, while provider
+  differences inside EF Core are handled by capability checks like this one.
 - **NSubstitute + Vogen structs:** two `Arg.Any<T>()` matchers in the same mocked call, where one
   `T` is a Vogen value object (custom equality), can throw `AmbiguousArgumentsException`. Use a
   concrete value object instance instead of `Arg.Any<T>()` for at least one of the arguments.

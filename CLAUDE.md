@@ -32,7 +32,7 @@ machine and fail with `NETSDK1045`.
 - `src/MediatrUnionPoc.Application` — commands, queries, handlers, validators, organized as
   **vertical slices** under `Features/Products/<Operation>/` (Create, Update, Delete, GetById,
   GetPaged) rather than by technical layer. `Common/` holds the shared pipeline machinery (below).
-- `src/MediatrUnionPoc.Infrastructure` — EF Core (`InMemoryUnitOfWork`, `ProductRepository`,
+- `src/MediatrUnionPoc.Infrastructure` — EF Core (`EfCoreUnitOfWork`, `ProductRepository`,
   hand-written `ValueConverter`s for the Vogen types — not Vogen's own generated converter, to
   keep Domain free of an EF Core reference).
 - `src/MediatrUnionPoc.Api` — one controller (`ProductsController`); every action's only job is to
@@ -47,7 +47,7 @@ project wherever tests need a real database, a real HTTP host, or both:
   (`Unions/`, `Behaviors/`, `Handlers/`, `Validators/`). Handlers are tested against a substituted
   `IProductRepository`, never the real EF Core provider.
 - `tests/MediatrUnionPoc.Infrastructure.IntegrationTests` — the one project that exercises the real
-  EF Core InMemory provider end-to-end (`InMemoryUnitOfWorkTests`), rather than substituting
+  EF Core InMemory provider end-to-end (`EfCoreUnitOfWorkTests`), rather than substituting
   `IUnitOfWork`.
 - `tests/MediatrUnionPoc.Api.IntegrationTests` — boots the real ASP.NET Core host via
   `WebApplicationFactory` and exercises it through actual HTTP requests, with a uniquely-named

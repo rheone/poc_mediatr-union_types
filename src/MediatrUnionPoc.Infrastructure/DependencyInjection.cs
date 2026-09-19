@@ -9,8 +9,8 @@ public static class DependencyInjection
 {
     /// <summary>
     /// Registers <see cref="AppDbContext"/> and its dependents as <c>Scoped</c> so a single HTTP
-    /// request's repositories and <see cref="InMemoryUnitOfWork"/> share one tracked context —
-    /// required for <see cref="InMemoryUnitOfWork"/>'s commit/rollback semantics to see the same
+    /// request's repositories and <see cref="EfCoreUnitOfWork"/> share one tracked context —
+    /// required for <see cref="EfCoreUnitOfWork"/>'s commit/rollback semantics to see the same
     /// staged changes the repositories made.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
@@ -24,7 +24,7 @@ public static class DependencyInjection
             options.UseInMemoryDatabase("MediatrUnionPoc")
         );
         services.AddScoped<IProductRepository, ProductRepository>();
-        services.AddScoped<IUnitOfWork, InMemoryUnitOfWork>();
+        services.AddScoped<IUnitOfWork, EfCoreUnitOfWork>();
 
         return services;
     }

@@ -11,15 +11,16 @@ namespace MediatrUnionPoc.Infrastructure;
 /// is only ever called from <see cref="CommitAsync"/>, so an error-case result never reaches the database.
 /// </summary>
 /// <remarks>
-/// Named for the provider it's written against, not just "the" <see cref="IUnitOfWork"/>
-/// implementation: this class encodes two behaviors specific to EF Core's InMemory provider — a
-/// swallowed <see cref="BeginTransactionAsync"/> failure, and a manual change-tracker detach on
-/// rollback — that a relational-provider adapter would neither need nor want to replicate. If this
-/// POC ever grows a second, relational adapter, that's a second, differently-named class, not a
-/// branch inside this one.
+/// The <see cref="IUnitOfWork"/> adapter for EF Core, named for the persistence technology it
+/// adapts rather than for a provider. It serves every EF Core provider: a relational one gets a
+/// real transaction, one without transaction support (InMemory) gets commit-only-saves plus a
+/// change-tracker detach on rollback. Which case applies is decided by a capability check
+/// (<c>Database.IsRelational()</c>), never by catching a provider's exception. A different
+/// persistence technology (NHibernate, say) would be a separate <see cref="IUnitOfWork"/>
+/// implementation, not a branch inside this one.
 /// </remarks>
 /// <exception cref="ArgumentNullException"><paramref name="dbContext"/> is <see langword="null"/>.</exception>
-public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
+public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
     : IUnitOfWork,
         IDisposable,
         IAsyncDisposable
@@ -31,11 +32,10 @@ public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The InMemory provider has no relational transactions, and
-    /// <c>DatabaseFacade.BeginTransactionAsync</c> may throw <see cref="NotSupportedException"/> or
-    /// <see cref="InvalidOperationException"/> depending on EF Core configuration. Either is
-    /// swallowed and treated as "no transaction to manage"; a relational provider would get a real
-    /// one. Disposes any transaction already held first, so a repeated call cannot leak it.
+    /// Starts a real transaction only when the provider is relational; a provider without
+    /// transaction support (e.g. InMemory) has nothing to begin, so this is a no-op there. Any
+    /// failure to start a transaction on a relational provider propagates. Disposes any
+    /// transaction already held first, so a repeated call cannot leak it.
     /// </remarks>
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
@@ -45,13 +45,9 @@ public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
             _transaction = null;
         }
 
-        try
+        if (_dbContext.Database.IsRelational())
         {
             _transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-        }
-        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-        {
-            _transaction = null;
         }
     }
 
@@ -70,9 +66,10 @@ public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Detaches every tracked entity in addition to rolling back the relational transaction (if
-    /// any). Without detaching, staged-but-unsaved changes would stay in the change tracker and
-    /// could be persisted by a later <see cref="CommitAsync"/> on the same scoped context.
+    /// Detaches every tracked entity on every provider, in addition to rolling back the relational
+    /// transaction (if any). Without detaching, staged-but-unsaved changes would stay in the change
+    /// tracker and could be persisted by a later <see cref="CommitAsync"/> on the same scoped
+    /// context — and on a provider with no transaction, detaching is the only rollback there is.
     /// </remarks>
     public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {

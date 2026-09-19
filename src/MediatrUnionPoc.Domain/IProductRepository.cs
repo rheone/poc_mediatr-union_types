@@ -3,8 +3,8 @@ namespace MediatrUnionPoc.Domain;
 /// <summary>
 /// Persistence operations for <see cref="Product"/>, scoped to whatever unit of work
 /// (<see cref="IUnitOfWork"/>) the current handler was given. Mutating members
-/// (<see cref="AddAsync"/>, <see cref="Remove"/>) only stage a change against the tracked
-/// context; nothing reaches the database until the unit of work commits.
+/// (<see cref="AddAsync"/>, <see cref="Remove"/>) only stage a change; nothing reaches the
+/// database until the unit of work commits, and a rollback discards it.
 /// </summary>
 public interface IProductRepository
 {

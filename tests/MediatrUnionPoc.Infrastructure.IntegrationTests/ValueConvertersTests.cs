@@ -5,7 +5,7 @@ namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 
 /// <summary>
 /// Exercises <see cref="ProductIdValueConverter"/> and <see cref="MoneyValueConverter"/>'s
-/// conversion delegates directly. <see cref="InMemoryUnitOfWorkTests"/> and
+/// conversion delegates directly. <see cref="EfCoreUnitOfWorkTests"/> and
 /// <see cref="ProductRepositoryTests"/> already prove these converters work correctly when EF Core
 /// drives them end-to-end, but neither pins down the delegates' own behavior in isolation.
 /// </summary>

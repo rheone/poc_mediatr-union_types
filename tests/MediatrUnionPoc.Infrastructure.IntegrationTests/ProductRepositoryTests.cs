@@ -7,7 +7,7 @@ namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 
 /// <summary>
 /// Exercises <see cref="ProductRepository"/> directly against the real EF Core InMemory provider,
-/// covering the query logic <see cref="InMemoryUnitOfWorkTests"/> doesn't: paging's ordering,
+/// covering the query logic <see cref="EfCoreUnitOfWorkTests"/> doesn't: paging's ordering,
 /// skip/take math, change-tracking behavior of each read path, and a plain lookup miss. Nothing here substitutes <see cref="AppDbContext"/> —
 /// that's the point of an integration test for a repository.
 /// </summary>

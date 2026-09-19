@@ -1,22 +1,21 @@
 # MediatrUnionPoc.Infrastructure.IntegrationTests
 
 Database integration tests for `MediatrUnionPoc.Infrastructure` — the one place in this repo that
-exercises the real EF Core InMemory provider end-to-end, rather than substituting
+exercises real EF Core providers (InMemory and SQLite) end-to-end, rather than substituting
 `IProductRepository`/`IUnitOfWork` with NSubstitute (as `MediatrUnionPoc.Application.Tests`'s
 handler tests do).
 
-- `InMemoryUnitOfWorkTests.cs` — confirms a rolled-back `InMemoryUnitOfWork` never reaches the
+- `EfCoreUnitOfWorkTests.cs` — confirms a rolled-back `EfCoreUnitOfWork` never reaches the
   database while a committed one does, going through the real `ProductIdValueConverter` and
-  `MoneyValueConverter`. This is the behavior `TransactionBehavior` depends on; if commit/rollback
+  `MoneyValueConverter`. Commit, rollback and dispose semantics are theories run against both the
+  EF Core InMemory provider and a test-only SQLite `:memory:` connection
+  (`TestData/UnitOfWorkTestDatabase`), so the `IUnitOfWork` contract is asserted identically on a
+  provider without transactions and on a relational one; only the held-transaction behavior is
+  asserted per provider. This is the behavior `TransactionBehavior` depends on; if commit/rollback
   stopped actually controlling persistence, the pipeline-level tests in
   `MediatrUnionPoc.Application.Tests` (which substitute `IUnitOfWork`) would never catch it.
-- `InMemoryUnitOfWorkTransactionTests.cs` — covers the `_transaction is not null` branches of
-  `InMemoryUnitOfWork` (begin twice, commit, rollback, dispose with a held transaction) that the
-  InMemory provider can never reach, because its `BeginTransaction` always throws and is swallowed.
-  Runs the production `AppDbContext` model (same value converters) on a test-only SQLite `:memory:`
-  connection (`TestData/SqliteDatabaseMother`) so a real `IDbContextTransaction` exists. SQLite is
-  used here only as a transaction host; nothing in `src` references it.
-- `ProductRepositoryTests.cs` — covers the query logic `InMemoryUnitOfWorkTests` doesn't:
+  SQLite is used here only as a transaction host; nothing in `src` references it.
+- `ProductRepositoryTests.cs` — covers the query logic `EfCoreUnitOfWorkTests` doesn't:
   `GetPagedAsync`'s ordering (by name) and its skip/take math across multiple pages, plus a plain
   `GetByIdAsync` miss/hit and a `Remove` round trip. Nothing here substitutes `IProductRepository`
   or `AppDbContext` — that's the point of an integration test for a repository, and the paging math

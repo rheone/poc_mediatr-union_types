@@ -7,7 +7,7 @@ namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 /// <summary>
 /// Verifies <see cref="DependencyInjection.AddInfrastructure"/> wires the repository and unit of
 /// work so that, inside one scope, they share the same <see cref="AppDbContext"/>. That sharing is
-/// what lets <see cref="InMemoryUnitOfWork.CommitAsync"/> persist what the repository staged.
+/// what lets <see cref="EfCoreUnitOfWork.CommitAsync"/> persist what the repository staged.
 /// </summary>
 [Trait("Category", "Integration")]
 public class DependencyInjectionTests
@@ -50,7 +50,7 @@ public class DependencyInjectionTests
         // Assert
         Assert.Multiple(
             () => Assert.IsType<ProductRepository>(repository),
-            () => Assert.IsType<InMemoryUnitOfWork>(unitOfWork)
+            () => Assert.IsType<EfCoreUnitOfWork>(unitOfWork)
         );
     }
 
