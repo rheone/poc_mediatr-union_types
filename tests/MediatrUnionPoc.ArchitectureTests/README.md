@@ -9,6 +9,8 @@ happen to still look correct. `LayeringTests.cs` currently checks:
 - Application has no dependency on Infrastructure or Api.
 - Infrastructure has no dependency on Api.
 - Only Infrastructure references `Microsoft.EntityFrameworkCore` — not Domain, not Application.
+- Domain does not reference MediatR.
+- Only Api references ASP.NET Core MVC (`Microsoft.AspNetCore.Mvc`) — union-to-HTTP translation stays in the controller.
 
 ## Dependencies
 

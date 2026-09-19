@@ -38,7 +38,7 @@ public class LayeringTests
             )
             .GetResult();
 
-        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? []));
+        AssertNoViolations(result);
     }
 
     /// <summary>
@@ -55,7 +55,7 @@ public class LayeringTests
             .HaveDependencyOnAny("MediatrUnionPoc.Infrastructure", "MediatrUnionPoc.Api")
             .GetResult();
 
-        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? []));
+        AssertNoViolations(result);
     }
 
     /// <summary>
@@ -72,7 +72,7 @@ public class LayeringTests
             .HaveDependencyOnAny("MediatrUnionPoc.Api")
             .GetResult();
 
-        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? []));
+        AssertNoViolations(result);
     }
 
     /// <summary>
@@ -90,6 +90,46 @@ public class LayeringTests
             .HaveDependencyOn("Microsoft.EntityFrameworkCore")
             .GetResult();
 
-        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? []));
+        AssertNoViolations(result);
     }
+
+    /// <summary>
+    /// Verifies the Domain assembly does not depend on MediatR — the entity and value objects are
+    /// independent of the request/response pipeline that only Application and Api participate in.
+    /// </summary>
+    [Fact]
+    public void Domain_types_do_not_depend_on_mediatr()
+    {
+        var result = Types
+            .InAssembly(DomainAssembly)
+            .ShouldNot()
+            .HaveDependencyOn("MediatR")
+            .GetResult();
+
+        AssertNoViolations(result);
+    }
+
+    /// <summary>
+    /// Verifies only the Api assembly references ASP.NET Core MVC — translating a union into an
+    /// HTTP status is the controller's job alone, so no lower layer may know about
+    /// <c>IActionResult</c> or controller types.
+    /// </summary>
+    [Fact]
+    public void Only_api_depends_on_aspnet_core_mvc()
+    {
+        var result = Types
+            .InAssemblies([DomainAssembly, ApplicationAssembly, InfrastructureAssembly])
+            .ShouldNot()
+            .HaveDependencyOn("Microsoft.AspNetCore.Mvc")
+            .GetResult();
+
+        AssertNoViolations(result);
+    }
+
+    // Names the offending types so a failure identifies the violated boundary directly.
+    private static void AssertNoViolations(TestResult result) =>
+        Assert.True(
+            result.IsSuccessful,
+            "Layering violated by: " + string.Join(", ", result.FailingTypeNames ?? [])
+        );
 }
