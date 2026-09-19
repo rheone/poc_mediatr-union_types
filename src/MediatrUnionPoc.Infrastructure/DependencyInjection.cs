@@ -15,8 +15,11 @@ public static class DependencyInjection
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same <paramref name="services"/> collection, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services)
     {
+        ArgumentNullException.ThrowIfNull(services);
+
         services.AddDbContext<AppDbContext>(options =>
             options.UseInMemoryDatabase("MediatrUnionPoc")
         );

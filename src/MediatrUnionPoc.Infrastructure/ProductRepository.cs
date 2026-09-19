@@ -4,13 +4,17 @@ using Microsoft.EntityFrameworkCore;
 namespace MediatrUnionPoc.Infrastructure;
 
 /// <inheritdoc cref="IProductRepository"/>
+/// <exception cref="ArgumentNullException"><paramref name="dbContext"/> is <see langword="null"/>.</exception>
 public sealed class ProductRepository(AppDbContext dbContext) : IProductRepository
 {
+    private readonly AppDbContext _dbContext =
+        dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+
     /// <inheritdoc/>
     public Task<Product?> GetByIdAsync(
         ProductId id,
         CancellationToken cancellationToken = default
-    ) => dbContext.Products.SingleOrDefaultAsync(p => p.Id == id, cancellationToken);
+    ) => _dbContext.Products.SingleOrDefaultAsync(p => p.Id == id, cancellationToken);
 
     /// <inheritdoc/>
     /// <remarks>Results are untracked (read-only path); ordered by name so paging is deterministic.</remarks>
@@ -20,7 +24,7 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         CancellationToken cancellationToken = default
     )
     {
-        var totalCount = await dbContext.Products.CountAsync(cancellationToken);
+        var totalCount = await _dbContext.Products.CountAsync(cancellationToken);
 
         var items = await dbContext
             .Products.AsNoTracking()
@@ -33,9 +37,18 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
     }
 
     /// <inheritdoc/>
-    public async Task AddAsync(Product product, CancellationToken cancellationToken = default) =>
-        await dbContext.Products.AddAsync(product, cancellationToken);
+    /// <exception cref="ArgumentNullException"><paramref name="product"/> is <see langword="null"/>.</exception>
+    public async Task AddAsync(Product product, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+        await _dbContext.Products.AddAsync(product, cancellationToken);
+    }
 
     /// <inheritdoc/>
-    public void Remove(Product product) => dbContext.Products.Remove(product);
+    /// <exception cref="ArgumentNullException"><paramref name="product"/> is <see langword="null"/>.</exception>
+    public void Remove(Product product)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+        _dbContext.Products.Remove(product);
+    }
 }

@@ -263,10 +263,21 @@ public class InMemoryUnitOfWorkTests
         Assert.Null(exception);
     }
 
-    // SWEEP-AMBIGUITY: InMemoryUnitOfWork's constructor takes no null check on AppDbContext (primary
-    // constructor), so `new InMemoryUnitOfWork(null!)` succeeds and fails later with a
-    // NullReferenceException on first use. It should arguably throw ArgumentNullException up front;
-    // no test asserts either behavior.
+    /// <summary>Verifies <see cref="InMemoryUnitOfWork"/>'s constructor rejects a <see langword="null"/> context.</summary>
+    // Auto Generated, verify expected behavior: the guard runs at construction, not on first use.
+    [Fact]
+    public void Ctor_NullDbContext_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        AppDbContext? dbContext = null;
+
+        // Act
+        var act = () => new InMemoryUnitOfWork(dbContext!);
+
+        // Assert
+        var exception = Assert.Throws<ArgumentNullException>(act);
+        Assert.Equal("dbContext", exception.ParamName);
+    }
 
     // SWEEP-AMBIGUITY: BeginTransactionAsync's "dispose a held transaction first" branch and every
     // `_transaction is not null` branch in Commit/Rollback/Dispose are unreachable under the InMemory

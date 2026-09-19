@@ -77,4 +77,20 @@ public class AppDbContextTests
             () => Assert.IsType<MoneyValueConverter>(priceConverter)
         );
     }
+
+    /// <summary>Verifies <see cref="AppDbContext"/>'s constructor rejects <see langword="null"/> options (guard supplied by EF Core's <see cref="DbContext"/> base constructor).</summary>
+    // Auto Generated, verify expected behavior: pins EF Core's own guard; passes without any code in AppDbContext.
+    [Fact]
+    public void Ctor_NullOptions_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        DbContextOptions<AppDbContext>? options = null;
+
+        // Act
+        var act = () => new AppDbContext(options!);
+
+        // Assert
+        var exception = Assert.Throws<ArgumentNullException>(act);
+        Assert.Equal("options", exception.ParamName);
+    }
 }

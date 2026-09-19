@@ -149,7 +149,7 @@ public class ProductRepositoryTests
 
     /// <summary>Verifies <see cref="ProductRepository.AddAsync"/> rejects a <see langword="null"/> product.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
-    // Auto Generated, verify expected behavior: EF Core rejects a null entity with ArgumentNullException.
+    // Auto Generated, verify expected behavior: the repository rejects a null product up front with ArgumentNullException.
     [Fact]
     public async Task AddAsync_NullProduct_ThrowsArgumentNullException_Test()
     {
@@ -162,7 +162,7 @@ public class ProductRepositoryTests
 
         // Assert
         var exception = await Assert.ThrowsAsync<ArgumentNullException>(act);
-        Assert.Equal("entity", exception.ParamName);
+        Assert.Equal("product", exception.ParamName);
     }
 
     /// <summary>Verifies <see cref="ProductRepository.Remove"/> deletes the row once saved.</summary>
@@ -209,7 +209,7 @@ public class ProductRepositoryTests
 
     /// <summary>Verifies <see cref="ProductRepository.Remove"/> rejects a <see langword="null"/> product.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
-    // Auto Generated, verify expected behavior: EF Core rejects a null entity with ArgumentNullException.
+    // Auto Generated, verify expected behavior: the repository rejects a null product up front with ArgumentNullException.
     [Fact]
     public async Task Remove_NullProduct_ThrowsArgumentNullException_Test()
     {
@@ -222,7 +222,7 @@ public class ProductRepositoryTests
 
         // Assert
         var exception = Assert.Throws<ArgumentNullException>(act);
-        Assert.Equal("entity", exception.ParamName);
+        Assert.Equal("product", exception.ParamName);
     }
 
     /// <summary>Verifies <see cref="ProductRepository.GetPagedAsync"/> orders results by name, ascending.</summary>
@@ -337,10 +337,23 @@ public class ProductRepositoryTests
         );
     }
 
-    // SWEEP-AMBIGUITY: ProductRepository's constructor takes no null check on AppDbContext (primary
-    // constructor), so `new ProductRepository(null!)` succeeds and fails later with a
-    // NullReferenceException on first use. It should arguably throw ArgumentNullException up front;
-    // no test asserts either behavior. Likewise GetPagedAsync accepts pageNumber < 1 or pageSize < 0
-    // with no validation (a negative Skip/Take reaches EF Core); validation lives in the Application
-    // layer, so nothing is pinned here.
+    // GetPagedAsync deliberately does not validate pageNumber or pageSize: a value below 1 or a
+    // negative size would reach EF Core's Skip/Take, so callers must validate first. That validation
+    // lives in the Application layer (GetPagedProductsValidator).
+
+    /// <summary>Verifies <see cref="ProductRepository"/>'s constructor rejects a <see langword="null"/> context.</summary>
+    // Auto Generated, verify expected behavior: the guard runs at construction, not on first use.
+    [Fact]
+    public void Ctor_NullDbContext_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        AppDbContext? dbContext = null;
+
+        // Act
+        var act = () => new ProductRepository(dbContext!);
+
+        // Assert
+        var exception = Assert.Throws<ArgumentNullException>(act);
+        Assert.Equal("dbContext", exception.ParamName);
+    }
 }

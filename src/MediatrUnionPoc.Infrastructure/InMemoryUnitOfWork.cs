@@ -18,11 +18,15 @@ namespace MediatrUnionPoc.Infrastructure;
 /// POC ever grows a second, relational adapter, that's a second, differently-named class, not a
 /// branch inside this one.
 /// </remarks>
+/// <exception cref="ArgumentNullException"><paramref name="dbContext"/> is <see langword="null"/>.</exception>
 public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
     : IUnitOfWork,
         IDisposable,
         IAsyncDisposable
 {
+    private readonly AppDbContext _dbContext =
+        dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+
     private IDbContextTransaction? _transaction;
 
     /// <inheritdoc/>
@@ -43,7 +47,7 @@ public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
 
         try
         {
-            _transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            _transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
         {
@@ -54,7 +58,7 @@ public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
     /// <inheritdoc/>
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         if (_transaction is not null)
         {
@@ -79,7 +83,7 @@ public sealed class InMemoryUnitOfWork(AppDbContext dbContext)
             _transaction = null;
         }
 
-        foreach (var entry in dbContext.ChangeTracker.Entries().ToList())
+        foreach (var entry in _dbContext.ChangeTracker.Entries().ToList())
         {
             entry.State = EntityState.Detached;
         }

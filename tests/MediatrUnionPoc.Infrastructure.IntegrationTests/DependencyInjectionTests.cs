@@ -100,7 +100,19 @@ public class DependencyInjectionTests
         Assert.NotNull(stored);
     }
 
-    // SWEEP-AMBIGUITY: AddInfrastructure has no null guard on its `services` parameter, so a null
-    // collection fails inside AddDbContext with a NullReferenceException. It should arguably throw
-    // ArgumentNullException("services") up front; no test pins either behavior.
+    /// <summary>Verifies <see cref="DependencyInjection.AddInfrastructure"/> rejects a <see langword="null"/> service collection.</summary>
+    // Auto Generated, verify expected behavior: the guard runs before anything is registered.
+    [Fact]
+    public void AddInfrastructure_NullServices_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        IServiceCollection? services = null;
+
+        // Act
+        var act = () => services!.AddInfrastructure();
+
+        // Assert
+        var exception = Assert.Throws<ArgumentNullException>(act);
+        Assert.Equal("services", exception.ParamName);
+    }
 }
