@@ -99,6 +99,28 @@ public class ValidationBehaviorTests
             );
     }
 
+    /// <summary>Verifies <see cref="CreateProductCommand"/> deliberately does not guard a null name in its constructor, so the real <see cref="CreateProductValidator"/> reports the Name error through the behavior instead.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task Ctor_NullName_DoesNotThrowAndFailsValidation_Test()
+    {
+        // Arrange
+        var sut = new ValidationBehavior<CreateProductCommand, CreateProductResult>(
+            [new CreateProductValidator()],
+            NullLogger<ValidationBehavior<CreateProductCommand, CreateProductResult>>.Instance
+        );
+
+        // Act
+        var command = new CreateProductCommand(null!, ValidPrice);
+        var result = await sut.Handle(command, NextAsync, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(_nextWasCalled);
+        var errors = Assert.IsType<ValidationErrors>(((IUnion)result).Value);
+        Assert.Contains(errors.Errors, e => e.PropertyName == InvalidPropertyName);
+    }
+
     /// <summary>Verifies a request with no registered validators skips validation entirely and reaches <c>next</c>.</summary>
     /// <returns>The asynchronous test operation.</returns>
     // Auto Generated, verify expected behavior:

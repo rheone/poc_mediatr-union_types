@@ -496,6 +496,14 @@ flowchart TB
   for why this isn't a hardcoded list of "which case types mean error," and
   [Transactions: what rollback undoes, and why it matters](#transactions-what-rollback-undoes-and-why-it-matters)
   below for what "rollback" actually does.
+- **Validator-owned members are deliberately not null-guarded; everything else is.** Every other
+  public reference-type parameter in Application, Domain, Infrastructure and Api throws
+  `ArgumentNullException` on `null`, but `CreateProductCommand.Name` and `UpdateProductCommand.Name`
+  are not guarded, because `CreateProductValidator` / `UpdateProductValidator` own that input rule
+  and report a `null` name as a `ValidationErrors` outcome. Over HTTP a `null` name is already
+  rejected earlier by MVC model validation (400), so the guard would be redundant there; but a
+  guard would make a direct `ISender.Send` caller get a thrown exception instead of the union case.
+  Pinned by `ValidationBehaviorTests.Ctor_NullName_DoesNotThrowAndFailsValidation_Test`.
 
 ### Transactions: what rollback undoes, and why it matters
 

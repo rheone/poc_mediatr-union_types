@@ -16,6 +16,14 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 /// command deliberately does not implement <see cref="IRequiresAuthorization"/> — that pipeline
 /// path runs before any resource is loaded, too early for an ownership check.
 /// </param>
+/// <remarks>
+/// <see cref="Name"/> is deliberately not null-guarded in the constructor (unlike
+/// <see cref="Principal"/>): <see cref="UpdateProductValidator"/> owns that rule, so a
+/// <see langword="null"/> name from a direct <c>ISender.Send</c> caller comes back as a
+/// <c>ValidationErrors</c> outcome rather than a thrown <see cref="ArgumentNullException"/>.
+/// Over HTTP a <see langword="null"/> name is already rejected (400) by MVC model validation on
+/// the request DTO, so the guard would be redundant there, not harmful.
+/// </remarks>
 /// <exception cref="ArgumentNullException"><paramref name="Principal"/> is <see langword="null"/>.</exception>
 public sealed record UpdateProductCommand(
     Guid Id,
