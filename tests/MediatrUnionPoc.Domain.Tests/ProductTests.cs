@@ -107,7 +107,53 @@ public class ProductTests
         Assert.Equal(OwnerId, product.OwnerId);
     }
 
-    // SWEEP-AMBIGUITY: Product.Create and UpdateDetails perform no null/empty validation of name or ownerId, so
-    // null is accepted silently (nullable annotations are the only guard); it may be intended that Domain rejects
-    // blank names. No ArgumentNullException tests written.
+    /// <summary>Verifies <see cref="Product.Create"/> rejects a null name.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Create_NullName_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        var price = Money.From(PriceValue);
+
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => Product.Create(null!, price, OwnerId));
+
+        // Assert
+        Assert.Equal("name", ex.ParamName);
+    }
+
+    /// <summary>Verifies <see cref="Product.Create"/> rejects a null owner id.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Create_NullOwnerId_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        var price = Money.From(PriceValue);
+
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => Product.Create(Name, price, null!));
+
+        // Assert
+        Assert.Equal("ownerId", ex.ParamName);
+    }
+
+    /// <summary>Verifies <see cref="Product.UpdateDetails"/> rejects a null name and leaves the product unchanged.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void UpdateDetails_NullName_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        var product = Product.Create(Name, Money.From(PriceValue));
+
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            product.UpdateDetails(null!, Money.From(UpdatedPriceValue))
+        );
+
+        // Assert
+        Assert.Multiple(
+            () => Assert.Equal("name", ex.ParamName),
+            () => Assert.Equal(Name, product.Name)
+        );
+    }
 }

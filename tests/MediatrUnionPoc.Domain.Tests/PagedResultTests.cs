@@ -47,8 +47,20 @@ public class PagedResultTests
         Assert.Equal(expectedTotalPages, totalPages);
     }
 
-    // SWEEP-AMBIGUITY: PagedResult's positional ctor accepts null Items without an ArgumentNullException guard (only
-    // the nullable annotation protects it), and TotalPages with PageSize 0 divides by zero as double, yielding
-    // infinity cast to int; it may be intended that Domain rejects null Items and a non-positive PageSize.
-    // No ArgumentNullException or zero-PageSize tests written.
+    /// <summary>Verifies <see cref="PagedResult{T}"/> rejects null items.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullItems_ThrowsArgumentNullException_Test()
+    {
+        // Arrange / Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new PagedResult<string>(Items: null!, PageNumber: 1, PageSize: 10, TotalCount: 0)
+        );
+
+        // Assert
+        Assert.Equal("Items", ex.ParamName);
+    }
+
+    // PageSize 0 is deliberately not guarded here: TotalPages documents it as a caller precondition,
+    // enforced upstream by GetPagedProductsValidator.
 }

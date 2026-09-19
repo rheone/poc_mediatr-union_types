@@ -64,14 +64,21 @@ public sealed class Product
     /// to supply one.
     /// </param>
     /// <returns>The newly created <see cref="Product"/>.</returns>
-    public static Product Create(string name, Money price, string ownerId = "") =>
-        new(ProductId.New(), name, price, ownerId);
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="ownerId"/> is <see langword="null"/>.</exception>
+    public static Product Create(string name, Money price, string ownerId = "")
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(ownerId);
+        return new(ProductId.New(), name, price, ownerId);
+    }
 
     /// <summary>Replaces this product's name and price in place. There is no partial-update overload.</summary>
     /// <param name="name">The product's new display name.</param>
     /// <param name="price">The product's new price.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     public void UpdateDetails(string name, Money price)
     {
+        ArgumentNullException.ThrowIfNull(name);
         Name = name;
         Price = price;
     }
