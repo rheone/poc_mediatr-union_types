@@ -7,20 +7,25 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace MediatrUnionPoc.Application.Tests.Behaviors;
 
 /// <summary>
 /// A minimal command that opts into <see cref="AuthorizationBehavior{TRequest,TResponse}"/> via
-/// <see cref="IRequiresAdministrator"/> — standing in for a dev's own arbitrary command, never
-/// seen by the behavior's author, the same way <c>ArbitraryCommand</c> stands in for
-/// <see cref="Common.Behaviors.TransactionBehavior{TRequest,TResponse}"/> in
-/// <c>TransactionBehaviorTests</c>.
+/// <see cref="IRequiresAuthorization"/>, gated behind the <c>Administrator</c> policy — standing
+/// in for a dev's own arbitrary command, never seen by the behavior's author, the same way
+/// <c>ArbitraryCommand</c> stands in for <see cref="Common.Behaviors.TransactionBehavior{TRequest,TResponse}"/>
+/// in <c>TransactionBehaviorTests</c>.
 /// </summary>
 /// <param name="Principal">The caller's identity, carried on the command itself.</param>
 public sealed record ArbitraryAdminCommand(ClaimsPrincipal Principal)
     : ICommand<ArbitraryAdminOutcome>,
-        IRequiresAdministrator;
+        IRequiresAuthorization
+{
+    /// <inheritdoc/>
+    public string PolicyName => AuthorizationPolicies.Administrator;
+}
 
 /// <summary>The response union for <see cref="ArbitraryAdminCommand"/>.</summary>
 public union ArbitraryAdminOutcome(Success, NotAuthorized) : IAuthorizable<ArbitraryAdminOutcome>
@@ -28,6 +33,23 @@ public union ArbitraryAdminOutcome(Success, NotAuthorized) : IAuthorizable<Arbit
     /// <inheritdoc/>
     public static ArbitraryAdminOutcome FromNotAuthorized(NotAuthorized notAuthorized) =>
         notAuthorized;
+}
+
+/// <summary>
+/// A minimal command gated behind a policy other than <c>Administrator</c> — proves
+/// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> reads the policy name off the request
+/// generically rather than hardcoding one.
+/// </summary>
+/// <param name="Principal">The caller's identity, carried on the command itself.</param>
+public sealed record ArbitraryPolicyCommand(ClaimsPrincipal Principal)
+    : ICommand<ArbitraryAdminOutcome>,
+        IRequiresAuthorization
+{
+    /// <summary>The name of a policy this test suite made up, distinct from <c>Administrator</c>.</summary>
+    public const string SomeOtherPolicy = "SomeOtherPolicy";
+
+    /// <inheritdoc/>
+    public string PolicyName => SomeOtherPolicy;
 }
 
 /// <summary>
@@ -110,5 +132,92 @@ public sealed class AuthorizationBehaviorTests : IDisposable
             authenticationType: "Test"
         );
         return new ClaimsPrincipal(identity);
+    }
+}
+
+/// <summary>
+/// Verifies <see cref="AuthorizationBehavior{TRequest,TResponse}"/> reads the policy name off the
+/// request itself — via <see cref="IRequiresAuthorization.PolicyName"/> — instead of hardcoding
+/// <see cref="AuthorizationPolicies.Administrator"/>, using a mocked
+/// <see cref="IAuthorizationService"/> so the exact policy name passed to
+/// <see cref="Microsoft.AspNetCore.Authorization.AuthorizationServiceExtensions.AuthorizeAsync(IAuthorizationService,ClaimsPrincipal,string)"/>
+/// can be asserted directly.
+/// </summary>
+public sealed class AuthorizationBehaviorPolicyNameTests
+{
+    private readonly IAuthorizationService _authorizationService =
+        Substitute.For<IAuthorizationService>();
+
+    private readonly AuthorizationBehavior<ArbitraryPolicyCommand, ArbitraryAdminOutcome> _sut;
+
+    /// <summary>Wires up <see cref="_sut"/> against a mocked <see cref="IAuthorizationService"/>.</summary>
+    public AuthorizationBehaviorPolicyNameTests() =>
+        _sut = new AuthorizationBehavior<ArbitraryPolicyCommand, ArbitraryAdminOutcome>(
+            _authorizationService,
+            NullLogger<AuthorizationBehavior<ArbitraryPolicyCommand, ArbitraryAdminOutcome>>.Instance
+        );
+
+    /// <summary>
+    /// Verifies the handler runs and its response passes through unchanged when
+    /// <see cref="IAuthorizationService"/> succeeds for the request's own named policy — not
+    /// <see cref="AuthorizationPolicies.Administrator"/>.
+    /// </summary>
+    /// <returns>A task that completes when the assertion runs.</returns>
+    [Fact]
+    public async Task Calls_next_and_passes_the_response_through_when_the_named_policy_succeeds()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        var command = new ArbitraryPolicyCommand(principal);
+        ArbitraryAdminOutcome expected = new Success();
+        _authorizationService
+            .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy)
+            .Returns(AuthorizationResult.Success());
+
+        var result = await _sut.Handle(
+            command,
+            _ => Task.FromResult(expected),
+            CancellationToken.None
+        );
+
+        Assert.Equal(expected, result);
+        await _authorizationService
+            .Received(1)
+            .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy);
+    }
+
+    /// <summary>
+    /// Verifies the handler never runs and the response short-circuits to
+    /// <see cref="NotAuthorized"/> when <see cref="IAuthorizationService"/> fails for the
+    /// request's own named policy — proving the behavior checked that policy, not a hardcoded one.
+    /// </summary>
+    /// <returns>A task that completes when the assertion runs.</returns>
+    [Fact]
+    public async Task Short_circuits_to_NotAuthorized_without_calling_next_when_the_named_policy_fails()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        var command = new ArbitraryPolicyCommand(principal);
+        var nextWasCalled = false;
+        _authorizationService
+            .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy)
+            .Returns(AuthorizationResult.Failed());
+
+        var result = await _sut.Handle(
+            command,
+            _ =>
+            {
+                nextWasCalled = true;
+                return Task.FromResult<ArbitraryAdminOutcome>(new Success());
+            },
+            CancellationToken.None
+        );
+
+        Assert.False(nextWasCalled);
+        Assert.IsType<NotAuthorized>(((System.Runtime.CompilerServices.IUnion)result).Value);
+        await _authorizationService
+            .Received(1)
+            .AuthorizeAsync(principal, ArbitraryPolicyCommand.SomeOtherPolicy);
+        await _authorizationService
+            .DidNotReceive()
+            .AuthorizeAsync(principal, AuthorizationPolicies.Administrator);
     }
 }

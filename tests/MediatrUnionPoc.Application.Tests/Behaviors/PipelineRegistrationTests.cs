@@ -47,7 +47,7 @@ public class PipelineRegistrationTests
     /// <summary>
     /// Verifies the resolved pipeline behaviors run in Logging, then Authorization, then
     /// Validation, then Transaction order for a command that opts into
-    /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> via <c>IRequiresAdministrator</c> —
+    /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> via <c>IRequiresAuthorization</c> —
     /// a plain command that doesn't opt in (<c>CreateProductCommand</c>, above) resolves only the
     /// other three.
     /// </summary>

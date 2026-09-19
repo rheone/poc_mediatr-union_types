@@ -703,20 +703,22 @@ place.
 
 ### The pieces
 
-1. **[`IRequiresAdministrator`](src/MediatrUnionPoc.Application/Common/Abstractions/IRequiresAdministrator.cs)**
-   — a request implements this, exposing `ClaimsPrincipal Principal`, to opt into
-   `AuthorizationBehavior`. `DeleteProductCommand` is the only request that does today. A request
-   that doesn't implement it (every other command/query) simply doesn't match the behavior's
-   generic constraints and skips authorization entirely — the same opt-in pattern
-   `ITransactionalCommand` uses for `TransactionBehavior`.
+1. **[`IRequiresAuthorization`](src/MediatrUnionPoc.Application/Common/Abstractions/IRequiresAuthorization.cs)**
+   — a request implements this, exposing `ClaimsPrincipal Principal` and a `string PolicyName` to
+   evaluate it against, to opt into `AuthorizationBehavior`. `DeleteProductCommand` is the only
+   request that does today, naming the `Administrator` policy. A request that doesn't implement it
+   (every other command/query) simply doesn't match the behavior's generic constraints and skips
+   authorization entirely — the same opt-in pattern `ITransactionalCommand` uses for
+   `TransactionBehavior`.
 2. **[`IAuthorizable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IAuthorizable.cs)**
    — a response union implements this (`static abstract TSelf FromNotAuthorized(NotAuthorized)`)
    so the behavior can build the union's `NotAuthorized` case generically, the same role
    `IValidatable<TSelf>` plays for `ValidationErrors`.
 3. **[`AuthorizationBehavior<TRequest,TResponse>`](src/MediatrUnionPoc.Application/Common/Behaviors/AuthorizationBehavior.cs)**
-   — calls `IAuthorizationService.AuthorizeAsync(request.Principal, AuthorizationPolicies.Administrator)`.
-   On failure, it short-circuits to `TResponse.FromNotAuthorized(...)` without ever calling the
-   handler — same as an unauthorized caller is simply another outcome, never an exception.
+   — calls `IAuthorizationService.AuthorizeAsync(request.Principal, request.PolicyName)`, reading
+   the policy name generically off the request rather than hardcoding one. On failure, it
+   short-circuits to `TResponse.FromNotAuthorized(...)` without ever calling the handler — same as
+   an unauthorized caller is simply another outcome, never an exception.
 4. **[`AdministratorRequirement`](src/MediatrUnionPoc.Application/Common/Authorization/AdministratorRequirement.cs)
    and [`AdministratorAuthorizationHandler`](src/MediatrUnionPoc.Application/Common/Authorization/AdministratorAuthorizationHandler.cs)**
    — a real `IAuthorizationRequirement`/`IAuthorizationHandler<TRequirement>` pair, modeled
@@ -775,14 +777,16 @@ curl -i -X DELETE https://localhost:<port>/api/products/<id> -H "X-Admin: true"
 > A real deployment would replace the controller's `CallerPrincipal(adminHeader)` call with
 > `HttpContext.User` — populated by an actual authentication scheme (cookies, JWT bearer, etc.)
 > via `app.UseAuthentication()` — and delete the header-reading code entirely.
-> `AuthorizationBehavior`, `IRequiresAdministrator`, and `IAuthorizable<TSelf>` wouldn't need to
+> `AuthorizationBehavior`, `IRequiresAuthorization`, and `IAuthorizable<TSelf>` wouldn't need to
 > change at all: they only ever see a `ClaimsPrincipal`, never how it was constructed.
 
 ### Configuring authorization for a new command
 
 To gate another command the same way `DeleteProductCommand` is gated:
 
-1. Add `ClaimsPrincipal Principal` to the command and implement `IRequiresAdministrator`.
+1. Add `ClaimsPrincipal Principal` to the command and implement `IRequiresAuthorization`,
+   returning the name of whichever registered policy should gate it from `PolicyName`
+   (`AuthorizationPolicies.Administrator` to reuse the existing one).
 2. Add `NotAuthorized` to the response union's case list and implement `IAuthorizable<TSelf>`
    (`FromNotAuthorized(NotAuthorized) => notAuthorized;` is usually the whole implementation).
 3. If the union also implements `ITransactionOutcome<TSelf>`, add a `NotAuthorized => false` arm
@@ -793,7 +797,9 @@ To gate another command the same way `DeleteProductCommand` is gated:
 
 To require a *different* role than `Administrator` for some other operation, register a new named
 policy with its own `AdministratorRequirement("SomeOtherRole")` (or a differently-named
-role-requirement type, if `Administrator` shouldn't be in its allowed-roles list at all) — the
+role-requirement type, if `Administrator` shouldn't be in its allowed-roles list at all), then
+return that policy's name from the new command's `PolicyName` — `AuthorizationBehavior` doesn't
+care which policy a request names, only that one is registered under that name. The
 requirement/handler pair already supports multiple allowed roles per policy and an
 any-one-matches check, so a single policy can also gate on more than one role
 (`new AdministratorRequirement("Administrator", "SuperUser")`) without a new handler.

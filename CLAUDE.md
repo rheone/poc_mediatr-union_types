@@ -83,13 +83,13 @@ calling is checked before whether their input is well-formed. Marker interfaces 
 - `IValidatable<TSelf>` — a union implements this (`static abstract TSelf
   FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can short-circuit generically
   without knowing the concrete union type.
-- `IRequiresAdministrator` — a request implements this (exposing `ClaimsPrincipal Principal`) to
-  opt into `AuthorizationBehavior`, which checks `Principal` against the `Administrator`
-  ASP.NET Core authorization policy (`IAuthorizationService` + a custom `IAuthorizationHandler`).
-  Requires the response union to implement `IAuthorizable<TResponse>` (a `static abstract TSelf
-  FromNotAuthorized(NotAuthorized)`), the same generic short-circuit pattern `IValidatable`
-  uses for validation. See README's "Authorization" section for how to configure it and gate a
-  new command behind it.
+- `IRequiresAuthorization` — a request implements this (exposing `ClaimsPrincipal Principal` and a
+  `string PolicyName`) to opt into `AuthorizationBehavior`, which checks `Principal` against
+  whichever ASP.NET Core authorization policy `PolicyName` names (`IAuthorizationService` + a
+  custom `IAuthorizationHandler`). Requires the response union to implement
+  `IAuthorizable<TResponse>` (a `static abstract TSelf FromNotAuthorized(NotAuthorized)`), the
+  same generic short-circuit pattern `IValidatable` uses for validation. See README's
+  "Authorization" section for how to configure it and gate a new command behind it.
 
 Case types (`Success`, `NotFound`, `Error`, `ValidationErrors`, `Failure`, `NotAuthorized` — in
 `Application/Common/Results/CaseTypes.cs`) are deliberately meaning-free and reused across unions;

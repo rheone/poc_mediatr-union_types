@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Abstractions;
+using MediatrUnionPoc.Application.Common.Authorization;
 
 namespace MediatrUnionPoc.Application.Features.Products.Delete;
 
@@ -11,8 +12,12 @@ namespace MediatrUnionPoc.Application.Features.Products.Delete;
 /// <param name="Id">The product's identity.</param>
 /// <param name="Principal">
 /// The caller's identity, checked by <see cref="Common.Behaviors.AuthorizationBehavior{TRequest,TResponse}"/>
-/// against the <c>Administrator</c> policy before this command's handler runs.
+/// against the <see cref="PolicyName"/> policy before this command's handler runs.
 /// </param>
 public sealed record DeleteProductCommand(Guid Id, ClaimsPrincipal Principal)
     : ITransactionalCommand<DeleteProductResult>,
-        IRequiresAdministrator;
+        IRequiresAuthorization
+{
+    /// <inheritdoc/>
+    public string PolicyName => AuthorizationPolicies.Administrator;
+}

@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using MediatR;
 using MediatrUnionPoc.Application.Common.Abstractions;
-using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
@@ -9,8 +8,8 @@ using Microsoft.Extensions.Logging;
 namespace MediatrUnionPoc.Application.Common.Behaviors;
 
 /// <summary>
-/// Gates <see cref="IRequiresAdministrator"/> requests behind the
-/// <see cref="AuthorizationPolicies.Administrator"/> policy before they reach their handler. On
+/// Gates <see cref="IRequiresAuthorization"/> requests behind whichever policy
+/// <see cref="IRequiresAuthorization.PolicyName"/> names before they reach their handler. On
 /// failure, short-circuits the pipeline by asking the
 /// union response itself (via the static abstract factory on <see cref="IAuthorizable{TSelf}"/>)
 /// to build its <c>NotAuthorized</c> case — the handler never runs and never throws for this,
@@ -22,7 +21,7 @@ public sealed class AuthorizationBehavior<TRequest, TResponse>(
     IAuthorizationService authorizationService,
     ILogger<AuthorizationBehavior<TRequest, TResponse>> logger
 ) : IPipelineBehavior<TRequest, TResponse>
-    where TRequest : IRequest<TResponse>, IRequiresAdministrator
+    where TRequest : IRequest<TResponse>, IRequiresAuthorization
     where TResponse : IUnion, IAuthorizable<TResponse>
 {
     /// <inheritdoc/>
@@ -34,7 +33,7 @@ public sealed class AuthorizationBehavior<TRequest, TResponse>(
     {
         var authorizationResult = await authorizationService.AuthorizeAsync(
             request.Principal,
-            AuthorizationPolicies.Administrator
+            request.PolicyName
         );
 
         if (!authorizationResult.Succeeded)
@@ -42,11 +41,11 @@ public sealed class AuthorizationBehavior<TRequest, TResponse>(
             logger.LogWarning(
                 "{RequestName} denied: caller does not satisfy the {Policy} policy",
                 typeof(TRequest).Name,
-                AuthorizationPolicies.Administrator
+                request.PolicyName
             );
 
             return TResponse.FromNotAuthorized(
-                new NotAuthorized(["The caller is not an administrator."])
+                new NotAuthorized([$"The caller does not satisfy the {request.PolicyName} policy."])
             );
         }
 
