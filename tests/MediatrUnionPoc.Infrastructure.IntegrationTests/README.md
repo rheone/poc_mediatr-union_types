@@ -16,6 +16,12 @@ handler tests do).
   or `AppDbContext` — that's the point of an integration test for a repository, and the paging math
   in particular is never exercised anywhere else with more than one row.
 
+- `ValueConvertersTests.cs` — the converters' delegates in isolation, including rejection of
+  invalid stored values.
+- `AppDbContextTests.cs` — the EF model metadata (key, length limits, value converters).
+- `DependencyInjectionTests.cs` — `AddInfrastructure`'s scoped wiring and shared context.
+- `TestData/` — object mothers (`DbContextMother`, `ProductMother`).
+
 This project is kept separate from `MediatrUnionPoc.Application.Tests` specifically because it
 talks to a (test-scoped, in-memory) database — a different failure mode and a different speed
 profile than the pure unit tests elsewhere in the suite, even though EF Core's InMemory provider
@@ -63,5 +69,6 @@ flowchart LR
 dotnet test tests/MediatrUnionPoc.Infrastructure.IntegrationTests
 ```
 
-Each test uses its own uniquely-named InMemory database (`Guid.NewGuid()`), so tests never see
+Each test uses its own uniquely-named InMemory database (derived from the test name, so it is
+deterministic), so tests never see
 each other's data and can run in parallel safely.

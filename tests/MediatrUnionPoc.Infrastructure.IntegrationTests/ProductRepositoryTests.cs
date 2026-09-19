@@ -1,4 +1,6 @@
+using System.Runtime.CompilerServices;
 using MediatrUnionPoc.Domain;
+using MediatrUnionPoc.Infrastructure.IntegrationTests.TestData;
 using Microsoft.EntityFrameworkCore;
 
 namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
@@ -9,86 +11,231 @@ namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 /// skip/take math, change-tracking behavior of each read path, and a plain lookup miss. Nothing here substitutes <see cref="AppDbContext"/> —
 /// that's the point of an integration test for a repository.
 /// </summary>
+[Trait("Category", "Integration")]
 public class ProductRepositoryTests
 {
-    private static AppDbContext CreateContext(string databaseName)
+    /// <summary>
+    /// Rows for <see cref="GetPagedAsync_given_a_page_returns_that_slice_and_the_full_total"/> against five
+    /// products named A to E. Partitions: first page, a later full page, a final partial page, and a page
+    /// past the end (empty slice, total unchanged).
+    /// </summary>
+    public static readonly TheoryData<
+        int,
+        int,
+        string[]
+    > GetPagedAsync_given_a_page_returns_that_slice_and_the_full_total_Data = new()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(databaseName)
-            .Options;
-        return new AppDbContext(options);
-    }
+        { 1, 2, ["A", "B"] },
+        { 2, 2, ["C", "D"] },
+        { 3, 2, ["E"] },
+        { 4, 2, [] },
+    };
+
+    private static string DatabaseName([CallerMemberName] string test = "") =>
+        DbContextMother.NameFor(nameof(ProductRepositoryTests), test);
 
     /// <summary>Verifies <see cref="ProductRepository.GetByIdAsync"/> returns <see langword="null"/> for an id that was never added.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetByIdAsync_returns_null_for_a_product_that_was_never_added()
+    public async Task GetByIdAsync_given_an_id_that_was_never_added_returns_null()
     {
-        await using var dbContext = CreateContext(Guid.NewGuid().ToString());
+        // Arrange
+        await using var dbContext = DbContextMother.Create(DatabaseName());
         var repository = new ProductRepository(dbContext);
 
-        var result = await repository.GetByIdAsync(ProductId.New(), CancellationToken.None);
+        // Act
+        var result = await repository.GetByIdAsync(
+            ProductMother.UnknownId(),
+            CancellationToken.None
+        );
 
+        // Assert
         Assert.Null(result);
     }
 
     /// <summary>Verifies <see cref="ProductRepository.GetByIdAsync"/> returns a product once it's been added and saved.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetByIdAsync_returns_the_product_once_added_and_saved()
+    public async Task GetByIdAsync_given_an_added_and_saved_product_returns_it()
     {
-        await using var dbContext = CreateContext(Guid.NewGuid().ToString());
+        // Arrange
+        await using var dbContext = DbContextMother.Create(DatabaseName());
         var repository = new ProductRepository(dbContext);
-        var product = Product.Create("Widget", Money.From(9.99m));
+        var product = ProductMother.Widget();
         await repository.AddAsync(product, CancellationToken.None);
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
+        // Act
         var result = await repository.GetByIdAsync(product.Id, CancellationToken.None);
 
+        // Assert
         Assert.NotNull(result);
         Assert.Equal(product.Id, result.Id);
+    }
+
+    // Auto Generated, verify expected behavior: every stored property survives a round trip through the value converters.
+    /// <summary>Verifies <see cref="ProductRepository.GetByIdAsync"/> rehydrates every stored property in a fresh context.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task GetByIdAsync_given_a_persisted_product_returns_all_stored_properties()
+    {
+        // Arrange
+        var databaseName = DatabaseName();
+        var product = ProductMother.Widget();
+        await DbContextMother.SeedAsync(databaseName, product);
+        await using var dbContext = DbContextMother.Create(databaseName);
+        var repository = new ProductRepository(dbContext);
+
+        // Act
+        var result = await repository.GetByIdAsync(product.Id, CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Multiple(
+            () => Assert.Equal(product.Name, result.Name),
+            () => Assert.Equal(product.Price, result.Price),
+            () => Assert.Equal(product.OwnerId, result.OwnerId)
+        );
+    }
+
+    /// <summary>Verifies <see cref="ProductRepository.GetByIdAsync"/> returns a tracked entity, so callers can mutate and save it.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task GetByIdAsync_given_a_persisted_product_returns_a_tracked_entity()
+    {
+        // Arrange
+        var databaseName = DatabaseName();
+        var product = ProductMother.Widget();
+        await DbContextMother.SeedAsync(databaseName, product);
+        await using var dbContext = DbContextMother.Create(databaseName);
+        var repository = new ProductRepository(dbContext);
+
+        // Act
+        var result = await repository.GetByIdAsync(product.Id, CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(EntityState.Unchanged, dbContext.Entry(result).State);
+    }
+
+    // Auto Generated, verify expected behavior: AddAsync only stages; the database changes on save.
+    /// <summary>Verifies <see cref="ProductRepository.AddAsync"/> stages the product without persisting it.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task AddAsync_given_a_product_stages_it_without_persisting()
+    {
+        // Arrange
+        var databaseName = DatabaseName();
+        await using var dbContext = DbContextMother.Create(databaseName);
+        var repository = new ProductRepository(dbContext);
+        var product = ProductMother.Widget();
+
+        // Act
+        await repository.AddAsync(product, CancellationToken.None);
+
+        // Assert
+        await using var verifyContext = DbContextMother.Create(databaseName);
+        Assert.Multiple(
+            () => Assert.Equal(EntityState.Added, dbContext.Entry(product).State),
+            () => Assert.Empty(verifyContext.Products)
+        );
+    }
+
+    // Auto Generated, verify expected behavior: EF Core rejects a null entity with ArgumentNullException.
+    /// <summary>Verifies <see cref="ProductRepository.AddAsync"/> rejects a <see langword="null"/> product.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task AddAsync_given_null_throws_ArgumentNullException()
+    {
+        // Arrange
+        await using var dbContext = DbContextMother.Create(DatabaseName());
+        var repository = new ProductRepository(dbContext);
+
+        // Act
+        var act = () => repository.AddAsync(null!, CancellationToken.None);
+
+        // Assert
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(act);
+        Assert.Equal("entity", exception.ParamName);
     }
 
     /// <summary>Verifies <see cref="ProductRepository.Remove"/> deletes the row once saved.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Remove_deletes_the_product_once_saved()
+    public async Task Remove_given_a_saved_product_deletes_it_once_saved()
     {
-        await using var dbContext = CreateContext(Guid.NewGuid().ToString());
+        // Arrange
+        await using var dbContext = DbContextMother.Create(DatabaseName());
         var repository = new ProductRepository(dbContext);
-        var product = Product.Create("Widget", Money.From(9.99m));
+        var product = ProductMother.Widget();
         await repository.AddAsync(product, CancellationToken.None);
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
+        // Act
         repository.Remove(product);
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
+        // Assert
         Assert.Null(await repository.GetByIdAsync(product.Id, CancellationToken.None));
+    }
+
+    // Auto Generated, verify expected behavior: Remove only stages; the row survives until save.
+    /// <summary>Verifies <see cref="ProductRepository.Remove"/> leaves the stored row in place until changes are saved.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Remove_given_a_saved_product_keeps_the_row_until_saved()
+    {
+        // Arrange
+        var databaseName = DatabaseName();
+        var product = ProductMother.Widget();
+        await DbContextMother.SeedAsync(databaseName, product);
+        await using var dbContext = DbContextMother.Create(databaseName);
+        var repository = new ProductRepository(dbContext);
+        var tracked = await repository.GetByIdAsync(product.Id, CancellationToken.None);
+
+        // Act
+        repository.Remove(tracked!);
+
+        // Assert
+        await using var verifyContext = DbContextMother.Create(databaseName);
+        Assert.Single(verifyContext.Products);
+    }
+
+    // Auto Generated, verify expected behavior: EF Core rejects a null entity with ArgumentNullException.
+    /// <summary>Verifies <see cref="ProductRepository.Remove"/> rejects a <see langword="null"/> product.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Remove_given_null_throws_ArgumentNullException()
+    {
+        // Arrange
+        await using var dbContext = DbContextMother.Create(DatabaseName());
+        var repository = new ProductRepository(dbContext);
+
+        // Act
+        var act = () => repository.Remove(null!);
+
+        // Assert
+        var exception = Assert.Throws<ArgumentNullException>(act);
+        Assert.Equal("entity", exception.ParamName);
     }
 
     /// <summary>Verifies <see cref="ProductRepository.GetPagedAsync"/> orders results by name, ascending.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetPagedAsync_orders_results_by_name()
+    public async Task GetPagedAsync_given_unordered_products_orders_results_by_name()
     {
-        await using var dbContext = CreateContext(Guid.NewGuid().ToString());
+        // Arrange
+        await using var dbContext = DbContextMother.Create(DatabaseName());
         var repository = new ProductRepository(dbContext);
-        await repository.AddAsync(
-            Product.Create("Widget", Money.From(9.99m)),
-            CancellationToken.None
-        );
-        await repository.AddAsync(
-            Product.Create("Anvil", Money.From(19.99m)),
-            CancellationToken.None
-        );
-        await repository.AddAsync(
-            Product.Create("Gadget", Money.From(4.99m)),
-            CancellationToken.None
-        );
-        await dbContext.SaveChangesAsync();
+        await repository.AddAsync(ProductMother.Named("Widget"), CancellationToken.None);
+        await repository.AddAsync(ProductMother.Named("Anvil"), CancellationToken.None);
+        await repository.AddAsync(ProductMother.Named("Gadget"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
+        // Act
         var page = await repository.GetPagedAsync(1, 10, CancellationToken.None);
 
+        // Assert
         Assert.Collection(
             page.Items,
             p => Assert.Equal("Anvil", p.Name),
@@ -97,103 +244,83 @@ public class ProductRepositoryTests
         );
     }
 
-    /// <summary>Verifies <see cref="ProductRepository.GetPagedAsync"/> skips and takes the correct rows for a page past the first.</summary>
+    /// <summary>
+    /// Verifies <see cref="ProductRepository.GetPagedAsync"/> skips and takes the right rows for each page and
+    /// always reports the true total, even past the last page.
+    /// </summary>
+    /// <param name="pageNumber">The 1-based page requested.</param>
+    /// <param name="pageSize">The page size requested.</param>
+    /// <param name="expectedNames">The names expected on that page.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Fact]
-    public async Task GetPagedAsync_skips_and_takes_the_correct_rows_for_a_later_page()
+    [Theory]
+    [MemberData(nameof(GetPagedAsync_given_a_page_returns_that_slice_and_the_full_total_Data))]
+    public async Task GetPagedAsync_given_a_page_returns_that_slice_and_the_full_total(
+        int pageNumber,
+        int pageSize,
+        string[] expectedNames
+    )
     {
-        await using var dbContext = CreateContext(Guid.NewGuid().ToString());
+        // Arrange
+        var databaseName = $"{DatabaseName()}.{pageNumber}";
+        await DbContextMother.SeedAsync(
+            databaseName,
+            [.. new[] { "A", "B", "C", "D", "E" }.Select(ProductMother.Named)]
+        );
+        await using var dbContext = DbContextMother.Create(databaseName);
         var repository = new ProductRepository(dbContext);
-        foreach (var name in new[] { "A", "B", "C", "D", "E" })
-        {
-            await repository.AddAsync(Product.Create(name, Money.From(1m)), CancellationToken.None);
-        }
 
-        await dbContext.SaveChangesAsync();
+        // Act
+        var page = await repository.GetPagedAsync(pageNumber, pageSize, CancellationToken.None);
 
-        var page = await repository.GetPagedAsync(
-            pageNumber: 2,
-            pageSize: 2,
-            CancellationToken.None
+        // Assert
+        Assert.Multiple(
+            () => Assert.Equal(expectedNames, page.Items.Select(p => p.Name)),
+            () => Assert.Equal(pageNumber, page.PageNumber),
+            () => Assert.Equal(pageSize, page.PageSize),
+            () => Assert.Equal(5, page.TotalCount)
         );
-
-        Assert.Collection(
-            page.Items,
-            p => Assert.Equal("C", p.Name),
-            p => Assert.Equal("D", p.Name)
-        );
-        Assert.Equal(2, page.PageNumber);
-        Assert.Equal(2, page.PageSize);
-        Assert.Equal(5, page.TotalCount);
     }
 
-    /// <summary>Verifies <see cref="ProductRepository.GetPagedAsync"/> reports the true total count even when it exceeds the page size.</summary>
+    // Auto Generated, verify expected behavior: an empty table yields an empty page, not a failure.
+    /// <summary>Verifies <see cref="ProductRepository.GetPagedAsync"/> returns an empty page and zero total for an empty table.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetPagedAsync_reports_the_total_count_across_all_pages()
+    public async Task GetPagedAsync_given_no_products_returns_an_empty_page()
     {
-        await using var dbContext = CreateContext(Guid.NewGuid().ToString());
+        // Arrange
+        await using var dbContext = DbContextMother.Create(DatabaseName());
         var repository = new ProductRepository(dbContext);
-        foreach (var name in new[] { "A", "B", "C" })
-        {
-            await repository.AddAsync(Product.Create(name, Money.From(1m)), CancellationToken.None);
-        }
 
-        await dbContext.SaveChangesAsync();
+        // Act
+        var page = await repository.GetPagedAsync(1, 10, CancellationToken.None);
 
-        var page = await repository.GetPagedAsync(
-            pageNumber: 1,
-            pageSize: 2,
-            CancellationToken.None
-        );
-
-        Assert.Equal(2, page.Items.Count);
-        Assert.Equal(3, page.TotalCount);
+        // Assert
+        Assert.Multiple(() => Assert.Empty(page.Items), () => Assert.Equal(0, page.TotalCount));
     }
 
     /// <summary>Verifies <see cref="ProductRepository.GetPagedAsync"/> returns untracked entities (read-only path).</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task GetPagedAsync_returns_untracked_entities()
+    public async Task GetPagedAsync_given_a_persisted_product_returns_untracked_entities()
     {
-        var databaseName = Guid.NewGuid().ToString();
-        await using (var seedContext = CreateContext(databaseName))
-        {
-            await new ProductRepository(seedContext).AddAsync(
-                Product.Create("Widget", Money.From(9.99m)),
-                CancellationToken.None
-            );
-            await seedContext.SaveChangesAsync();
-        }
-
-        await using var dbContext = CreateContext(databaseName);
+        // Arrange
+        var databaseName = DatabaseName();
+        await DbContextMother.SeedAsync(databaseName, ProductMother.Widget());
+        await using var dbContext = DbContextMother.Create(databaseName);
         var repository = new ProductRepository(dbContext);
 
+        // Act
         var page = await repository.GetPagedAsync(1, 10, CancellationToken.None);
 
+        // Assert
         Assert.Single(page.Items);
         Assert.Empty(dbContext.ChangeTracker.Entries<Product>());
     }
 
-    /// <summary>Verifies <see cref="ProductRepository.GetByIdAsync"/> returns a tracked entity, so callers can mutate and save it.</summary>
-    /// <returns>A task representing the asynchronous test.</returns>
-    [Fact]
-    public async Task GetByIdAsync_returns_a_tracked_entity()
-    {
-        var databaseName = Guid.NewGuid().ToString();
-        var product = Product.Create("Widget", Money.From(9.99m));
-        await using (var seedContext = CreateContext(databaseName))
-        {
-            await new ProductRepository(seedContext).AddAsync(product, CancellationToken.None);
-            await seedContext.SaveChangesAsync();
-        }
-
-        await using var dbContext = CreateContext(databaseName);
-        var repository = new ProductRepository(dbContext);
-
-        var result = await repository.GetByIdAsync(product.Id, CancellationToken.None);
-
-        Assert.NotNull(result);
-        Assert.Equal(EntityState.Unchanged, dbContext.Entry(result).State);
-    }
+    // SWEEP-AMBIGUITY: ProductRepository's constructor takes no null check on AppDbContext (primary
+    // constructor), so `new ProductRepository(null!)` succeeds and fails later with a
+    // NullReferenceException on first use. It should arguably throw ArgumentNullException up front;
+    // no test asserts either behavior. Likewise GetPagedAsync accepts pageNumber < 1 or pageSize < 0
+    // with no validation (a negative Skip/Take reaches EF Core); validation lives in the Application
+    // layer, so nothing is pinned here.
 }
