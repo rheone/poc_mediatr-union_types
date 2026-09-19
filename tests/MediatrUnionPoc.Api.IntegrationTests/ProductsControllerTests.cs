@@ -663,9 +663,9 @@ public sealed class ProductsControllerTests : IDisposable
         }
 
         List<string> messages = [];
-        foreach (var message in name.EnumerateArray())
+        for (var index = 0; index < name.GetArrayLength(); index++)
         {
-            messages.Add(message.GetString() ?? string.Empty);
+            messages.Add(name[index].GetString() ?? string.Empty);
         }
 
         return messages;
