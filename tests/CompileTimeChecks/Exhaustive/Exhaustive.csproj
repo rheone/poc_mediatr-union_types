@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Excluded from MediatrUnionPoc.slnx: this is the positive control for ExhaustivenessTests,
+    proving the sibling NonExhaustive project fails specifically because of the missing case,
+    not because of anything else about the isolated-project setup.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\MediatrUnionPoc.Application\MediatrUnionPoc.Application.csproj" />
+  </ItemGroup>
+</Project>

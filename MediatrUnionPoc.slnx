@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/MediatrUnionPoc.Api/MediatrUnionPoc.Api.csproj" />
+    <Project Path="src/MediatrUnionPoc.Application/MediatrUnionPoc.Application.csproj" />
+    <Project Path="src/MediatrUnionPoc.Domain/MediatrUnionPoc.Domain.csproj" />
+    <Project Path="src/MediatrUnionPoc.Infrastructure/MediatrUnionPoc.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MediatrUnionPoc.Api.IntegrationTests/MediatrUnionPoc.Api.IntegrationTests.csproj" />
+    <Project Path="tests/MediatrUnionPoc.ArchitectureTests/MediatrUnionPoc.ArchitectureTests.csproj" />
+    <Project Path="tests/MediatrUnionPoc.Application.Tests/MediatrUnionPoc.Application.Tests.csproj" />
+    <Project Path="tests/MediatrUnionPoc.Domain.Tests/MediatrUnionPoc.Domain.Tests.csproj" />
+    <Project Path="tests/MediatrUnionPoc.Infrastructure.IntegrationTests/MediatrUnionPoc.Infrastructure.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

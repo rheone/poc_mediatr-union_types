@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+
+# CSharpier 1.3.0 cannot parse the `union` type (C# 15 / .NET 11 preview): its parser raises
+# CS1001/CS1018/CS1513 on every file that declares one. Same class of gap as SA1649's crash on
+# union declarations (see .editorconfig) — the tool predates the language feature. Excluded here
+# until CSharpier ships support; re-run `dotnet csharpier check .` after upgrading to see if these
+# can come back.
+src/MediatrUnionPoc.Application/Features/**/*Result.cs
+tests/CompileTimeChecks/**/ShouldCommitProbe.cs
+tests/MediatrUnionPoc.Application.Tests/Behaviors/TransactionBehaviorTests.cs
+tests/MediatrUnionPoc.Application.Tests/Behaviors/NonTransactionalCommandTests.cs
+tests/MediatrUnionPoc.Application.Tests/Unions/FailureAndNotAuthorizedCaseTypeTests.cs
+tests/MediatrUnionPoc.Application.Tests/Behaviors/AuthorizationBehaviorTests.cs

@@ -1,0 +1,78 @@
+# MediatrUnionPoc.Infrastructure
+
+Implements the persistence-facing interfaces `MediatrUnionPoc.Domain` declares:
+`InMemoryUnitOfWork`, `ProductRepository`, and hand-written EF Core `ValueConverter`s for the
+Vogen value objects (`ProductId`, `Money`). The converters are written by hand rather than using
+Vogen's own generated EF Core converter support specifically so `MediatrUnionPoc.Domain` never
+needs an EF Core package reference.
+
+Persistence is EF Core's in-memory provider — there's no real database here. This is a proof of
+concept about union-typed MediatR responses, not about data access, so persistence is kept as
+thin as it can be while still exercising `IUnitOfWork`/`IProductRepository` through a real
+`DbContext`.
+
+## Dependencies
+
+**Project references:**
+
+- `MediatrUnionPoc.Domain` — the `Product` entity, Vogen value objects, and the
+  `IProductRepository`/`IUnitOfWork` interfaces this project implements.
+- `MediatrUnionPoc.Application` — referenced for the vertical-slice types this layer's DI
+  registration needs to wire up alongside its own services.
+
+**Key packages:**
+
+- `Microsoft.EntityFrameworkCore` / `Microsoft.EntityFrameworkCore.InMemory` — the `DbContext` and
+  in-memory provider.
+- `Microsoft.Extensions.DependencyInjection` — registers the `DbContext` and repository/unit-of-work
+  implementations from this project's `DependencyInjection.cs`.
+
+Also carries the repo-wide analyzer package set (`AsyncFixer`, `IDisposableAnalyzers`,
+`Microsoft.VisualStudio.Threading.Analyzers`, `SonarAnalyzer.CSharp`, `StyleCop.Analyzers`).
+
+```mermaid
+flowchart LR
+    Domain[MediatrUnionPoc.Domain]
+    Application[MediatrUnionPoc.Application]
+    Infrastructure[MediatrUnionPoc.Infrastructure]:::here
+    Api[MediatrUnionPoc.Api]
+    DomainTests[MediatrUnionPoc.Domain.Tests]
+    AppTests[MediatrUnionPoc.Application.Tests]
+    InfraIT[MediatrUnionPoc.Infrastructure.IntegrationTests]
+    ApiIT[MediatrUnionPoc.Api.IntegrationTests]
+    ArchTests[MediatrUnionPoc.ArchitectureTests]
+
+    Application --> Domain
+    Infrastructure --> Domain
+    Infrastructure --> Application
+    Api --> Domain
+    Api --> Application
+    Api --> Infrastructure
+    DomainTests --> Domain
+    AppTests --> Application
+    AppTests --> Domain
+    AppTests --> Infrastructure
+    InfraIT --> Domain
+    InfraIT --> Infrastructure
+    ApiIT --> Api
+    ApiIT --> Application
+    ApiIT --> Domain
+    ApiIT --> Infrastructure
+    ArchTests --> Api
+    ArchTests --> Application
+    ArchTests --> Domain
+    ArchTests --> Infrastructure
+
+    classDef here fill:#ffefc2,stroke:#c98a00,stroke-width:2px;
+```
+
+## Usage
+
+Registered via `AddInfrastructure()` in this project's `DependencyInjection.cs`, called from
+`MediatrUnionPoc.Api`'s `Program.cs` alongside `AddApplication()`. Handlers in
+`MediatrUnionPoc.Application` depend only on `IProductRepository`/`IUnitOfWork` from
+`MediatrUnionPoc.Domain` — they never reference this project directly, so swapping the in-memory
+provider for a real database only means changing registrations and the `ValueConverter`s here.
+
+If the `Product` entity or its Vogen value objects change shape, update the `ValueConverter`s here
+to match — a mismatch surfaces at runtime (EF Core mapping failure), not at compile time.

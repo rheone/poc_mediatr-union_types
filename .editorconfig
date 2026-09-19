@@ -1,0 +1,114 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.{cs,csx}]
+indent_size = 4
+
+[*.{json,xml,csproj,props,targets,slnx,yml,yaml}]
+indent_size = 2
+
+[*.md]
+indent_size = 2
+# Markdown uses trailing double-space as an explicit hard line break — trimming it would
+# silently change rendered output, so this overrides the blanket [*] rule above.
+trim_trailing_whitespace = false
+max_line_length = off
+
+##############################
+# C# language & formatting
+##############################
+[*.cs]
+
+# Language style — matches the conventions already used throughout this codebase.
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_sort_system_directives_first = true
+csharp_using_directive_placement = outside_namespace:warning
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+dotnet_style_prefer_collection_expression = true:suggestion
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_naming_style.underscore_prefix.required_prefix = _
+dotnet_naming_style.underscore_prefix.capitalization = camel_case
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_prefix
+dotnet_naming_rule.private_fields_underscore.severity = suggestion
+
+# CS: this project's build-critical settings live in Directory.Build.props, not here.
+
+##############################
+# StyleCop.Analyzers
+##############################
+# SA1649 crashes outright on C# 15 `union` declarations (StyleCop.Analyzers 1.2.0-beta.556
+# predates the feature: "Unhandled declaration kind: UnionDeclaration"). Not a style
+# disagreement — a real incompatibility with a brand-new language feature.
+dotnet_diagnostic.SA1649.severity = none
+
+# The following defaults conflict with conventions already established throughout this
+# codebase rather than flagging real problems:
+dotnet_diagnostic.SA1101.severity = none   # "this." prefix — not used anywhere here by choice
+dotnet_diagnostic.SA1200.severity = none   # usings inside namespace — conflicts with file-scoped namespaces
+dotnet_diagnostic.SA1309.severity = none   # no underscore-prefixed fields — this repo uses _camelCase
+dotnet_diagnostic.SA1633.severity = none   # file header — no license header wanted for this POC
+dotnet_diagnostic.SA1402.severity = none   # one type per file — small, closely-related helper types
+                                            # (e.g. a test-only union plus its case types) are
+                                            # deliberately kept together in one file
+dotnet_diagnostic.SA0001.severity = none   # "XML comment analysis disabled" — informational; this
+                                            # project documents value-added members, not everything
+dotnet_diagnostic.SA1201.severity = none   # element ordering (fields/ctors/properties/methods) —
+dotnet_diagnostic.SA1202.severity = none   # ordering by access modifier — both too rigid for, e.g.,
+                                            # a [Theory]'s static MemberData factory living right
+                                            # next to the test method that consumes it
+dotnet_diagnostic.SA1204.severity = none   # static-before-instance ordering — same rationale
+dotnet_diagnostic.SA1623.severity = none   # demands every property summary literally start with
+                                            # "Gets" — this codebase's XML docs explain what a
+                                            # member means, not restate its accessor shape
+dotnet_diagnostic.SA1642.severity = none   # demands every constructor summary start with
+                                            # "Initializes a new instance of..." boilerplate —
+                                            # same rationale as SA1623
+
+# CSharpier (dotnet csharpier format) is now authoritative for layout and spacing — the
+# following StyleCop rules disagree with its output on multi-line argument/parameter lists:
+dotnet_diagnostic.SA1009.severity = none   # closing parenthesis spacing
+dotnet_diagnostic.SA1111.severity = none   # closing parenthesis must be on the last parameter's line
+
+##############################
+# SonarAnalyzer.CSharp
+##############################
+# False positives / not applicable to this codebase's design:
+dotnet_diagnostic.S3246.severity = none    # "make TResponse covariant" — would break MediatR's
+                                            # exact-type handler/behavior resolution
+dotnet_diagnostic.S2094.severity = none    # "remove this empty record" — an empty record (e.g.
+                                            # Success) is a deliberate, meaningful "no payload"
+                                            # union case, not an accidental empty type
+dotnet_diagnostic.S1118.severity = none    # "add protected ctor or make static" — flags the
+                                            # standard `public partial class Program;` pattern
+                                            # WebApplicationFactory<Program> requires
+dotnet_diagnostic.S6964.severity = suggestion # value-type request properties "should" be
+                                               # nullable/required to avoid under-posting — this
+                                               # project validates via FluentValidation instead of
+                                               # compile-time required-ness, so this is a reminder,
+                                               # not a defect
+dotnet_diagnostic.S2139.severity = none    # "log and rethrow" in TransactionBehavior's catch is
+                                            # deliberate: log the request-specific "rolling back"
+                                            # context locally, then propagate the original,
+                                            # unmodified exception (type and stack trace intact)
+                                            # to the caller — wrapping it would lose both
+
+##############################
+# IDisposableAnalyzers / AsyncFixer / VS-Threading-Analyzers
+##############################
+# No overrides — findings from these were fixed in code rather than suppressed.

@@ -1,0 +1,22 @@
+{
+  "env": {
+    "CLAUDE_CODE_DISABLE_COAUTHOR": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);const cmd=(j.tool_input&&j.tool_input.command)||'';if(/\\bgrep\\b/.test(cmd)){process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:'PreToolUse',permissionDecision:'deny',permissionDecisionReason:'Use rg (ripgrep) instead of grep in this project - e.g. rg -n pattern path'}}));}}catch(e){}});\""
+          }
+        ]
+      }
+    ]
+  },
+  "disableCoauthor": true,
+  "enabledPlugins": {
+    "csharp-lsp@claude-plugins-official": true
+  }
+}

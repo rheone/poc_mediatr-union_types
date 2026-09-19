@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          # Pinned to the 11.0 channel rather than global.json's exact preview build
+          # (11.0.100-rc.1.26425.128): that exact patch string has to be indexed in
+          # setup-dotnet's release manifest before it can be installed, and a freshly-cut
+          # RC can lag there. `11.0.x` + quality `preview` (RC builds are published under
+          # the preview channel) always resolves to whatever's newest on 11.0, so a stale
+          # manifest can't block CI. global.json's `rollForward: latestFeature` then lets
+          # `dotnet build`/`dotnet test` use whatever gets installed here even if it's a
+          # newer patch than the one checked in.
+          dotnet-version: "11.0.x"
+          dotnet-quality: "preview"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Check formatting (CSharpier)
+        run: dotnet csharpier check .
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Build CompileTimeChecks scratch projects
+        # ExhaustivenessTests proves union exhaustiveness at compile time by building these
+        # deliberately unsolutioned projects (tests/CompileTimeChecks/README.md) and asserting
+        # on the result. They used to be built by the test itself, shelling out to `dotnet build`
+        # from inside the already-running `dotnet test` process — reliable everywhere except
+        # GitHub Actions' Linux runners, where that specific parent/child MSBuild topology hangs
+        # for minutes on the first such call (see docs/research/dotnet-build-child-process-ci-hang.md;
+        # matches known, unresolved upstream reports of a child `dotnet build` hanging inside
+        # MSBuild's own BuildSubmission.Execute() when spawned from a running dotnet test/VSTest
+        # build — dotnet/sdk#42821, #43432, #45461). Building them here instead, as their own CI
+        # step with no `dotnet test` process anywhere in the tree, sidesteps that entirely. Each
+        # build's exit code and combined output are captured to obj/ci-build-result.txt, which
+        # ExhaustivenessTests reads directly instead of spawning a process when that file exists.
+        run: |
+          for project in Exhaustive NonExhaustive ShouldCommitExhaustive ShouldCommitNonExhaustive; do
+            proj_dir="tests/CompileTimeChecks/$project"
+            mkdir -p "$proj_dir/obj"
+            result_file="$proj_dir/obj/ci-build-result.txt"
+            # NonExhaustive/ShouldCommitNonExhaustive are meant to fail with CS8509 — a non-zero
+            # exit code here is an expected result to capture, not a step failure, so errexit is
+            # suspended just for the capture itself.
+            set +e
+            output=$(dotnet build "$proj_dir/$project.csproj" --nologo -p:NuGetAudit=false 2>&1)
+            exit_code=$?
+            set -e
+            { printf '%s\n' "$exit_code"; printf '%s\n' "$output"; } > "$result_file"
+          done
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release --verbosity normal

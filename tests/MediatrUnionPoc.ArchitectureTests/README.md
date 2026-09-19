@@ -1,0 +1,77 @@
+# MediatrUnionPoc.ArchitectureTests
+
+Enforces the layering CLAUDE.md documents as intended for this solution, using
+[NetArchTest.Rules](https://github.com/BenMorris/NetArchTest) to assert on the compiled assemblies
+directly — so a rule violation is caught even if every individual `.csproj`'s `ProjectReference`s
+happen to still look correct. `LayeringTests.cs` currently checks:
+
+- Domain has no dependency on Application, Infrastructure, or Api.
+- Application has no dependency on Infrastructure or Api.
+- Infrastructure has no dependency on Api.
+- Only Infrastructure references `Microsoft.EntityFrameworkCore` — not Domain, not Application.
+
+## Dependencies
+
+**Project references:** all four `src/` projects — `MediatrUnionPoc.Api`,
+`MediatrUnionPoc.Application`, `MediatrUnionPoc.Domain`, `MediatrUnionPoc.Infrastructure` — purely
+so `Types.InAssembly(...)` can load each compiled assembly by referencing a type from it; these
+tests never call into the projects' actual behavior.
+
+**Key packages:**
+
+- `NetArchTest.Rules` — the dependency-direction assertions themselves.
+- `xunit` / `xunit.runner.visualstudio` — test framework and runner.
+- `coverlet.collector` / `Microsoft.NET.Test.Sdk` — coverage collection and the `dotnet test` host.
+
+Also carries the repo-wide analyzer package set (`AsyncFixer`, `IDisposableAnalyzers`,
+`Microsoft.VisualStudio.Threading.Analyzers`, `SonarAnalyzer.CSharp`, `StyleCop.Analyzers`), and a
+global `Using Include="Xunit"`.
+
+```mermaid
+flowchart LR
+    Domain[MediatrUnionPoc.Domain]
+    Application[MediatrUnionPoc.Application]
+    Infrastructure[MediatrUnionPoc.Infrastructure]
+    Api[MediatrUnionPoc.Api]
+    DomainTests[MediatrUnionPoc.Domain.Tests]
+    AppTests[MediatrUnionPoc.Application.Tests]
+    InfraIT[MediatrUnionPoc.Infrastructure.IntegrationTests]
+    ApiIT[MediatrUnionPoc.Api.IntegrationTests]
+    ArchTests[MediatrUnionPoc.ArchitectureTests]:::here
+
+    Application --> Domain
+    Infrastructure --> Domain
+    Infrastructure --> Application
+    Api --> Domain
+    Api --> Application
+    Api --> Infrastructure
+    DomainTests --> Domain
+    AppTests --> Application
+    AppTests --> Domain
+    AppTests --> Infrastructure
+    InfraIT --> Domain
+    InfraIT --> Infrastructure
+    ApiIT --> Api
+    ApiIT --> Application
+    ApiIT --> Domain
+    ApiIT --> Infrastructure
+    ArchTests --> Api
+    ArchTests --> Application
+    ArchTests --> Domain
+    ArchTests --> Infrastructure
+
+    classDef here fill:#ffefc2,stroke:#c98a00,stroke-width:2px;
+```
+
+## Usage
+
+Runs as part of the normal suite:
+
+```bash
+dotnet test --filter "FullyQualifiedName~ArchitectureTests"
+```
+
+If you deliberately change the intended dependency direction (e.g. a new project sits between
+Application and Infrastructure), update `LayeringTests.cs`'s assertions *and* the "Architecture"
+section of the repo root `CLAUDE.md` in the same change — this project exists specifically so
+those two descriptions of the layering can't silently drift apart.

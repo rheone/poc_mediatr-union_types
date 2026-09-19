@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Deliberately excluded from MediatrUnionPoc.slnx: this project is SUPPOSED to fail to build.
+    Proves that ITransactionOutcome<TSelf>.ShouldCommit — a switch a developer writes over their
+    own union's cases, not a marker interface on the case types themselves — is exhaustive: a case
+    type the union declares but ShouldCommit doesn't classify is a real compiler error (CS8509),
+    not a silent misclassification at runtime.
+  -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors>CS8509</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\MediatrUnionPoc.Application\MediatrUnionPoc.Application.csproj" />
+  </ItemGroup>
+</Project>

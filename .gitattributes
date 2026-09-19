@@ -1,0 +1,18 @@
+# Normalize everything to LF in the repo and on checkout, so csharpier's `endOfLine: lf` and
+# .editorconfig's `end_of_line = lf` always match what's actually on disk, on every OS and in CI.
+* text=auto eol=lf
+
+# Shell scripts must keep LF even on Windows checkouts, or they fail to execute (`$'\r': command
+# not found`) — most notably the husky pre-commit hook.
+*.sh text eol=lf
+.husky/* text eol=lf
+
+# Binary formats: never touch line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.dll binary
+*.exe binary
+*.snk binary

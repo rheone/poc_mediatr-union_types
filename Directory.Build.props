@@ -1,0 +1,23 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Every public/protected member in this repo is documented — CS1591 ("missing XML comment for
+    publicly visible type or member") enforces that it stays true. Not applied to the
+    tests/CompileTimeChecks scratch projects: they're deliberately minimal, one-file compiler
+    probes, not part of the documented codebase (one of them is meant to fail to build at all).
+  -->
+  <PropertyGroup Condition="!$(MSBuildProjectDirectory.Contains('CompileTimeChecks'))">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

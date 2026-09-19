@@ -1,0 +1,48 @@
+using System.Reflection;
+using FluentValidation;
+using MediatR;
+using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Application.Common.Behaviors;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace MediatrUnionPoc.Application;
+
+/// <summary>Wires up MediatR, FluentValidation, authorization, and the pipeline behaviors for the whole Application layer.</summary>
+public static class DependencyInjection
+{
+    /// <summary>Used by both MediatR and FluentValidation's assembly-scanning registration — every handler/validator in this assembly is found automatically, no per-feature DI wiring needed.</summary>
+    public static readonly Assembly AssemblyReference = typeof(DependencyInjection).Assembly;
+
+    /// <summary>
+    /// Registers MediatR, all FluentValidation validators, the <c>Administrator</c> authorization
+    /// policy, and the <see cref="LoggingBehavior{TRequest,TResponse}"/> →
+    /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> → <see cref="ValidationBehavior{TRequest,TResponse}"/>
+    /// → <see cref="TransactionBehavior{TRequest,TResponse}"/> pipeline, in that execution order.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The same <paramref name="services"/> collection, for chaining.</returns>
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+    {
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(AssemblyReference));
+        services.AddValidatorsFromAssembly(AssemblyReference);
+
+        services.AddAuthorizationCore(options =>
+            options.AddPolicy(
+                AuthorizationPolicies.Administrator,
+                policy => policy.Requirements.Add(new AdministratorRequirement("Administrator"))
+            )
+        );
+        services.AddSingleton<IAuthorizationHandler, AdministratorAuthorizationHandler>();
+
+        // Order matters: log the whole pipeline, then authorize, then validate, then (for
+        // commands) manage the transaction — check who's calling before checking whether their
+        // input is well-formed.
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuthorizationBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
+
+        return services;
+    }
+}

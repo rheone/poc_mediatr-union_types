@@ -1,0 +1,19 @@
+{
+   "$schema": "https://alirezanet.github.io/Husky.Net/schema.json",
+   "tasks": [
+      {
+         "name": "dotnet-format-whitespace",
+         "group": "pre-commit",
+         "command": "dotnet",
+         "args": ["format", "whitespace", "--include", "${staged}"],
+         "include": ["**/*.cs"]
+      },
+      {
+         "name": "csharpier",
+         "group": "pre-commit",
+         "command": "dotnet",
+         "args": ["csharpier", "format", "${staged}"],
+         "include": ["**/*.cs"]
+      }
+   ]
+}

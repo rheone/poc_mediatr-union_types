@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Deliberately excluded from MediatrUnionPoc.slnx: this project is SUPPOSED to fail to build.
+    ExhaustivenessTests shells out to `dotnet build` against this file to prove, using the real
+    compiler, that a non-exhaustive switch over a union is a compile error (CS8509) here — not
+    just an assertion in documentation.
+  -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors>CS8509</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\MediatrUnionPoc.Application\MediatrUnionPoc.Application.csproj" />
+  </ItemGroup>
+</Project>
