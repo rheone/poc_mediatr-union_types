@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.Controllers;
 using MediatrUnionPoc.Api.IntegrationTests.TestData;
@@ -26,6 +27,12 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class ProductsControllerTests : IDisposable
 {
     private const string ProductsUri = "/api/products";
+    private const string NameErrorKey = "Name";
+
+    // FluentValidation's NotEmpty message ("'Name' must not be empty.") vs MVC's implicit
+    // [Required] message ("The Name field is required."): the only evidence of which layer answered.
+    private const string NotEmptyFragment = "must not be empty";
+    private const string FrameworkRequiredFragment = "is required";
 
     private readonly ProductsApiFactory _factory = new();
     private readonly HttpClient _client;
@@ -42,6 +49,10 @@ public sealed class ProductsControllerTests : IDisposable
         HttpStatusCode
     > DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test_Data =>
         new() { { "TRUE", HttpStatusCode.NoContent }, { "false", HttpStatusCode.Forbidden } };
+
+    /// <summary>Gets the blank names for <see cref="CreateAsync_BlankName_Returns400FromValidator_Test"/>: empty, space, tab, newline.</summary>
+    public static TheoryData<string> CreateAsync_BlankName_Returns400FromValidator_Test_Data =>
+        new() { string.Empty, " ", "\t", "\n" };
 
     /// <summary>Disposes the test's <see cref="HttpClient"/> and its backing <see cref="ProductsApiFactory"/>.</summary>
     public void Dispose()
@@ -140,30 +151,80 @@ public sealed class ProductsControllerTests : IDisposable
         );
     }
 
-    /// <summary>Verifies a null, empty, whitespace, tab, or newline product name is rejected with 400.</summary>
-    /// <param name="name">The invalid product name to send.</param>
+    /// <summary>
+    /// Verifies an empty, whitespace, tab, or newline product name passes model binding, reaches
+    /// <c>CreateProductValidator</c>'s <c>NotEmpty</c> rule, and comes back as 400 with that
+    /// rule's message under the <c>Name</c> key (not the framework's "field is required" message).
+    /// </summary>
+    /// <param name="name">The blank product name to send.</param>
     /// <returns>A task representing the asynchronous test.</returns>
     // Auto Generated, verify expected behavior:
     [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData(" ")]
-    [InlineData("\t")]
-    [InlineData("\n")]
-    public async Task CreateAsync_BlankName_Returns400_Test(string? name)
+    [MemberData(nameof(CreateAsync_BlankName_Returns400FromValidator_Test_Data))]
+    public async Task CreateAsync_BlankName_Returns400FromValidator_Test(string name)
     {
         // Arrange
-        var request = new CreateProductRequest(name!, ProductRequestMother.WidgetPrice);
+        var request = new CreateProductRequest(name, ProductRequestMother.WidgetPrice);
 
         // Act
         using var response = await _client.PostAsJsonAsync(
             ProductsUri,
             request,
-            CancellationToken.None
+            TestContext.Current.CancellationToken
         );
 
         // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var messages = await ReadNameErrorsAsync(response);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode),
+            () =>
+                Assert.Contains(
+                    messages,
+                    m => m.Contains(NotEmptyFragment, StringComparison.Ordinal)
+                ),
+            () =>
+                Assert.DoesNotContain(
+                    messages,
+                    m => m.Contains(FrameworkRequiredFragment, StringComparison.Ordinal)
+                )
+        );
+    }
+
+    /// <summary>
+    /// Verifies a JSON <c>null</c> name is rejected with 400 by MVC model validation (the implicit
+    /// <c>[Required]</c> on a non-nullable reference type) before the MediatR pipeline, so
+    /// <c>CreateProductValidator</c> never sees it; the body carries the framework's message.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task CreateAsync_NullName_Returns400FromModelBinding_Test()
+    {
+        // Arrange
+        var request = new CreateProductRequest(null!, ProductRequestMother.WidgetPrice);
+
+        // Act
+        using var response = await _client.PostAsJsonAsync(
+            ProductsUri,
+            request,
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        var messages = await ReadNameErrorsAsync(response);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode),
+            () =>
+                Assert.Contains(
+                    messages,
+                    m => m.Contains(FrameworkRequiredFragment, StringComparison.Ordinal)
+                ),
+            () =>
+                Assert.DoesNotContain(
+                    messages,
+                    m => m.Contains(NotEmptyFragment, StringComparison.Ordinal)
+                )
+        );
     }
 
     /// <summary>Verifies a request whose body is the JSON literal <c>null</c> is rejected with 400 rather than reaching the handler.</summary>
@@ -582,6 +643,32 @@ public sealed class ProductsControllerTests : IDisposable
 
         // Assert
         Assert.Equal(expectedStatus, response.StatusCode);
+    }
+
+    /// <summary>Reads the RFC 7807 validation problem body and returns the messages listed under the <c>Name</c> key.</summary>
+    /// <param name="response">The 400 response to read.</param>
+    /// <returns>The error messages for the <c>Name</c> property; empty when the key is absent.</returns>
+    private static async Task<IReadOnlyList<string>> ReadNameErrorsAsync(
+        HttpResponseMessage response
+    )
+    {
+        var json = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(json);
+        if (
+            !document.RootElement.TryGetProperty("errors", out var errors)
+            || !errors.TryGetProperty(NameErrorKey, out var name)
+        )
+        {
+            return [];
+        }
+
+        List<string> messages = [];
+        foreach (var message in name.EnumerateArray())
+        {
+            messages.Add(message.GetString() ?? string.Empty);
+        }
+
+        return messages;
     }
 
     /// <summary>Creates a product through the API and returns the created representation.</summary>
