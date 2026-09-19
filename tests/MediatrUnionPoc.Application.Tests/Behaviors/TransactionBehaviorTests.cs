@@ -64,10 +64,18 @@ public class TransactionBehaviorTests
 
     /// <summary>The error cases <see cref="Handle_ErrorCase_RollsBackAndDoesNotCommit_Test(DeleteProductResult)"/> is theorized over.</summary>
     public static TheoryData<DeleteProductResult> Handle_ErrorCase_RollsBackAndDoesNotCommit_Test_Data =>
-        [
-            new DeleteProductResult(new NotFound<ProductId>(ProductId.From(ProductGuid))),
-            new DeleteProductResult(new Error(ErrorMessage, ErrorCode)),
-        ];
+        new(
+            Row("NotFound", new DeleteProductResult(new NotFound<ProductId>(ProductId.From(ProductGuid)))),
+            Row("Error", new DeleteProductResult(new Error(ErrorMessage, ErrorCode)))
+        );
+
+    // Union values have no distinguishing ToString, so each row names its case explicitly to keep
+    // display names unique.
+    private static TheoryDataRow<DeleteProductResult> Row(string caseName, DeleteProductResult response) =>
+        new(response)
+        {
+            TestDisplayName = $"{nameof(Handle_ErrorCase_RollsBackAndDoesNotCommit_Test)}(case: {caseName})",
+        };
 
     /// <summary>Verifies <see cref="IUnitOfWork.CommitAsync(CancellationToken)"/> is called, and rollback is not, when the handler returns a success case.</summary>
     /// <returns>The asynchronous test operation.</returns>

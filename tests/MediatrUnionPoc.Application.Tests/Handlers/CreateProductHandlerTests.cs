@@ -141,6 +141,8 @@ public class CreateProductHandlerTests
 
         // Assert
         Assert.Equal("request", ex.ParamName);
-        await _repository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _repository
+            .DidNotReceiveWithAnyArgs()
+            .AddAsync(default!, TestContext.Current.CancellationToken);
     }
 }

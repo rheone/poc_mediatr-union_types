@@ -27,12 +27,24 @@ public class DeleteProductResultTests
         DeleteProductResult,
         bool
     > ShouldCommit_EachDeclaredCase_CommitsOnlyForSuccess_Test_Data =>
-        new()
+        new(
+            Row("Success", new Success(), true),
+            Row("NotFound", new NotFound<ProductId>(SomeProductId), false),
+            Row("Error", new Error(ErrorMessage, ErrorCode), false),
+            Row("NotAuthorized", new NotAuthorized([NotAnAdministrator]), false)
+        );
+
+    // Union values have no distinguishing ToString, so each row names its case explicitly to keep
+    // display names unique.
+    private static TheoryDataRow<DeleteProductResult, bool> Row(
+        string caseName,
+        DeleteProductResult response,
+        bool expected
+    ) =>
+        new(response, expected)
         {
-            { new Success(), true },
-            { new NotFound<ProductId>(SomeProductId), false },
-            { new Error(ErrorMessage, ErrorCode), false },
-            { new NotAuthorized([NotAnAdministrator]), false },
+            TestDisplayName =
+                $"{nameof(ShouldCommit_EachDeclaredCase_CommitsOnlyForSuccess_Test)}(case: {caseName})",
         };
 
     /// <summary>Verifies <see cref="DeleteProductResult.ShouldCommit"/> commits only for its <see cref="Success"/> case.</summary>

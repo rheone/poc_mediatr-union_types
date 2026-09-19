@@ -82,10 +82,18 @@ public class FailureAndNotAuthorizedCaseTypeTests
 
     /// <summary>Rows: a <see cref="Failure"/> and a <see cref="NotAuthorized"/> — different case types, both rollback.</summary>
     public static TheoryData<AdminActionResult> ShouldCommit_FailureOrNotAuthorized_ReturnsFalse_Test_Data =>
-        [
-            new AdminActionResult(new Failure([BusinessRuleViolated])),
-            new AdminActionResult(new NotAuthorized([MissingAdminRole])),
-        ];
+        new(
+            Row("Failure", new AdminActionResult(new Failure([BusinessRuleViolated]))),
+            Row("NotAuthorized", new AdminActionResult(new NotAuthorized([MissingAdminRole])))
+        );
+
+    // Union values have no distinguishing ToString, so each row names its case explicitly to keep
+    // display names unique.
+    private static TheoryDataRow<AdminActionResult> Row(string caseName, AdminActionResult response) =>
+        new(response)
+        {
+            TestDisplayName = $"{nameof(ShouldCommit_FailureOrNotAuthorized_ReturnsFalse_Test)}(case: {caseName})",
+        };
 
     /// <summary>
     /// Verifies both <see cref="Failure"/> and <see cref="NotAuthorized"/> classify as rollback

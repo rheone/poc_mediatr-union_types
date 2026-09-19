@@ -40,7 +40,12 @@ public class InMemoryUnitOfWorkTests
 
         // Assert
         await using var verifyContext = DbContextMother.Create(databaseName);
-        Assert.NotNull(await verifyContext.Products.SingleOrDefaultAsync(p => p.Id == product.Id));
+        Assert.NotNull(
+            await verifyContext.Products.SingleOrDefaultAsync(
+                p => p.Id == product.Id,
+                TestContext.Current.CancellationToken
+            )
+        );
     }
 
     /// <summary>Verifies a rolled-back unit of work's changes never reach the database.</summary>
@@ -62,7 +67,12 @@ public class InMemoryUnitOfWorkTests
 
         // Assert
         await using var verifyContext = DbContextMother.Create(databaseName);
-        Assert.Null(await verifyContext.Products.SingleOrDefaultAsync(p => p.Id == product.Id));
+        Assert.Null(
+            await verifyContext.Products.SingleOrDefaultAsync(
+                p => p.Id == product.Id,
+                TestContext.Current.CancellationToken
+            )
+        );
     }
 
     /// <summary>Verifies a rollback leaves nothing in the change tracker, so a later commit cannot persist it.</summary>
@@ -84,7 +94,9 @@ public class InMemoryUnitOfWorkTests
 
         // Assert
         await using var verifyContext = DbContextMother.Create(databaseName);
-        Assert.Empty(await verifyContext.Products.ToListAsync());
+        Assert.Empty(
+            await verifyContext.Products.ToListAsync(TestContext.Current.CancellationToken)
+        );
     }
 
     /// <summary>Verifies a rollback detaches every tracked entity, including unmodified ones loaded from the database.</summary>
@@ -130,7 +142,10 @@ public class InMemoryUnitOfWorkTests
 
         // Assert
         await using var verifyContext = DbContextMother.Create(databaseName);
-        var stored = await verifyContext.Products.SingleAsync(p => p.Id == product.Id);
+        var stored = await verifyContext.Products.SingleAsync(
+            p => p.Id == product.Id,
+            TestContext.Current.CancellationToken
+        );
         Assert.Equal(product.Name, stored.Name);
     }
 
@@ -158,7 +173,10 @@ public class InMemoryUnitOfWorkTests
 
         // Assert
         await using var verifyContext = DbContextMother.Create(databaseName);
-        var stored = await verifyContext.Products.SingleAsync(p => p.Id == product.Id);
+        var stored = await verifyContext.Products.SingleAsync(
+            p => p.Id == product.Id,
+            TestContext.Current.CancellationToken
+        );
         Assert.Multiple(
             () => Assert.Equal(UpdatedName, stored.Name),
             () => Assert.Equal(UpdatedPrice, stored.Price.Value)
@@ -184,7 +202,12 @@ public class InMemoryUnitOfWorkTests
 
         // Assert
         await using var verifyContext = DbContextMother.Create(databaseName);
-        Assert.NotNull(await verifyContext.Products.SingleOrDefaultAsync(p => p.Id == product.Id));
+        Assert.NotNull(
+            await verifyContext.Products.SingleOrDefaultAsync(
+                p => p.Id == product.Id,
+                TestContext.Current.CancellationToken
+            )
+        );
     }
 
     /// <summary>Verifies a cancelled token stops <see cref="InMemoryUnitOfWork.CommitAsync"/> before anything is saved.</summary>
@@ -208,7 +231,9 @@ public class InMemoryUnitOfWorkTests
         // Assert
         await Assert.ThrowsAnyAsync<OperationCanceledException>(act);
         await using var verifyContext = DbContextMother.Create(databaseName);
-        Assert.Empty(await verifyContext.Products.ToListAsync());
+        Assert.Empty(
+            await verifyContext.Products.ToListAsync(TestContext.Current.CancellationToken)
+        );
     }
 
     /// <summary>Verifies the InMemory provider's lack of transaction support is swallowed rather than surfaced.</summary>

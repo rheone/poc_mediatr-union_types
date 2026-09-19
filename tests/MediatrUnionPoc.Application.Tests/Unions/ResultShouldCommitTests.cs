@@ -31,25 +31,55 @@ public class ResultShouldCommitTests
         CreateProductResult,
         bool
     > ShouldCommit_CreateProductResultCases_CommitsOnlyForProductDto_Test_Data =>
-        new()
-        {
-            { new ProductDto(SomeProductId, ProductName, ProductPrice), true },
-            { new ValidationErrors([new ValidationError("Name", "required")]), false },
-            { new Error(ErrorMessage, ErrorCode), false },
-        };
+        new(
+            CreateRow("ProductDto", new ProductDto(SomeProductId, ProductName, ProductPrice), true),
+            CreateRow(
+                "ValidationErrors",
+                new ValidationErrors([new ValidationError("Name", "required")]),
+                false
+            ),
+            CreateRow("Error", new Error(ErrorMessage, ErrorCode), false)
+        );
 
     /// <summary>Rows: one per <see cref="UpdateProductResult"/> case, with whether it should commit — only <see cref="Success"/> does.</summary>
     public static TheoryData<
         UpdateProductResult,
         bool
     > ShouldCommit_UpdateProductResultCases_CommitsOnlyForSuccess_Test_Data =>
-        new()
+        new(
+            UpdateRow("Success", new Success(), true),
+            UpdateRow("NotFound", new NotFound<ProductId>(SomeProductId), false),
+            UpdateRow(
+                "ValidationErrors",
+                new ValidationErrors([new ValidationError("Price", "must be >= 0")]),
+                false
+            ),
+            UpdateRow("Error", new Error(ErrorMessage, ErrorCode), false),
+            UpdateRow("NotAuthorized", new NotAuthorized(["not the owner"]), false)
+        );
+
+    // Union values have no distinguishing ToString, so each row names its case explicitly to keep
+    // display names unique.
+    private static TheoryDataRow<CreateProductResult, bool> CreateRow(
+        string caseName,
+        CreateProductResult response,
+        bool expected
+    ) =>
+        new(response, expected)
         {
-            { new Success(), true },
-            { new NotFound<ProductId>(SomeProductId), false },
-            { new ValidationErrors([new ValidationError("Price", "must be >= 0")]), false },
-            { new Error(ErrorMessage, ErrorCode), false },
-            { new NotAuthorized(["not the owner"]), false },
+            TestDisplayName =
+                $"{nameof(ShouldCommit_CreateProductResultCases_CommitsOnlyForProductDto_Test)}(case: {caseName})",
+        };
+
+    private static TheoryDataRow<UpdateProductResult, bool> UpdateRow(
+        string caseName,
+        UpdateProductResult response,
+        bool expected
+    ) =>
+        new(response, expected)
+        {
+            TestDisplayName =
+                $"{nameof(ShouldCommit_UpdateProductResultCases_CommitsOnlyForSuccess_Test)}(case: {caseName})",
         };
 
     /// <summary>Verifies <see cref="CreateProductResult.ShouldCommit"/> commits only for its <see cref="ProductDto"/> case.</summary>

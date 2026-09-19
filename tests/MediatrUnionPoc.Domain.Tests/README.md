@@ -17,7 +17,7 @@ no mocking framework. Just the two Vogen value objects and the one entity:
 
 **Key packages:**
 
-- `xunit` / `xunit.runner.visualstudio` — test framework and runner.
+- `xunit.v3` / `xunit.runner.visualstudio` — test framework (xUnit v3; the test project is an executable) and VSTest runner.
 - `coverlet.collector` / `Microsoft.NET.Test.Sdk` — coverage collection and the `dotnet test` host.
 
 Also carries the repo-wide analyzer package set (`AsyncFixer`, `IDisposableAnalyzers`,

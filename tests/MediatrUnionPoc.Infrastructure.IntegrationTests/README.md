@@ -34,7 +34,7 @@ happens to be fast in practice.
 
 **Key packages:**
 
-- `xunit` / `xunit.runner.visualstudio` — test framework and runner (`xunit.analyzers` supplies the xUnit-specific Roslyn rules).
+- `xunit.v3` / `xunit.runner.visualstudio` — test framework (xUnit v3; the test project is an executable) and VSTest runner (`xunit.analyzers` supplies the xUnit-specific Roslyn rules).
 - `coverlet.collector` / `Microsoft.NET.Test.Sdk` — coverage collection and the `dotnet test` host.
 - `Microsoft.EntityFrameworkCore.InMemory` comes transitively via the `Infrastructure` project
   reference.

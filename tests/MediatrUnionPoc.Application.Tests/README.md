@@ -39,7 +39,7 @@ MediatR pipeline from DI; neither test touches a database.
 
 **Key packages:**
 
-- `xunit` / `xunit.runner.visualstudio` — test framework and runner.
+- `xunit.v3` / `xunit.runner.visualstudio` — test framework (xUnit v3; the test project is an executable) and VSTest runner.
 - `NSubstitute` — mocks `IProductRepository` for handler tests.
 - `FluentValidation` — referenced directly to test validators in isolation from the handlers that
   use them.

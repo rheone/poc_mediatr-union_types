@@ -40,7 +40,12 @@ public sealed class ResourceAuthorizationServiceTests
             .Returns(AuthorizationResult.Success());
 
         // Act
-        var result = await _sut.AuthorizeAsync(principal, resource, PolicyName);
+        var result = await _sut.AuthorizeAsync(
+            principal,
+            resource,
+            PolicyName,
+            TestContext.Current.CancellationToken
+        );
 
         // Assert
         Assert.Null(result);
@@ -60,7 +65,12 @@ public sealed class ResourceAuthorizationServiceTests
             .Returns(AuthorizationResult.Failed());
 
         // Act
-        var result = await _sut.AuthorizeAsync(principal, resource, PolicyName);
+        var result = await _sut.AuthorizeAsync(
+            principal,
+            resource,
+            PolicyName,
+            TestContext.Current.CancellationToken
+        );
 
         // Assert
         Assert.NotNull(result);
@@ -81,7 +91,12 @@ public sealed class ResourceAuthorizationServiceTests
             .Returns(AuthorizationResult.Success());
 
         // Act
-        await _sut.AuthorizeAsync(principal, resource, PolicyName);
+        await _sut.AuthorizeAsync(
+            principal,
+            resource,
+            PolicyName,
+            TestContext.Current.CancellationToken
+        );
 
         // Assert
         await _authorizationService.Received(1).AuthorizeAsync(principal, resource, PolicyName);
@@ -109,7 +124,12 @@ public sealed class ResourceAuthorizationServiceTests
     {
         // Act
         var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
-            _sut.AuthorizeAsync(null!, new TestResource(ResourceOwnerId), PolicyName)
+            _sut.AuthorizeAsync(
+                null!,
+                new TestResource(ResourceOwnerId),
+                PolicyName,
+                TestContext.Current.CancellationToken
+            )
         );
 
         // Assert
@@ -127,7 +147,12 @@ public sealed class ResourceAuthorizationServiceTests
     {
         // Act
         var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
-            _sut.AuthorizeAsync(PrincipalMother.Anonymous(), null!, PolicyName)
+            _sut.AuthorizeAsync(
+                PrincipalMother.Anonymous(),
+                null!,
+                PolicyName,
+                TestContext.Current.CancellationToken
+            )
         );
 
         // Assert
@@ -148,7 +173,8 @@ public sealed class ResourceAuthorizationServiceTests
             _sut.AuthorizeAsync(
                 PrincipalMother.Anonymous(),
                 new TestResource(ResourceOwnerId),
-                null!
+                null!,
+                TestContext.Current.CancellationToken
             )
         );
 

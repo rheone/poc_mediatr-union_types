@@ -148,7 +148,7 @@ public class LayeringTests
     }
 
     // Names the offending types so a failure identifies the violated boundary directly.
-    private static void AssertNoViolations(TestResult result) =>
+    private static void AssertNoViolations(NetArchTest.Rules.TestResult result) =>
         Assert.True(
             result.IsSuccessful,
             "Layering violated by: " + string.Join(", ", result.FailingTypeNames ?? [])

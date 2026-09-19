@@ -109,6 +109,8 @@ public class GetPagedProductsHandlerTests
 
         // Assert
         Assert.Equal("request", ex.ParamName);
-        await _repository.DidNotReceiveWithAnyArgs().GetPagedAsync(default, default, default);
+        await _repository
+            .DidNotReceiveWithAnyArgs()
+            .GetPagedAsync(default, default, TestContext.Current.CancellationToken);
     }
 }

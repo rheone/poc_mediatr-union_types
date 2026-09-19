@@ -225,7 +225,10 @@ public class ValidationBehaviorTests
         Assert.False(_nextWasCalled);
         await _validator
             .DidNotReceiveWithAnyArgs()
-            .ValidateAsync(default(ValidationContext<CreateProductCommand>)!, default);
+            .ValidateAsync(
+                default(ValidationContext<CreateProductCommand>)!,
+                TestContext.Current.CancellationToken
+            );
     }
 
     /// <summary>Verifies a null <c>next</c> delegate is rejected with <see cref="ArgumentNullException"/> before any validator runs, even when validation would have passed.</summary>
@@ -247,6 +250,9 @@ public class ValidationBehaviorTests
         Assert.Equal("next", ex.ParamName);
         await _validator
             .DidNotReceiveWithAnyArgs()
-            .ValidateAsync(default(ValidationContext<CreateProductCommand>)!, default);
+            .ValidateAsync(
+                default(ValidationContext<CreateProductCommand>)!,
+                TestContext.Current.CancellationToken
+            );
     }
 }

@@ -43,7 +43,7 @@ project wherever tests need a real database, a real HTTP host, or both:
 
 - `tests/MediatrUnionPoc.Domain.Tests` — pure unit tests for `Money`, `ProductId`, and `Product`;
   no dependency on any other project.
-- `tests/MediatrUnionPoc.Application.Tests` — xUnit + NSubstitute, organized by what's under test
+- `tests/MediatrUnionPoc.Application.Tests` — xUnit v3 + NSubstitute, organized by what's under test
   (`Unions/`, `Behaviors/`, `Handlers/`, `Validators/`). Handlers are tested against a substituted
   `IProductRepository`, never the real EF Core provider.
 - `tests/MediatrUnionPoc.Infrastructure.IntegrationTests` — the one project that exercises the real

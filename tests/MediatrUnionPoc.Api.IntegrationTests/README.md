@@ -24,7 +24,7 @@ booting the real host pulls in the fully composed application.
 
 **Key packages:**
 
-- `xunit` / `xunit.runner.visualstudio` — test framework and runner.
+- `xunit.v3` / `xunit.runner.visualstudio` — test framework (xUnit v3; the test project is an executable) and VSTest runner.
 - `Microsoft.AspNetCore.Mvc.Testing` — in-memory `TestServer` and `WebApplicationFactory<Program>`.
 - `coverlet.collector` / `Microsoft.NET.Test.Sdk` — coverage collection and the `dotnet test` host.
 

@@ -84,7 +84,7 @@ reopen the solution so it re-resolves.
 | `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext`, repository + unit-of-work implementations             |
 | `MediatrUnionPoc.Api`             | Controllers that map each union to an `IActionResult`                      |
 | `MediatrUnionPoc.Domain.Tests`    | Unit tests for `Money`, `ProductId`, and `Product`                          |
-| `MediatrUnionPoc.Application.Tests` | xUnit + NSubstitute — union mechanics, pipeline behaviors, handlers, validators |
+| `MediatrUnionPoc.Application.Tests` | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core InMemory provider, end to end |
 | `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests           |
 | `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions enforcing the layering above               |
