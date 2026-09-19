@@ -26,10 +26,14 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// <item><term>DeleteAsync</term><description>Success 204; NotFound 404; NotAuthorized 403; Error 500.</description></item>
 /// </list>
 /// </summary>
+/// <param name="sender">The MediatR sender every action dispatches its request through.</param>
+/// <exception cref="ArgumentNullException"><paramref name="sender"/> is <see langword="null"/>.</exception>
 [ApiController]
 [Route("api/products")]
 public sealed class ProductsController(ISender sender) : ControllerBase
 {
+    private readonly ISender _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+
     /// <summary>
     /// The request header this POC accepts as proof of administrator identity, in place of real
     /// authentication. A value of <c>"true"</c> (case-insensitive) grants the caller the
@@ -69,7 +73,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         CancellationToken cancellationToken = default
     )
     {
-        var result = await sender.Send(
+        var result = await _sender.Send(
             new CreateProductCommand(
                 request.Name,
                 request.Price,
@@ -103,7 +107,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         CancellationToken cancellationToken = default
     )
     {
-        var result = await sender.Send(new GetProductByIdQuery(id), cancellationToken);
+        var result = await _sender.Send(new GetProductByIdQuery(id), cancellationToken);
 
         return result switch
         {
@@ -138,7 +142,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         CancellationToken cancellationToken = default
     )
     {
-        var result = await sender.Send(
+        var result = await _sender.Send(
             new GetPagedProductsQuery(pageNumber, pageSize),
             cancellationToken
         );
@@ -186,7 +190,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         CancellationToken cancellationToken = default
     )
     {
-        var result = await sender.Send(
+        var result = await _sender.Send(
             new UpdateProductCommand(
                 id,
                 request.Name,
@@ -243,7 +247,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         CancellationToken cancellationToken = default
     )
     {
-        var result = await sender.Send(
+        var result = await _sender.Send(
             new DeleteProductCommand(id, CallerPrincipal(adminHeader, callerIdHeader)),
             cancellationToken
         );

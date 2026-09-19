@@ -16,11 +16,11 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 /// per test gives each test its own InMemory database, so tests never see each other's data.
 /// </summary>
 /// <remarks>
-/// SWEEP-AMBIGUITY: <see cref="ProductsController"/> is exercised only over HTTP, so the
-/// "null reference parameter throws ArgumentNullException" rule maps to a null request body, which
-/// the framework answers with 400 rather than an exception. The primary constructor's
-/// <c>ISender</c> has no null guard and is unreachable from HTTP (the DI container never supplies
-/// null), so no null-guard test is written for it.
+/// <see cref="ProductsController"/> is exercised over HTTP, so a null request body is answered by
+/// the framework's model binding with 400 rather than an <see cref="ArgumentNullException"/>; the
+/// action's model-bound <c>request</c> parameters are deliberately left unguarded to keep that
+/// behavior. Only the constructor's <c>ISender</c> is guarded, and that is tested by direct
+/// construction.
 /// </remarks>
 [Trait("Category", "Integration")]
 public sealed class ProductsControllerTests : IDisposable
@@ -48,6 +48,21 @@ public sealed class ProductsControllerTests : IDisposable
     {
         _client.Dispose();
         _factory.Dispose();
+    }
+
+    /// <summary>Verifies constructing the controller without a sender fails fast rather than on first request.</summary>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public void Ctor_NullSender_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        const string parameterName = "sender";
+
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() => new ProductsController(null!));
+
+        // Assert
+        Assert.Equal(parameterName, ex.ParamName);
     }
 
     /// <summary>Verifies a valid create returns 201 with the created product.</summary>

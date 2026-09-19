@@ -14,12 +14,16 @@ namespace MediatrUnionPoc.Api.OpenApi;
 public sealed class ProductContractExampleTransformer : IOpenApiSchemaTransformer
 {
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="schema"/> or <paramref name="context"/> is <see langword="null"/>.</exception>
     public Task TransformAsync(
         OpenApiSchema schema,
         OpenApiSchemaTransformerContext context,
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(schema);
+        ArgumentNullException.ThrowIfNull(context);
+
         var example = context.JsonTypeInfo.Type switch
         {
             var t when t == typeof(CreateProductRequest) => new JsonObject

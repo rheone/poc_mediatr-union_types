@@ -1,6 +1,10 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.OpenApi;
+using Microsoft.AspNetCore.OpenApi;
+using Microsoft.OpenApi;
 
 namespace MediatrUnionPoc.Api.IntegrationTests;
 
@@ -11,9 +15,9 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 /// observable surface.
 /// </summary>
 /// <remarks>
-/// SWEEP-AMBIGUITY: <c>TransformAsync</c> has no argument guards (a null schema or context throws
-/// NullReferenceException, not ArgumentNullException), but its parameters can only be supplied by
-/// the OpenAPI generator, never null over HTTP, so no null-guard tests are written.
+/// The generator never passes null arguments, so the null guards on <c>TransformAsync</c> are
+/// tested by calling the transformer directly with a hand-built schema and context (both are
+/// publicly constructible).
 /// </remarks>
 [Trait("Category", "Integration")]
 public sealed class ProductContractExampleTransformerTests : IDisposable
@@ -88,6 +92,58 @@ public sealed class ProductContractExampleTransformerTests : IDisposable
         // Assert
         Assert.Null(examples);
     }
+
+    /// <summary>Verifies a null schema is rejected with an <see cref="ArgumentNullException"/> rather than a <see cref="NullReferenceException"/>.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task TransformAsync_NullSchema_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        const string parameterName = "schema";
+        var transformer = new ProductContractExampleTransformer();
+        var context = CreateContext(typeof(CreateProductRequest));
+
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            transformer.TransformAsync(null!, context, CancellationToken.None)
+        );
+
+        // Assert
+        Assert.Equal(parameterName, ex.ParamName);
+    }
+
+    /// <summary>Verifies a null context is rejected with an <see cref="ArgumentNullException"/> rather than a <see cref="NullReferenceException"/>.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    // Auto Generated, verify expected behavior:
+    [Fact]
+    public async Task TransformAsync_NullContext_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        const string parameterName = "context";
+        var transformer = new ProductContractExampleTransformer();
+
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            transformer.TransformAsync(new OpenApiSchema(), null!, CancellationToken.None)
+        );
+
+        // Assert
+        Assert.Equal(parameterName, ex.ParamName);
+    }
+
+    /// <summary>Builds a transformer context for <paramref name="type"/>; the context's members are public and settable, so it can be constructed without the OpenAPI generator.</summary>
+    /// <param name="type">The CLR type the context describes.</param>
+    /// <returns>A context whose <c>JsonTypeInfo</c> describes <paramref name="type"/>.</returns>
+    private static OpenApiSchemaTransformerContext CreateContext(Type type) =>
+        new()
+        {
+            DocumentName = "v1",
+            JsonTypeInfo = JsonSerializerOptions.Default.GetTypeInfo(type),
+            JsonPropertyInfo = null,
+            ParameterDescription = null,
+            ApplicationServices = null!,
+        };
 
     /// <summary>Fetches the generated OpenAPI document and returns its <c>components.schemas</c> object.</summary>
     /// <returns>The document's <c>components.schemas</c> node.</returns>
