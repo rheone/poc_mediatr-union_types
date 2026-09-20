@@ -30,8 +30,10 @@ Details below.
   - [Project layout](#project-layout)
 - [Motivation](#motivation)
 - [What this pattern provides, and its actual scope](#what-this-pattern-provides-and-its-actual-scope)
+- [What this POC demonstrates, and what it leaves out](#what-this-poc-demonstrates-and-what-it-leaves-out)
 - [Core concepts](#core-concepts)
   - [The C# `union` type](#the-c-union-type)
+    - [Overriding one arm, or writing your own extension member](#overriding-one-arm-or-writing-your-own-extension-member)
   - [Static abstract interface members: why generic code can build a union it's never seen](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen)
   - [Case types used here](#case-types-used-here)
   - [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
@@ -42,6 +44,8 @@ Details below.
   - [Vogen: avoiding primitive obsession](#vogen-avoiding-primitive-obsession)
 - [Adding a new command or query](#adding-a-new-command-or-query)
 - [Request lifecycle](#request-lifecycle)
+  - [Commit vs. rollback, message by message](#commit-vs-rollback-message-by-message)
+- [The HTTP contract: every endpoint and outcome](#the-http-contract-every-endpoint-and-outcome)
 - [Trace id and unhandled exceptions](#trace-id-and-unhandled-exceptions)
 - [Optimistic concurrency: `ProductVersion`, `ETag` and `If-Match`](#optimistic-concurrency-productversion-etag-and-if-match)
 - [Partial updates: `PATCH` as JSON Merge Patch](#partial-updates-patch-as-json-merge-patch)
@@ -49,8 +53,8 @@ Details below.
 - [Authorization](#authorization)
   - [Why two different points in the request lifetime](#why-two-different-points-in-the-request-lifetime)
   - [How the two flows fit together](#how-the-two-flows-fit-together)
-  - [Role-based: `IRequiresAuthorization` + `AuthorizationBehavior`](#role-based-irequiresauthorization-authorizationbehavior)
-  - [Resource-based: `ResourceAuthorizationService` + `OwnerAuthorizationHandler<TResource>`](#resource-based-resourceauthorizationservice-ownerauthorizationhandlertresource)
+  - [Role-based: `IRequiresAuthorization` + `AuthorizationBehavior`](#role-based-irequiresauthorization--authorizationbehavior)
+  - [Resource-based: `ResourceAuthorizationService` + `OwnerAuthorizationHandler<TResource>`](#resource-based-resourceauthorizationservice--ownerauthorizationhandlertresource)
   - [Zero-to-many handlers, and multiple requirements](#zero-to-many-handlers-and-multiple-requirements)
   - [Where the identity comes from](#where-the-identity-comes-from)
   - [Configuring role-based authorization for a new command](#configuring-role-based-authorization-for-a-new-command)
@@ -59,6 +63,7 @@ Details below.
 - [Worked example: `UpdateProductCommand`, case by case](#worked-example-updateproductcommand-case-by-case)
 - [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index)
 - [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
+- [Testing](#testing)
 - [Notes and gotchas](#notes-and-gotchas)
 - [Glossary](#glossary)
 - [Footnotes](#footnotes)
@@ -71,6 +76,22 @@ dotnet test
 dotnet run --project src/MediatrUnionPoc.Api
 ```
 
+`dotnet run` uses the first launch profile, so the API listens on `http://localhost:5233` (the
+`https` profile adds `https://localhost:7070`). In the Development environment it serves the
+OpenAPI document at `/openapi/v1.json` and a Scalar UI at `/scalar`. With no
+`ConnectionStrings:Products` value the API keeps a private in-memory SQLite database (empty on every
+start); set that value to a SQLite connection string such as `Data Source=products.db` to persist.
+A quick tour, using the stand-in identity header described under [Authorization](#where-the-identity-comes-from):
+
+```bash
+curl -i -X POST http://localhost:5233/api/products -H "X-Caller-Id: alice" \
+  -H "Content-Type: application/json" -d '{"name":"Widget","price":9.99}'   # 201, ETag: W/"1"
+curl -i http://localhost:5233/api/products                                   # 200 with X-Total-Count and Link
+```
+
+The full request/response contract of every endpoint is in
+[The HTTP contract](#the-http-contract-every-endpoint-and-outcome).
+
 `global.json` pins the SDK to the exact `11.0.100-rc.1...` preview build this repo was written
 against. Without it, an IDE's own SDK resolver (Visual Studio in particular) can silently fall
 back to the newest *stable* SDK it finds and fail with `NETSDK1045` ("does not support targeting
@@ -82,15 +103,18 @@ reopen the solution so it re-resolves.
 
 | Project                          | Responsibility                                                            |
 | --------------------------------- | --------------------------------------------------------------------------- |
-| `MediatrUnionPoc.Domain`          | Entities, [Vogen](#vogen-avoiding-primitive-obsession) [value objects](#vogen-vocabulary) (`ProductId`, `Money`), the listing vocabulary (`ProductCriteria`, `ProductSort`, `PagedResult`), repository/UoW interfaces |
-| `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors |
-| `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext`, repository + unit-of-work implementations; the only place criteria and sort become a database query |
-| `MediatrUnionPoc.Api`             | Controllers that map each union to an `IActionResult`                      |
-| `MediatrUnionPoc.Domain.Tests`    | Unit tests for `Money`, `ProductId`, and `Product`                          |
-| `MediatrUnionPoc.Application.Tests` | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators |
+| `MediatrUnionPoc.Domain`          | Entities, [Vogen](#vogen-avoiding-primitive-obsession) [value objects](#vogen-vocabulary) (`ProductId`, `Money`, `ProductVersion`), the listing vocabulary (`ProductCriteria`, `ProductSort`, `PagedResult`), `CommitResult`, repository/UoW interfaces |
+| `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors, authorization |
+| `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext` over SQLite, repository + unit-of-work implementations; the only place criteria and sort become a database query |
+| `MediatrUnionPoc.Api`             | The controller that maps each union to an `IActionResult`, the `Http/` extension members, trace id middleware, exception handler and OpenAPI transformers |
+| `MediatrUnionPoc.Domain.Tests`    | Unit tests for the value objects, `Product`, `ProductNames`, `PagedResult` and the sort vocabulary |
+| `MediatrUnionPoc.Application.Tests` | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators, authorization |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core SQLite provider (in-memory database), end to end |
-| `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests           |
+| `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests against real SQLite |
 | `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions enforcing the layering above               |
+
+Four one-file probe projects under `tests/CompileTimeChecks/` are deliberately not in the solution;
+see [Testing](#testing).
 
 Application code is organized as **[vertical slices](#architectural-patterns)** under
 `Features/Products/<Operation>/` (`Create`, `Update`, `Patch`, `Delete`, `GetById`, `GetPaged`) — everything
@@ -136,7 +160,7 @@ pipeline throws for an outcome it expected to see.
   that can happen without reading the method body or any docs.
 - **Mix-and-match per operation.** A union is declared per use case, not shared globally — a
   "get" query might only ever produce `(Dto, NotFound, Error)` while a "delete" produces
-  `(Success, NotFound, Error)`. No forcing every endpoint through one bloated `Result` type with
+  `(Success, NotFound, Error, NotAuthorized, PreconditionFailed)`. No forcing every endpoint through one bloated `Result` type with
   irrelevant properties.
 - **No boxing tax for the common path.** Case types are checked directly against the union's
   underlying `object? Value` at pattern-match sites; the union itself is a lightweight struct.
@@ -147,6 +171,34 @@ pipeline throws for an outcome it expected to see.
   [`IValidatable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IValidatable.cs) and
   [Static abstract interface members](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen)
   below.
+
+## What this POC demonstrates, and what it leaves out
+
+**Demonstrated**, all on one small Products API:
+
+- `union` response types for every command and query, with compiler-checked `switch` exhaustiveness
+  at the controller and at every per-union hook (`ShouldCommit`, `FromCommitFailure`,
+  `FromValidationErrors`, `FromNotAuthorized`).
+- A MediatR pipeline (logging, authorization, validation, transaction) that stays generic through
+  `static abstract` interface members.
+- Optimistic concurrency with a weak `ETag` and `If-Match`, duplicate-name `Conflict`, JSON Merge
+  Patch, filtered/sorted/paged listing with `X-Total-Count` and `Link` headers.
+- Uniform RFC 7807 problem bodies, a trace id on every response and log line, and a global
+  exception handler for the genuinely unexpected.
+
+**Deliberately out of scope** (this is a pattern POC, not a production template):
+
+- **Real authentication.** `X-Admin` and `X-Caller-Id` request headers stand in for an identity;
+  see [Where the identity comes from](#where-the-identity-comes-from).
+- **Health checks, API versioning, rate limiting, CORS.** None are configured.
+- **Migrations and a production database.** The schema is created with `EnsureCreated` on SQLite.
+  There is no migration history, and the unique-violation detection reads SQLite's error message,
+  so another provider needs its own check (see
+  [Duplicate product names](#duplicate-product-names)).
+- **Soft delete and audit fields.** `DELETE` removes the row; the only timestamp is `CreatedAt`.
+- **Exception tracking.** None is bundled. The trace id is the join key for whichever you add:
+  OpenTelemetry (exception events on spans), Serilog with Seq (the `TraceId` property becomes
+  searchable), or Sentry. See [Trace id and unhandled exceptions](#trace-id-and-unhandled-exceptions).
 
 ## Core concepts
 
@@ -171,7 +223,7 @@ a [struct](#c-language-concepts) implementing `IUnion { object? Value { get; } }
 conversion from each case type:
 
 ```csharp
-CreateProductResult ok = new ProductDto(id, "Widget", 9.99m);   // implicit conversion
+CreateProductResult ok = ProductDto.FromDomain(product);        // implicit conversion
 CreateProductResult bad = new Error("boom", "BOOM");            // implicit conversion
 ```
 
@@ -192,7 +244,7 @@ var response = result switch
 Unions can carry a body, including implementing [interfaces](#c-language-concepts) — which is how
 this repo gets a union to expose a static factory method usable from fully generic code (see
 [Static abstract interface members](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen)
-below). This only works because C# now allows **static abstract members on interfaces** —
+below). This only works because C# allows **static abstract members on interfaces** —
 without that, a generic pipeline behavior would have no way to construct an arbitrary union type
 it has never seen.
 
@@ -213,18 +265,16 @@ return result switch
 };
 ```
 
-Each `ToProblemResult` (on `Error`, `NotFound<TId>`, `NotAuthorized`, `ValidationErrors`) builds an
+Each `ToProblemResult` (on `Error`, `NotFound<TId>`, `NotAuthorized`, `ValidationErrors`,
+`PreconditionFailed`, `Conflict` and the Api-level `MissingIfMatch`) builds an
 `application/problem+json` body, so every non-2xx response in the API is RFC 7807 (the not-found
 body carries a `code` member, `"NOT_FOUND"`). Shared policy lives in `HttpMappingOptions`,
 registered in `Program.cs` with `AddResultHttpMapping(...)`: an `Error.Code` to HTTP status table
 (default: `Error.ValidationFailureCode` is 400, every other code 500) and a switch for RFC 7807
 `type` URIs. Each extension also takes optional per-call overrides (`statusCode`, `title`,
 `detail`), and nothing is sealed: a controller can write any arm by hand, or its own extension
-members over the same case types.
-
-```csharp
-services.AddResultHttpMapping(o => o.ErrorStatusCodes["OUT_OF_STOCK"] = 503);
-```
+members over the same case types; see
+[Overriding one arm, or writing your own extension member](#overriding-one-arm-or-writing-your-own-extension-member).
 
 > [!NOTE]
 > It's not because `System.Text.Json` would otherwise serialize the generated struct's own
@@ -258,6 +308,91 @@ The real reason to switch first has nothing to do with serialization shape:
   boundary.** Controller, queue consumer, CLI — whichever boundary the domain outcome meets,
   that's where the `switch` belongs, turning a domain outcome into whatever shape *that* boundary
   actually needs.
+
+#### Overriding one arm, or writing your own extension member
+
+The mapping has three layers, and each can be changed without touching the others. All snippets
+below are taken from the repo (`ResultHttpMappingTests`, `ResultHttpExtensions`, `ProductsController`).
+
+**1. Change shared policy**, once, in `Program.cs` or a test host. Here a custom error code gets its
+own status, and the built-in validation code is remapped:
+
+```csharp
+services.AddResultHttpMapping(o => o.ErrorStatusCodes["OUT_OF_STOCK"] = 503);
+
+services.AddResultHttpMapping(options =>
+    options.ErrorStatusCodes[Error.ValidationFailureCode] = StatusCodes.Status422UnprocessableEntity);
+```
+
+`HttpMappingOptions` also holds `DefaultErrorStatusCode` (500), `IncludeTypeUris` and the status to
+`type` URI table `TypeUris`. It is an ordinary options class, so `services.Configure<HttpMappingOptions>(...)`
+works as well.
+
+**2. Override a single arm.** Every extension member takes optional `statusCode`, `title` and `detail`
+parameters, so one controller arm can differ from the rest without a new type:
+
+```csharp
+NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product", statusCode: 410),
+```
+
+An arm is just an expression of type `IActionResult`, so it can equally be hand-written
+(`Ok(...)`, `Problem(...)`, `StatusCode(...)`) instead of calling an extension at all; the
+`switch` around it still has to cover every case.
+
+**3. Define your own extension member.** The extensions are C# 14 `extension` blocks, so a member
+over a case type (or over any other type, as `FromCallerHeaders` does over `ClaimsPrincipal`) is a
+new `extension` block in any static class. This is the repo's own static one; it needs nothing but
+public types:
+
+```csharp
+extension(ClaimsPrincipal)
+{
+    public static ClaimsPrincipal FromCallerHeaders(string? adminHeader, string? callerIdHeader)
+    {
+        var identity = new ClaimsIdentity(authenticationType: "Header");
+
+        if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            identity.AddClaim(new Claim(ClaimTypes.Role, AuthorizationRoles.Administrator));
+        }
+
+        if (!string.IsNullOrEmpty(callerIdHeader))
+        {
+            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, callerIdHeader));
+        }
+
+        return new ClaimsPrincipal(identity);
+    }
+}
+```
+
+and this is the shape of a per-case member, the built-in `Conflict` one (its XML docs and null
+guards trimmed). `BuildProblem` and `OptionsOf` are private helpers of `ResultHttpExtensions`; an
+extension of your own would create its `ProblemDetails` the same way through the registered
+`ProblemDetailsFactory`:
+
+```csharp
+extension(Conflict conflict)
+{
+    public IActionResult ToProblemResult(
+        HttpContext http,
+        int? statusCode = null,
+        string? title = null,
+        string? detail = null
+    )
+    {
+        return BuildProblem(
+            http,
+            statusCode ?? StatusCodes.Status409Conflict,
+            title ?? "Conflict",
+            detail ?? conflict.Message
+        );
+    }
+}
+```
+
+Because the controller keeps its own `switch`, none of this weakens exhaustiveness: adding a case to
+a union still fails the build until an arm exists for it.
 
 ### Static abstract interface members: why generic code can build a union it's never seen
 
@@ -309,12 +444,12 @@ performance as a resolved instance-method call — no reflection, no registry, n
 
 | Case               | Role    | Meaning                                                         |
 | ------------------ | ------- | --------------------------------------------------------------- |
-| `Success`          | Shared  | The command completed; no payload to return                     |
+| `Success`          | Shared  | The command completed; no payload to return (used by `DeleteProductResult`) |
 | `<Dto>`            | Bespoke | The operation's actual result payload (e.g. `ProductDto`)       |
-| `NotFound`         | Shared  | The requested entity doesn't exist                              |
+| `NotFound<TId>`    | Shared  | The requested entity doesn't exist; carries the id that missed  |
 | `ValidationErrors` | Shared  | Input failed FluentValidation checks                            |
-| `Error`            | Shared  | An unexpected/domain error, with a stable machine-readable code |
-| `Failure`          | Shared  | Business-rule failure(s) that aren't input validation           |
+| `Error`            | Shared  | An unexpected/domain error, with a stable machine-readable code (`Error.ValidationFailureCode` is the one code the Api maps to 400) |
+| `Failure`          | Shared  | Business-rule failure(s) that aren't input validation (defined, but no Products union declares it) |
 | `NotAuthorized`    | Shared  | The caller isn't allowed to perform this operation              |
 | `PreconditionFailed` | Shared | A precondition the caller attached (a stale `If-Match`) no longer holds |
 | `Conflict`         | Shared  | The request collides with the current state (e.g. a value that must be unique is taken) |
@@ -332,9 +467,21 @@ confined to a single union: it's the success case of `CreateProductResult` and
 payload shape, not because its identity is deliberately meaning-free the way `Success` or
 `NotFound`'s is.
 
-Each union in this repo declares only the subset of cases that operation can actually produce —
-see `CreateProductResult` vs `UpdateProductResult` vs `GetProductByIdResult` for three different
-mixes.
+Each union in this repo declares only the subset of cases that operation can actually produce:
+
+| Union | Cases |
+| --- | --- |
+| `CreateProductResult` | `ProductDto`, `ValidationErrors`, `Error`, `Conflict` |
+| `GetProductByIdResult` | `ProductDto`, `NotFound<ProductId>`, `Error` |
+| `GetPagedProductsResult` | `PagedResult<ProductDto>`, `ValidationErrors`, `Error` |
+| `UpdateProductResult` | `ProductDto`, `NotFound<ProductId>`, `ValidationErrors`, `Error`, `NotAuthorized`, `PreconditionFailed`, `Conflict` |
+| `PatchProductResult` | the same seven as `UpdateProductResult` |
+| `DeleteProductResult` | `Success`, `NotFound<ProductId>`, `Error`, `NotAuthorized`, `PreconditionFailed` |
+
+Two smaller unions live outside Application: `CommitResult` and `CommitFailure` in the Domain (see
+[A commit can fail too](#a-commit-can-fail-too-icommitfailable)) and `IfMatchHeader` in the Api
+(`ProductVersion`, `MissingIfMatch`, `ValidationErrors`), which classifies the `If-Match` request
+header before anything is sent to MediatR.
 
 > [!WARNING]
 > **Don't design case types as a mirror of HTTP status codes.** A union case describes what
@@ -447,8 +594,31 @@ public interface ICommitFailable<TSelf> where TSelf : ICommitFailable<TSelf>
 public static UpdateProductResult FromCommitFailure(CommitFailure failure) => failure switch
 {
     ConcurrencyConflict => new PreconditionFailed("The product was changed by another request; reload it and retry."),
-    UniqueViolation => new Conflict("A product with this name already exists. Product names must be unique, ignoring case and surrounding whitespace."),
+    UniqueViolation => ProductConflicts.NameTakenByConcurrentRequest(),   // a Conflict
 };
+```
+
+Each transactional union answers for itself, and the answers differ:
+
+| Union | `ConcurrencyConflict` becomes | `UniqueViolation` becomes |
+| --- | --- | --- |
+| `CreateProductResult` | `Error` (`COMMIT_CONCURRENCY_CONFLICT`): a brand-new row cannot have a stale version | `Conflict` |
+| `UpdateProductResult` | `PreconditionFailed` | `Conflict` |
+| `PatchProductResult` | `PreconditionFailed` | `Conflict` |
+| `DeleteProductResult` | `PreconditionFailed` | `Error` (`COMMIT_UNIQUE_VIOLATION`): a delete cannot violate a uniqueness constraint |
+
+The controller then maps those cases like any others (`Conflict` 409, `PreconditionFailed` 412,
+`Error` 500):
+
+```mermaid
+flowchart LR
+    Handler["Handler returns a success case"] --> Should{"TResponse.ShouldCommit(response)"}
+    Should -->|true| Commit["IUnitOfWork.CommitAsync()"]
+    Commit -->|Committed| Return["Return the handler's response"]
+    Commit -->|"ConcurrencyConflict or UniqueViolation"| Roll["RollbackAsync()"]
+    Roll --> From["TResponse.FromCommitFailure(failure)"]
+    From --> Map["Controller switch: 412, 409 or 500"]
+    Return --> Map2["Controller switch: 2xx"]
 ```
 
 `TransactionBehavior<TRequest, TResponse>` requires `TResponse : ICommitFailable<TResponse>` in
@@ -783,51 +953,65 @@ That's it — no DI registration step for the handler or validator; both are fou
 ```mermaid
 flowchart TD
     Client([HTTP request]) --> Controller[ProductsController]
-    Controller --> Sender["sender.Send(request)"]
+    Controller --> Parse["Header parsing: If-Match (PUT, PATCH, DELETE)"]
+    Parse -->|"missing (428) or malformed (400)"| Map
+    Parse --> Sender["sender.Send(request)"]
     Sender --> Logging[LoggingBehavior]
-    Logging --> Validation{FluentValidation passes?}
+    Logging --> Auth{"IRequiresAuthorization?<br/>(DeleteProductCommand only)"}
+    Auth -->|"policy fails"| BuildAuth["TResponse.FromNotAuthorized(...)"]
+    BuildAuth --> ReturnUp[Union response]
+    Auth -->|"passes, or not required"| Validation{"Validator registered and passes?"}
     Validation -->|No| BuildErrors["TResponse.FromValidationErrors(...)"]
-    BuildErrors --> ReturnUp[Union response]
-    Validation -->|Yes| IsCommand{Command or query?}
-    IsCommand -->|Query| Handler[Feature handler]
-    IsCommand -->|Command| Begin[TransactionBehavior: begin]
+    BuildErrors --> ReturnUp
+    Validation -->|Yes| IsCommand{"ITransactionalCommand?"}
+    IsCommand -->|"No (queries)"| Handler[Feature handler]
+    IsCommand -->|Yes| Begin[TransactionBehavior: begin]
     Begin --> Handler
     Handler --> Repo[(Repository / EF Core)]
     Repo --> Handler
-    Handler --> Outcome{Union case returned}
-    Outcome -->|Success or DTO| Commit[TransactionBehavior: commit]
-    Commit -->|CommitAsync refused: stale write, unique violation| CommitFailed["Rollback, then TResponse.FromCommitFailure(...)"]
+    Handler --> Outcome{"TResponse.ShouldCommit(response)?"}
+    Outcome -->|true| Commit["TransactionBehavior: CommitAsync"]
+    Commit -->|"refused: stale write, unique violation"| CommitFailed["Rollback, then TResponse.FromCommitFailure(...)"]
     CommitFailed --> ReturnUp
-    Outcome -->|NotFound, Error, Failure, NotAuthorized, or ValidationErrors| Rollback[TransactionBehavior: rollback]
-    Commit --> ReturnUp
+    Outcome -->|false| Rollback[TransactionBehavior: rollback]
+    Commit -->|Committed| ReturnUp
     Rollback --> ReturnUp
     ReturnUp --> Map{Controller switches on the union}
-    Map -->|Dto| Ok200[200 OK / 201 Created]
-    Map -->|NotFound| NF404[404 Not Found]
-    Map -->|PreconditionFailed| PF412[412 Precondition Failed]
-    Map -->|ValidationErrors| BadRequest400[400 Bad Request]
-    Map -->|Error| ServerError500[500 Internal Server Error]
-    Ok200 --> Done([HTTP response])
-    NF404 --> Done
-    PF412 --> Done
-    BadRequest400 --> Done
-    ServerError500 --> Done
+    Map --> Done([HTTP response: status per The HTTP contract table])
 ```
 
-Note that only the last "Controller switches on the union" step is HTTP-aware — everything above
-it deals purely in domain outcomes.
+Only the last "Controller switches on the union" step is HTTP-aware — everything above it deals
+purely in domain outcomes; the status each case becomes is in
+[The HTTP contract](#the-http-contract-every-endpoint-and-outcome). The pipeline behaviors run in
+this registration order (`Application/DependencyInjection.cs`): `LoggingBehavior`,
+`AuthorizationBehavior`, `ValidationBehavior`, `TransactionBehavior`. Which of them a request meets
+is decided by its marker interfaces and its response union's interfaces:
+
+| Behavior | Applies to requests that | Needs the response union to implement |
+| --- | --- | --- |
+| `LoggingBehavior` | every request | nothing |
+| `AuthorizationBehavior` | implement `IRequiresAuthorization` (`DeleteProductCommand`) | `IAuthorizable<TSelf>` |
+| `ValidationBehavior` | have a response union that implements `IValidatable<TSelf>` (all six operations); it does nothing when no validator is registered | `IValidatable<TSelf>` |
+| `TransactionBehavior` | implement `ITransactionalCommand<TResponse>` (Create, Update, Patch, Delete) | `ITransactionOutcome<TSelf>` and `ICommitFailable<TSelf>` |
+
+`ICommand<TResponse>` (no transaction assumption) and `IQuery<TResponse>` (read-only) are the other
+two request markers; no Products operation uses a bare `ICommand`, but
+`NonTransactionalCommandTests` proves such a command never meets `TransactionBehavior`. `PUT` and
+`PATCH` are not `IRequiresAuthorization`: their ownership check needs the loaded product, so it runs
+inside the handler (see [Authorization](#authorization)).
 
 ### Commit vs. rollback, message by message
 
 ```mermaid
 sequenceDiagram
     participant C as Controller
-    participant P as Pipeline (Logging, Validation, Transaction)
+    participant P as Pipeline (Logging, Authorization, Validation, Transaction)
     participant H as Handler
     participant U as IUnitOfWork
     participant D as Database
 
     C->>P: Send(DeleteProductCommand)
+    Note over P: Authorization and validation passed
     P->>U: BeginTransactionAsync()
     P->>H: Handle(command)
     H->>D: GetByIdAsync(id)
@@ -847,9 +1031,71 @@ sequenceDiagram
 ```
 
 No `catch` block appears anywhere in this flow — the branch is decided entirely by which case type
-the handler returned. A commit that is itself refused (`CommitAsync` returns `ConcurrencyConflict`
-instead of `Committed`) takes the rollback branch too, and the response becomes
-`DeleteProductResult.FromCommitFailure(...)`.
+the handler returned (through `ShouldCommit`). A commit that is itself refused (`CommitAsync` returns
+`ConcurrencyConflict` instead of `Committed`) takes the rollback branch too, and the response becomes
+`DeleteProductResult.FromCommitFailure(...)`, here a `PreconditionFailed`. The handler's own version
+check and the case where `If-Match` names a stale version also produce `PreconditionFailed` before
+any commit is attempted, and that case is not committed either.
+
+## The HTTP contract: every endpoint and outcome
+
+This is the complete mapping the controller's `switch` arms and `ProducesResponseType` attributes
+implement. Every non-2xx response is `application/problem+json` (`ValidationProblemDetails`, with an
+`errors` member, for validation), and **every response** of any status carries an `X-Trace-Id`
+header; problem bodies also carry `traceId` (see
+[Trace id and unhandled exceptions](#trace-id-and-unhandled-exceptions)).
+
+Request headers the API reads:
+
+| Header | Used by | Meaning |
+| --- | --- | --- |
+| `X-Caller-Id` | `POST`, `PUT`, `PATCH` | Stand-in identity; becomes the new product's owner on `POST`, and must equal the owner on `PUT`/`PATCH` |
+| `X-Admin: true` | `DELETE` | Stand-in for the `Administrator` role |
+| `If-Match: W/"n"` | `PUT`, `PATCH` (required); `DELETE` (optional) | The `ETag` of the version being changed |
+| `Content-Type: application/merge-patch+json` | `PATCH` | Required for `PATCH`; anything else is `415` |
+
+| Endpoint | Union case | Status | Notes |
+| --- | --- | --- | --- |
+| `POST /api/products` | `ProductDto` | `201` | `ETag: W/"1"`, `Location` header, product in the body |
+| | `ValidationErrors` | `400` | Per-field `errors` |
+| | `Conflict` | `409` | Another product has an equivalent name |
+| | `Error` | `500` | Only a commit that cannot fail this way (`COMMIT_CONCURRENCY_CONFLICT`) |
+| `GET /api/products/{id}` | `ProductDto` | `200` | `ETag` header |
+| | `NotFound<ProductId>` | `404` | `code` member `NOT_FOUND` |
+| | `Error` | `400` / `500` | `400` for `Error.ValidationFailureCode` (an empty GUID), `500` for any other code |
+| `GET /api/products` | `PagedResult<ProductDto>` | `200` | `X-Total-Count` and RFC 8288 `Link` headers; a page past the end is still `200` with empty `items` |
+| | `ValidationErrors` | `400` | Per-field `errors` (`PageNumber`, `PageSize`, `MinPrice`, `MaxPrice`, `NameContains`, `OwnerId`, `Sort`) |
+| | `Error` | `500` | |
+| `PUT /api/products/{id}` | `ProductDto` | `204` | No body; the new `ETag` header |
+| | `NotFound<ProductId>` | `404` | |
+| | `ValidationErrors` | `400` | Also a malformed `If-Match` (an error naming the header) |
+| | `NotAuthorized` | `403` | Caller is not the owner |
+| | `Conflict` | `409` | The new name duplicates another product's, up front or at commit |
+| | `PreconditionFailed` | `412` | Stale `If-Match`, up front or at commit |
+| | absent `If-Match` (`MissingIfMatch`) | `428` | Answered before anything is sent to MediatR |
+| | `Error` | `500` | |
+| `PATCH /api/products/{id}` | `ProductDto` | `200` | The whole updated product and its new `ETag` |
+| | `NotFound<ProductId>` | `404` | |
+| | `ValidationErrors` | `400` | Nothing supplied, a supplied `null`, a bad value, or a malformed `If-Match` |
+| | `NotAuthorized` | `403` | |
+| | `Conflict` | `409` | |
+| | `PreconditionFailed` | `412` | |
+| | body not `application/merge-patch+json` | `415` | Rejected by `[Consumes]` |
+| | absent `If-Match` (`MissingIfMatch`) | `428` | |
+| | `Error` | `500` | |
+| `DELETE /api/products/{id}` | `Success` | `204` | No body, no `ETag` |
+| | `NotFound<ProductId>` | `404` | |
+| | `NotAuthorized` | `403` | Caller is not an administrator; checked before validation |
+| | `PreconditionFailed` | `412` | Only when `If-Match` was sent and is stale, up front or at commit |
+| | malformed `If-Match` | `400` | An absent `If-Match` is fine and deletes whatever version is stored |
+| | `Error` | `400` / `500` | `400` for `Error.ValidationFailureCode` (an empty GUID; this union has no `ValidationErrors` case), `500` otherwise |
+
+Outside the union: the framework itself answers a body that cannot be bound (`400`), an unmatched
+route (`404`, including a non-GUID `{id}`) and an unsupported media type (`415`) with the same
+problem shape and trace id, and `GlobalExceptionHandler` answers an unexpected exception with `500`.
+The `Error` to status table is configurable (`HttpMappingOptions.ErrorStatusCodes`). The OpenAPI
+document at `/openapi/v1.json` declares these responses, the `ETag` and paging response headers,
+and example bodies.
 
 ## Trace id and unhandled exceptions
 
@@ -895,14 +1141,15 @@ a version that is no longer current is refused.
 - **On the wire it is a weak ETag.** `ProductVersion.ToETag()` renders `W/"3"` and
   `ProductVersion.ParseETag` reads it back (anything else, including a strong tag or `*`, is not
   a version). `GET /api/products/{id}` and `POST /api/products` return it in the `ETag` header and
-  `ProductDto` carries the same number in its `version` member; a successful `PUT` answers `204` with
-  the *new* `ETag`.
-- **`If-Match` carries it back.** `PUT` requires it: absent is `428 Precondition Required`, present
-  but not a well-formed tag is a `400` validation problem naming the header. `DELETE` treats it as
-  optional — absent deletes whatever is stored, present is enforced. Parsing lives in one place,
+  `ProductDto` carries the same number in its `version` member; a successful `PUT` answers `204` (and
+  a successful `PATCH` `200` with the product) with the *new* `ETag`.
+- **`If-Match` carries it back.** `PUT` and `PATCH` require it: absent is `428 Precondition Required`,
+  present but not a well-formed tag is a `400` validation problem naming the header. `DELETE` treats
+  it as optional — absent deletes whatever is stored, present is enforced. Parsing lives in one place,
   [`IfMatchHeader.Parse`](src/MediatrUnionPoc.Api/Http/IfMatchHeader.cs), a small union of
   `ProductVersion`, `MissingIfMatch` and `ValidationErrors`.
-- **A stale version is a `412`.** `UpdateProductCommand.ExpectedVersion` (required) and
+- **A stale version is a `412`.** `UpdateProductCommand.ExpectedVersion` and
+  `PatchProductCommand.ExpectedVersion` (required) and
   `DeleteProductCommand.ExpectedVersion` (optional) travel with the command; the handler compares
   it to the loaded product first and returns `PreconditionFailed`, so most stale writes never reach
   the database. A request that passes that check and then loses a race to another writer is
@@ -945,11 +1192,11 @@ two layers that share one definition:
 
 ```bash
 # Create: 201 with ETag: W/"1"
-curl -i -X POST localhost:5000/api/products -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
+curl -i -X POST localhost:5233/api/products -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
   -d '{"name":"Widget","price":9.99}'
 
 # No If-Match: 428.  Stale If-Match: 412.  Current If-Match: 204 with ETag: W/"2"
-curl -i -X PUT localhost:5000/api/products/$ID -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' \
+curl -i -X PUT localhost:5233/api/products/$ID -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' \
   -H "Content-Type: application/json" -d '{"name":"Widget Pro","price":19.99}'
 ```
 
@@ -961,7 +1208,7 @@ each member is either *absent* (leave that field alone) or *present* (replace it
 
 ```bash
 # Rename only; the price is untouched. 200 with the whole product and the new ETag: W/"2"
-curl -i -X PATCH localhost:5000/api/products/$ID -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' \
+curl -i -X PATCH localhost:5233/api/products/$ID -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' \
   -H "Content-Type: application/merge-patch+json" -d '{"name":"Widget Pro"}'
 ```
 
@@ -1035,7 +1282,7 @@ order. The request is bound from the query string, and every parameter is option
 Filters combine with AND. Names bind case-insensitively, so `PageNumber=2` works too.
 
 ```bash
-curl -i 'localhost:5000/api/products?nameContains=widget&minPrice=5&sort=name,-price&pageNumber=2&pageSize=2'
+curl -i 'localhost:5233/api/products?nameContains=widget&minPrice=5&sort=name,-price&pageNumber=2&pageSize=2'
 ```
 
 **Database-agnostic by construction.** Domain and Application never see `IQueryable` or EF Core.
@@ -1099,7 +1346,7 @@ without reading the body:
   above (5 matching products, size 2, page 2):
 
   ```text
-  Link: <http://localhost:5000/api/products?nameContains=widget&minPrice=5&sort=name,-price&pageNumber=1&pageSize=2>; rel="first", <…pageNumber=1…>; rel="prev", <…pageNumber=3…>; rel="next", <…pageNumber=3…>; rel="last"
+  Link: <http://localhost:5233/api/products?nameContains=widget&minPrice=5&sort=name,-price&pageNumber=1&pageSize=2>; rel="first", <…pageNumber=1…>; rel="prev", <…pageNumber=3…>; rel="next", <…pageNumber=3…>; rel="last"
   ```
 
 The OpenAPI document declares the query parameters (described from the XML docs on
@@ -1244,9 +1491,12 @@ Every path calls `IAuthorizationService` under the hood and ends up asking the r
    type, which only the calling handler knows); it returns a plain `NotAuthorized?` instead, for
    the handler to pass straight to `TResponse.FromNotAuthorized(...)`.
 4. **[`UpdateProductHandler`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductHandler.cs)**
-   — loads the product, then calls
-   `resourceAuthorizationService.AuthorizeAsync(request.Principal, OwnedProductResource.FromDomain(product), AuthorizationPolicies.ProductOwner, cancellationToken)`,
-   returning `UpdateProductResult.FromNotAuthorized(notAuthorized)` on failure before ever calling
+   (and `PatchProductHandler`) — loads the product through the shared
+   [`LoadForChangeAsync`](src/MediatrUnionPoc.Application/Features/Products/Common/ProductChangeExtensions.cs)
+   step, which calls
+   `resourceAuthorizationService.AuthorizeAsync(principal, OwnedProductResource.FromDomain(product), AuthorizationPolicies.ProductOwner, cancellationToken)`
+   after the lookup and before the version check. The handler returns
+   `UpdateProductResult.FromNotAuthorized(notAuthorized)` on failure before ever calling
    `product.UpdateDetails(...)`. `UpdateProductCommand` deliberately does **not** implement
    `IRequiresAuthorization` — that pipeline path runs before any resource is loaded, too early for
    an ownership check.
@@ -1280,7 +1530,7 @@ native `IAuthorizationService` behavior:
   1:1 requirement-to-handler constraint); a requirement succeeds if *any one* of its handlers
   calls `context.Succeed(requirement)` (OR across handlers) — the same "any match is enough"
   shape `AdministratorAuthorizationHandler` already applies *within* a single handler across
-  multiple allowed roles, just one level up, across handlers..
+  multiple allowed roles, just one level up, across handlers.
 
 [`ResourceAuthorizationOrAcrossHandlersTests`](tests/MediatrUnionPoc.Application.Tests/Authorization/ResourceAuthorizationOrAcrossHandlersTests.cs)
 exercises this generically (multiple handlers registered for the same requirement type, only one
@@ -1296,7 +1546,7 @@ This POC has no real authentication — no login, no JWTs, no cookies. Instead,
 - **`X-Admin`** — a value of `"true"` (case-insensitive) adds an `Administrator` role claim, read
   by `DeleteAsync` to satisfy the `Administrator` policy.
 - **`X-Caller-Id`** — its value becomes the caller's `ClaimTypes.NameIdentifier` claim, read by
-  `CreateAsync` (to set the new product's owner) and `UpdateAsync` (to prove ownership).
+  `CreateAsync` (to set the new product's owner) and `UpdateAsync` / `PatchAsync` (to prove ownership).
 
 The principal is built by a static extension member in `Api/Http`
 (`extension(ClaimsPrincipal) { public static ClaimsPrincipal FromCallerHeaders(...) }`), called as
@@ -1307,19 +1557,19 @@ Try both against a running instance (`dotnet run --project src/MediatrUnionPoc.A
 ```bash
 # Resource-based (UpdateProductCommand, ProductOwner policy)
 
-# Create as caller "alice" — she becomes the product's owner
-curl -i -X POST https://localhost:<port>/api/products \
+# Create as caller "alice" — she becomes the product's owner (201, ETag: W/"1")
+curl -i -X POST http://localhost:5233/api/products \
   -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
   -d '{"name":"Widget","price":9.99}'
 
 # 403 Forbidden — "bob" didn't create this product
-curl -i -X PUT https://localhost:<port>/api/products/<id> \
-  -H "X-Caller-Id: bob" -H "Content-Type: application/json" \
+curl -i -X PUT http://localhost:5233/api/products/<id> \
+  -H "X-Caller-Id: bob" -H 'If-Match: W/"1"' -H "Content-Type: application/json" \
   -d '{"name":"Widget v2","price":12.99}'
 
 # 204 No Content — "alice" owns this product
-curl -i -X PUT https://localhost:<port>/api/products/<id> \
-  -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
+curl -i -X PUT http://localhost:5233/api/products/<id> \
+  -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' -H "Content-Type: application/json" \
   -d '{"name":"Widget v2","price":12.99}'
 ```
 
@@ -1327,10 +1577,10 @@ curl -i -X PUT https://localhost:<port>/api/products/<id> \
 # Role-based (DeleteProductCommand, Administrator policy)
 
 # 403 Forbidden — no administrator identity
-curl -i -X DELETE https://localhost:<port>/api/products/<id>
+curl -i -X DELETE http://localhost:5233/api/products/<id>
 
 # 204 No Content — claims Administrator
-curl -i -X DELETE https://localhost:<port>/api/products/<id> -H "X-Admin: true"
+curl -i -X DELETE http://localhost:5233/api/products/<id> -H "X-Admin: true"
 ```
 
 > [!WARNING]
@@ -1383,6 +1633,7 @@ To gate another command the way `UpdateProductCommand` is gated (ownership-only)
 5. Add `NotAuthorized` to the response union's case list and implement `IAuthorizable<TSelf>`, the
    same as the role-based case above — both patterns converge on this same interface.
 6. Add a `NotAuthorized` arm to the controller's `switch`, mapping it to `403 Forbidden`.
+
 ### Why not `IAuthorizationRequirementData` attributes
 
 .NET 11 widens `IAuthorizationRequirementData`-backed attribute authorization (declaring
@@ -1400,17 +1651,20 @@ endpoint-attribute-discovery step in this repo's authorization path for that fea
 The diagrams above show the pipeline shape in the abstract. This one traces a single, concrete
 request — `PUT /api/products/{id}` — all the way through, branching at every point where a
 different case of [`UpdateProductResult`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductResult.cs)
-(`union(ProductDto, NotFound, ValidationErrors, Error, NotAuthorized, PreconditionFailed)`) could
-come back. Each terminal branch is tagged with the case type it produces («ProductDto», «NotFound»,
-«ValidationErrors», «Error», «NotAuthorized», «PreconditionFailed») and color-coded so the same case is easy to follow from where it's
-created to the HTTP status it becomes.
+(`union(ProductDto, NotFound<ProductId>, ValidationErrors, Error, NotAuthorized, PreconditionFailed, Conflict)`)
+could come back. Each terminal branch is tagged with the case type it produces («ProductDto», «NotFound»,
+«ValidationErrors», «Error», «NotAuthorized», «PreconditionFailed», «Conflict») and color-coded so
+the same case is easy to follow from where it's created to the HTTP status it becomes. (`PATCH`
+follows the same path with the same seven cases, and answers `200` with the product instead of `204`.)
 
-Five of the six cases are actually reachable from
+Six of the seven cases are actually reachable from
 [`UpdateProductHandler`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductHandler.cs)
 as written today, including the resource-based `ProductOwner` check described in
 [Authorization](#authorization) above. `«Error»` is included because the union *declares* it as a
 possible outcome — reserved for a future unexpected-failure path — even though nothing in the
-current handler produces it; the diagram marks that branch as dashed for exactly this reason.
+current handler produces it; the diagram marks that branch as dashed for exactly this reason. A
+missing or malformed `If-Match` never reaches this diagram: the controller answers `428` or `400`
+before sending the command.
 
 ```mermaid
 flowchart TD
@@ -1420,6 +1674,7 @@ flowchart TD
     classDef error fill:#f1f3f5,stroke:#495057,stroke-width:2px,stroke-dasharray: 4 3;
     classDef notauthorized fill:#e5dbff,stroke:#7048e8,stroke-width:2px;
     classDef precondition fill:#d0ebff,stroke:#1971c2,stroke-width:2px;
+    classDef conflict fill:#ffec99,stroke:#f08c00,stroke-width:2px;
 
     Client(["PUT /api/products/{id}<br/>If-Match: W/&quot;n&quot;<br/>body: name, price"]) --> Ctrl["ProductsController.Update"]
     Ctrl --> Build["new UpdateProductCommand(id, name, price, principal, expectedVersion)"]
@@ -1460,11 +1715,21 @@ flowchart TD
     Log2f --> Map6["controller switch"]:::precondition
     Map6 --> R412["412 Precondition Failed"]:::precondition
 
-    Ver -->|"yes"| Update["product.UpdateDetails(name, price)<br/>Version = Version.Next()"]
+    Ver -->|"yes"| Name{"repository.ExistsWithNameAsync(name, excludingId: id)"}
+
+    Name -->|"yes"| Dup["«Conflict»<br/>ProductConflicts.NameTaken(name)"]:::conflict
+    Dup --> Roll5["TransactionBehavior<br/>RollbackAsync()"]:::conflict
+    Roll5 --> Log2g["LoggingBehavior<br/>log: result = Conflict"]:::conflict
+    Log2g --> Map7["controller switch"]:::conflict
+    Map7 --> R409["409 Conflict"]:::conflict
+
+    Name -->|"no"| Update["product.UpdateDetails(name, price)<br/>Version = Version.Next()"]
     Update --> Ok["«ProductDto»<br/>ProductDto.FromDomain(product)"]:::success
     Ok --> Commit["TransactionBehavior<br/>CommitAsync() then SaveChangesAsync()"]:::success
     Commit -->|"a concurrent write won the race:<br/>CommitAsync returns ConcurrencyConflict"| Stale2["Rollback, then<br/>FromCommitFailure(ConcurrencyConflict)<br/>= «PreconditionFailed»"]:::precondition
+    Commit -->|"a concurrent request took the name:<br/>CommitAsync returns UniqueViolation"| Dup2["Rollback, then<br/>FromCommitFailure(UniqueViolation)<br/>= «Conflict»"]:::conflict
     Stale2 --> Map6
+    Dup2 --> Map7
     Commit --> Log2c["LoggingBehavior<br/>log: result = ProductDto"]:::success
     Log2c --> Map3["controller switch"]:::success
     Map3 --> R204["204 No Content + new ETag"]:::success
@@ -1485,6 +1750,9 @@ Reading the diagram:
   `ConcurrencyConflict` when two requests both passed that check and one lost the race — the union's
   `FromCommitFailure` maps both to the one outcome the caller can act on. See
   [Optimistic concurrency](#optimistic-concurrency-productversion-etag-and-if-match).
+- **Orange («Conflict»)** likewise has two sources ending in one case: the handler's up-front name
+  check, and the commit-time `UniqueViolation` when two requests both passed that check. See
+  [Duplicate product names](#duplicate-product-names).
 - **Red («ValidationErrors»)** short-circuits *before* `TransactionBehavior` even runs — no
   transaction is opened for input that never should have reached the handler.
 - **Yellow («NotFound»)**, **purple («NotAuthorized»)**, and **dashed grey («Error»)** all reach
@@ -1582,6 +1850,35 @@ operation:
 A queue consumer, a scheduled job, and an HTTP controller could all share the exact same
 `Conflict`/`Locked`/`AlreadyProcessed` cases and each map them to something completely different
 in their own boundary code.
+
+## Testing
+
+```bash
+dotnet test                                                     # everything
+dotnet test tests/MediatrUnionPoc.Api.IntegrationTests          # one project
+dotnet test --filter "FullyQualifiedName~Name"                  # a test or class by partial name
+dotnet test --filter "FullyQualifiedName!~ExhaustivenessTests"  # skip the slow compiler probes
+```
+
+Five test projects sit under `tests/`, one per layer plus the layering rules, all xUnit v3. Each
+has its own README.
+
+| Project | What it covers | Persistence |
+| --- | --- | --- |
+| `MediatrUnionPoc.Domain.Tests` | `Money`, `ProductId`, `ProductVersion`, `Product`, `ProductNames`, `PagedResult`, `ProductSort`; no other project referenced | none |
+| `MediatrUnionPoc.Application.Tests` | Union mechanics, the pipeline behaviors and their registration order, every handler, validators, authorization | `IProductRepository` and `IUnitOfWork` substituted with NSubstitute |
+| `MediatrUnionPoc.Infrastructure.IntegrationTests` | `EfCoreUnitOfWork` (commit, rollback, concurrency and unique-violation translation), `ProductRepository` including listing, converters, the EF model | real SQLite, an in-memory database on one kept-open connection per test |
+| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
+| `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions on the compiled assemblies (layering, only Infrastructure sees EF Core, only Api sees MVC) | none |
+
+There is no EF Core InMemory provider anywhere: runtime and tests both use SQLite, so transactions,
+unique indexes and concurrency tokens behave as they would in production.
+
+**Compile-time proof.** Four one-file projects under `tests/CompileTimeChecks/` (`Exhaustive`,
+`NonExhaustive`, `ShouldCommitExhaustive`, `ShouldCommitNonExhaustive`) are kept out of
+`MediatrUnionPoc.slnx` on purpose: the `NonExhaustive` pair are supposed to fail to build.
+`ExhaustivenessTests` shells out to `dotnet build` against each and asserts the `CS8509` outcome; see
+[`tests/CompileTimeChecks/README.md`](tests/CompileTimeChecks/README.md).
 
 ## Notes and gotchas
 
@@ -1695,6 +1992,8 @@ something specific to this repo, its entry links to the official documentation.
 | **`ProductVersion`** *(project-specific)* | The optimistic-concurrency version of a `Product`: a Vogen `long` that starts at 1 and is advanced by the domain on every mutation, exposed on the wire as the weak `ETag` `W/"n"`. See [Optimistic concurrency](#optimistic-concurrency-productversion-etag-and-if-match). |
 | **`ITransactionOutcome<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract bool ShouldCommit(TSelf)`) so `TransactionBehavior` can ask the union itself whether to commit or roll back, without inspecting which case type came back by name. See [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means). |
 | **`IAuthorizable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromNotAuthorized(NotAuthorized)`) so either authorization pattern can build that union's own `NotAuthorized` case generically. See [Authorization](#authorization). |
+| **`IRequiresAuthorization`** *(project-specific)* | A request marker exposing `ClaimsPrincipal Principal` and `string PolicyName`; it opts the request into `AuthorizationBehavior`, which needs the response union to implement `IAuthorizable<TSelf>`. Only `DeleteProductCommand` uses it. See [Role-based](#role-based-irequiresauthorization--authorizationbehavior). |
+| **`CommitResult` / `CommitFailure`** *(project-specific)* | The Domain unions `IUnitOfWork.CommitAsync` returns: `CommitResult` is `Committed`, `ConcurrencyConflict` or `UniqueViolation`, and `CommitFailure` is the two failing cases. See [A commit can fail too](#a-commit-can-fail-too-icommitfailable). |
 | **Case type** *(C# spec term)* | Any one of the types listed in a union's declaration (`union Name(CaseA, CaseB, CaseC)` — `CaseA`, `CaseB`, and `CaseC` are all case types of `Name`). This repo further splits case types into two roles it names itself — **shared** and **bespoke**, below — because the spec term alone doesn't distinguish them. |
 | **Shared case type** *(project-specific)* | A plain, meaning-free record (`Success`, `NotFound`, `Error`, ...) reused across many unions. A shared case type's identity never implies what it means for commit/rollback or anything else — only the union that declares it decides that; see [Case types used here](#case-types-used-here). |
 | **Bespoke case type** *(project-specific)* | A case type carrying one operation's actual payload (`ProductDto`, a hypothetical `PongDto`) rather than a meaning-free shared record. It can still appear in more than one union — `ProductDto` is the success case of both `CreateProductResult` and `GetProductByIdResult`, and again wrapped in `PagedResult<ProductDto>` inside `GetPagedProductsResult` — but unlike a shared case type, that reuse is because those operations happen to succeed with the same payload shape, not because its identity is deliberately meaning-free. |

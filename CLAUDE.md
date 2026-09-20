@@ -4,7 +4,7 @@ This file provides guidance to AI coding assistants working with code in this re
 
 ## What this is
 
-A proof of concept testing whether C#'s `union` type (a C# 15 / .NET 11 preview language feature — works as a MediatR/CQRS response type, replacing
+A proof of concept testing whether C#'s `union` type (a C# 15 / .NET 11 preview language feature) works as a MediatR/CQRS response type, replacing
 thrown exceptions and null with a closed, compiler-exhaustive set of outcomes per operation. See
 `README.md` for the full write-up (motivation, design rationale, Mermaid diagrams) — this file only
 covers what a session needs to be productive quickly.
@@ -15,9 +15,13 @@ covers what a session needs to be productive quickly.
 dotnet build                                    # build the whole solution
 dotnet test                                     # run all tests
 dotnet test --filter "FullyQualifiedName~Name"  # run a single test/class by (partial) name
-dotnet run --project src/MediatrUnionPoc.Api    # run the API locally
+dotnet run --project src/MediatrUnionPoc.Api    # run the API locally (http://localhost:5233)
 dotnet format whitespace                        # auto-fix whitespace/using-order issues
 ```
+
+Persistence is SQLite everywhere. With no `ConnectionStrings:Products` value the API keeps a private
+in-memory database (empty on every start, schema via `EnsureCreated`); set it to e.g.
+`Data Source=products.db` to persist. There is no EF Core InMemory provider anywhere.
 
 The SDK is pinned via `global.json` to an exact .NET 11 preview build (`allowPrerelease: true`).
 Without it, some tools (Visual Studio in particular) fall back to the newest *stable* SDK on the
@@ -57,11 +61,11 @@ machine and fail with `NETSDK1045`.
 Each `src/` project has its own unit test project, named after it, plus a separate integration test
 project wherever tests need a real database, a real HTTP host, or both:
 
-- `tests/MediatrUnionPoc.Domain.Tests` — pure unit tests for `Money`, `ProductId`, and `Product`;
-  no dependency on any other project.
+- `tests/MediatrUnionPoc.Domain.Tests` — pure unit tests for the value objects, `Product`,
+  `ProductNames`, `PagedResult` and the sort vocabulary; no dependency on any other project.
 - `tests/MediatrUnionPoc.Application.Tests` — xUnit v3 + NSubstitute, organized by what's under test
-  (`Unions/`, `Behaviors/`, `Handlers/`, `Validators/`). Handlers are tested against a substituted
-  `IProductRepository`, never the real EF Core provider.
+  (`Unions/`, `Behaviors/`, `Handlers/`, `Validators/`, `Authorization/`, `Features/`). Handlers are
+  tested against a substituted `IProductRepository`, never the real EF Core provider.
 - `tests/MediatrUnionPoc.Infrastructure.IntegrationTests` — the one project that exercises the real
   EF Core SQLite provider (an in-memory database on one kept-open connection per test) end-to-end
   (`EfCoreUnitOfWorkTests`), rather than substituting `IUnitOfWork`.
@@ -82,8 +86,17 @@ keeping it out of the `.slnx`, `.csharpierignore` interaction).
 **The core pattern**: every command/query returns a `union` of exactly the outcomes that operation
 can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error, Conflict)`) and never
 throws for an expected outcome (validation failure, not-found, etc.) — the controller's `switch`
-is the only place a union gets translated into an HTTP status. See `README.md`'s "Why this
-matters" and "Shared case types are meaning-free" sections for the full rationale.
+is the only place a union gets translated into an HTTP status. See `README.md`'s "No exceptions for
+expected outcomes" and "Shared case types are meaning-free" sections for the full rationale. The
+per-endpoint status table is `README.md`'s "The HTTP contract" section; note that a successful `PUT`
+returns its `ProductDto` case as `204` (with the new `ETag`), `PATCH` returns it as `200`, and
+`DELETE`'s `Success` is `204`.
+
+Unions and their cases: `CreateProductResult` (ProductDto, ValidationErrors, Error, Conflict);
+`GetProductByIdResult` (ProductDto, NotFound, Error); `GetPagedProductsResult` (PagedResult, ValidationErrors,
+Error); `UpdateProductResult` and `PatchProductResult` (ProductDto, NotFound, ValidationErrors, Error,
+NotAuthorized, PreconditionFailed, Conflict); `DeleteProductResult` (Success, NotFound, Error,
+NotAuthorized, PreconditionFailed). `Failure` is defined but no Products union declares it.
 
 **MediatR pipeline** (registered in `Application/DependencyInjection.cs`, in this exact order):
 `LoggingBehavior` → `AuthorizationBehavior` → `ValidationBehavior` → `TransactionBehavior` — who's
@@ -99,8 +112,9 @@ calling is checked before whether their input is well-formed. When `CommitAsync`
 - `ICommitFailable<TSelf>` — a union implements `static abstract TSelf
   FromCommitFailure(CommitFailure)` as an exhaustive `switch` over `ConcurrencyConflict` /
   `UniqueViolation`, deciding what a refused commit means for that operation (e.g. Update:
-  `ConcurrencyConflict` → `PreconditionFailed`; Create/Update: `UniqueViolation` → `Conflict`); the compiler forces every transactional union to
-  classify every commit failure.
+  `ConcurrencyConflict` → `PreconditionFailed`; Create/Update/Patch: `UniqueViolation` → `Conflict`;
+  Create's `ConcurrencyConflict` and Delete's `UniqueViolation` → `Error`); the compiler forces every
+  transactional union to classify every commit failure.
 - `IQuery<TResponse>` — read-only, never wrapped in a transaction.
 - `IValidatable<TSelf>` — a union implements this (`static abstract TSelf
   FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can short-circuit generically
@@ -110,8 +124,14 @@ calling is checked before whether their input is well-formed. When `CommitAsync`
   whichever ASP.NET Core authorization policy `PolicyName` names (`IAuthorizationService` + a
   custom `IAuthorizationHandler`). Requires the response union to implement
   `IAuthorizable<TResponse>` (a `static abstract TSelf FromNotAuthorized(NotAuthorized)`), the
-  same generic short-circuit pattern `IValidatable` uses for validation. See README's
+  same generic short-circuit pattern `IValidatable` uses for validation. Only `DeleteProductCommand`
+  uses it; `Update`/`Patch` check ownership inside the handler instead (`LoadForChangeAsync` →
+  `ResourceAuthorizationService`), since that needs the loaded product. See README's
   "Authorization" section for how to configure it and gate a new command behind it.
+
+`LoggingBehavior` applies to every request, `ValidationBehavior` to any request whose response
+union is `IValidatable` (all six operations), `AuthorizationBehavior` to `IRequiresAuthorization`
+requests, `TransactionBehavior` to `ITransactionalCommand` requests (Create, Update, Patch, Delete).
 
 **Listing** (`GET /api/products`): the Domain defines a database-agnostic vocabulary
 (`ProductCriteria`, `ProductSort` with a `ProductSortField` enum allowlist, `PagedResult<T>` — the
@@ -131,11 +151,16 @@ instead of `TransactionBehavior` pattern-matching a fixed list of known case typ
 
 **Unique product names**: two products may not share a name ignoring case and surrounding
 whitespace (global, not per owner). `Domain/ProductNames.Normalize` is the one definition of that
-rule; `Product.NormalizedName` carries it. `Create`/`Update` handlers check up front through
+rule; `Product.NormalizedName` carries it. `Create`/`Update`/`Patch` handlers check up front through
 `IProductRepository.ExistsWithNameAsync(name, excludingId)` and return `Conflict` (409); a unique
 index on `NormalizedName` is the race backstop, which `EfCoreUnitOfWork.CommitAsync` reports as
-`UniqueViolation` and those two unions' `FromCommitFailure` maps to the same `Conflict`. `Delete`
+`UniqueViolation` and those three unions' `FromCommitFailure` maps to the same `Conflict`. `Delete`
 has no `Conflict` case.
+
+**Optimistic concurrency**: `ProductVersion` (advanced by the Domain on every mutation) is exposed as
+a weak `ETag` (`W/"n"`). `PUT` and `PATCH` require `If-Match` (absent 428, malformed 400, stale 412);
+`DELETE` treats it as optional. `IfMatchHeader.Parse` (Api) classifies the header before any command is
+sent.
 
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It

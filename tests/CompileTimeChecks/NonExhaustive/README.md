@@ -1,8 +1,8 @@
 # NonExhaustive
 
 Negative control for the union-exhaustiveness proof. `NonExhaustiveSwitch.cs` switches over
-`CreateProductResult` (from `MediatrUnionPoc.Application`) but deliberately omits the `Error`
-case, with no discard arm. **This project is supposed to fail to build** — that failure, with a
+its own probe-local union (`ProbeResult(Created, Invalid, Failed)`) but deliberately omits the
+`Failed` case, with no discard arm. **This project is supposed to fail to build** — that failure, with a
 real `CS8509` ("the switch expression does not handle all possible values ... it is not
 exhaustive") from the actual installed compiler, is the whole point.
 
@@ -12,9 +12,9 @@ out of `MediatrUnionPoc.slnx`, and how they're consumed by
 
 ## Dependencies
 
-**Project references:** `MediatrUnionPoc.Application` — for `CreateProductResult` and its case
-types. No package references, and (see `Directory.Build.props`) no `GenerateDocumentationFile`
-requirement.
+**Project references:** `MediatrUnionPoc.Application` (the probe's own types do not use it; it keeps
+the four probes' project setup identical). No package references, and (see `Directory.Build.props`)
+no `GenerateDocumentationFile` requirement.
 
 ## Usage
 

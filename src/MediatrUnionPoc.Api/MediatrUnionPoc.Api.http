@@ -5,7 +5,51 @@ Accept: application/json
 
 ###
 
-GET {{MediatrUnionPoc.Api_HostAddress}}/weatherforecast/
+# Create: 201 with ETag: W/"1". X-Caller-Id becomes the owner.
+POST {{MediatrUnionPoc.Api_HostAddress}}/api/products
+X-Caller-Id: alice
+Content-Type: application/json
+
+{ "name": "Widget", "price": 9.99 }
+
+###
+
+# List: 200 with X-Total-Count and Link headers.
+GET {{MediatrUnionPoc.Api_HostAddress}}/api/products?sort=name,-price&pageSize=10
 Accept: application/json
+
+###
+
+# The requests below need an id and its current ETag from the create/get responses.
+@id = 00000000-0000-0000-0000-000000000001
+
+GET {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+Accept: application/json
+
+###
+
+# Replace: 204 with the new ETag. If-Match is required (428 without it).
+PUT {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+X-Caller-Id: alice
+If-Match: W/"1"
+Content-Type: application/json
+
+{ "name": "Widget Pro", "price": 19.99 }
+
+###
+
+# Partial update (JSON Merge Patch): 200 with the product and the new ETag.
+PATCH {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+X-Caller-Id: alice
+If-Match: W/"2"
+Content-Type: application/merge-patch+json
+
+{ "price": 14.99 }
+
+###
+
+# Delete: 204. Administrator only; If-Match is optional here.
+DELETE {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+X-Admin: true
 
 ###

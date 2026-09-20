@@ -32,10 +32,11 @@ C# 14 extension members in `MediatrUnionPoc.Api.Http` (`ResultHttpExtensions`):
 
 Products carry an optimistic-concurrency version, exposed as a weak ETag `W/"n"`. `GET` by id and
 `POST` return it in the `ETag` header (and `ProductDto` has a `version` member); a successful `PUT`
-returns the new one with `204`. `PUT` requires `If-Match`: missing is `428`, malformed is a `400`
+returns the new one with `204`, a successful `PATCH` with `200`. `PUT` and `PATCH` require
+`If-Match`: missing is `428`, malformed is a `400`
 validation problem naming the header, stale is `412`. On `DELETE` it is optional, and enforced when
 present. `IfMatchHeader.Parse` classifies the header (`ProductVersion`, `MissingIfMatch` or
-`ValidationErrors`) so both actions share one parser, and `Response.SetETag(version)`
+`ValidationErrors`) so all three actions share one parser, and `Response.SetETag(version)`
 (`ETagHttpExtensions`) writes the header. The OpenAPI document declares the `409`/`412`/`428` responses
 with example bodies (`PreconditionProblemExampleTransformer`) and the `ETag` response header on
 actions marked `[ReturnsETag]` (`ETagResponseHeaderTransformer`). See the repo root README's
@@ -158,7 +159,10 @@ Run locally:
 dotnet run --project src/MediatrUnionPoc.Api
 ```
 
-Then hit `ProductsController`'s endpoints, or browse the generated OpenAPI document. Action names
+The default launch profile listens on `http://localhost:5233`. Hit `ProductsController`'s endpoints
+(the complete endpoint-by-outcome table is the repo root README's
+[The HTTP contract](../../README.md#the-http-contract-every-endpoint-and-outcome)), or browse the
+OpenAPI document (`/openapi/v1.json`) and Scalar UI (`/scalar`), both Development-only. Action names
 keep their `Async` suffix in MVC's route/action metadata — `Program.cs` sets
 `SuppressAsyncSuffixInActionNames = false` (ASP.NET Core's default is `true`), because
 `CreatedAtAction`'s `nameof(GetByIdAsync)` calls would otherwise silently stop matching the action

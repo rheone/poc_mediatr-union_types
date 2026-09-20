@@ -2,16 +2,22 @@
 
 Unit tests for `MediatrUnionPoc.Application`, organized by what's under test:
 
-- `Unions/` — union case-type behavior, `ITransactionOutcome`/`IValidatable` implementations, and
-  `ExhaustivenessTests.cs` (shells out to the real `dotnet build` against the scratch projects
-  under `tests/CompileTimeChecks/` — see that folder's `README.md`).
-- `Behaviors/` — the MediatR pipeline behaviors (`LoggingBehavior`, `ValidationBehavior`,
-  `TransactionBehavior`), including `PipelineRegistrationTests.cs`, which resolves the real,
-  DI-built pipeline to prove the registration order (Logging → Validation → Transaction), and that
-  a plain `ICommand<TResponse>` never picks up `TransactionBehavior`. `LoggingBehaviorTests.cs`
+- `Unions/` — union case-type behavior, the `ITransactionOutcome` / `IValidatable` /
+  `ICommitFailable` implementations of each result union (`FromCommitFailureTests`,
+  `ResultShouldCommitTests`, ...), JSON serialization of unions, and `ExhaustivenessTests.cs` (shells
+  out to the real `dotnet build` against the scratch projects under `tests/CompileTimeChecks/` — see
+  that folder's `README.md`).
+- `Behaviors/` — the MediatR pipeline behaviors (`LoggingBehavior`, `AuthorizationBehavior`,
+  `ValidationBehavior`, `TransactionBehavior`, including `TransactionBehaviorCommitFailureTests` for a
+  refused commit), and `PipelineRegistrationTests.cs`, which resolves the real, DI-built pipeline to
+  prove the registration order (Logging → Authorization → Validation → Transaction, with Authorization
+  only for `IRequiresAuthorization` requests), and that a plain `ICommand<TResponse>` never picks up
+  `TransactionBehavior`. `LoggingBehaviorTests.cs`
   proves the behavior is purely observational: it always calls `next` exactly once, returns its
   result unchanged, and propagates rather than swallows an exception `next` throws.
-- `Handlers/` — every command/query handler (`Create`, `Update`, `Delete`, `GetById`,
+- `Authorization/` — the requirement/handler pairs, `ResourceAuthorizationService`, and the
+  production policy matrix.
+- `Handlers/` — every command/query handler (`Create`, `Update`, `Patch`, `Delete`, `GetById`,
   `GetPaged`), with `IProductRepository` substituted via NSubstitute rather than hitting
   `MediatrUnionPoc.Infrastructure`'s real EF Core provider. (The tests that *do* exercise the real
   EF Core SQLite provider — `EfCoreUnitOfWorkTests` and `ProductRepositoryTests` — live in
@@ -19,7 +25,8 @@ Unit tests for `MediatrUnionPoc.Application`, organized by what's under test:
   handler tests.)
 - `Validators/` — the FluentValidation validators for each command/query, including the per-field
   errors of `GetPagedProductsValidator`.
-- `Features/` — `ProductSortParser` (the `sort` text grammar and its errors) and `ProductDto`.
+- `Features/` — `ProductSortParser` (the `sort` text grammar and its errors), `ProductDto`,
+  `Optional<T>`, `OwnedProductResource` and the command shapes.
 
 `Unions/ResultShouldCommitTests.cs` covers `CreateProductResult.ShouldCommit` and
 `UpdateProductResult.ShouldCommit` — the two result unions `TransactionBehaviorTests` doesn't

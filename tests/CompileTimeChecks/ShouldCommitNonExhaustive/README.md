@@ -17,7 +17,7 @@ out of `MediatrUnionPoc.slnx`, and how they're consumed by
 union whose cases `ShouldCommit` classifies. No package references, and (see
 `Directory.Build.props`) no `GenerateDocumentationFile` requirement.
 
-`ShouldCommitProbe.cs` is also excluded from `.csharpierignore`-listed formatting (see that file)
+`ShouldCommitProbe.cs` is listed in `.csharpierignore` and so skipped by the formatter
 — CSharpier 1.3.0 can't parse a file that declares a `union`.
 
 ## Usage

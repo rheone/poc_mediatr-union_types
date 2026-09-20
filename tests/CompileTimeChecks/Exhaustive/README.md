@@ -1,8 +1,9 @@
 # Exhaustive
 
-Positive control for the union-exhaustiveness proof. `ExhaustiveSwitch.cs` switches over
-`CreateProductResult` (from `MediatrUnionPoc.Application`) covering every declared case
-(`ProductDto`, `ValidationErrors`, `Error`), and is expected to build cleanly with no `CS8509`.
+Positive control for the union-exhaustiveness proof. `ExhaustiveSwitch.cs` declares its own
+probe-local union (`ProbeResult(Created, Invalid, Failed)`, deliberately not a production result
+union, so it never breaks when a real union gains a case) and switches over it covering every case;
+it is expected to build cleanly with no `CS8509`.
 
 It exists so a build failure in the sibling `NonExhaustive` project can be attributed specifically
 to its missing case, not to something else about the isolated-project setup (a bad reference, a
@@ -14,9 +15,10 @@ out of `MediatrUnionPoc.slnx`, and how they're consumed by
 
 ## Dependencies
 
-**Project references:** `MediatrUnionPoc.Application` — for `CreateProductResult` and its case
-types. No package references, and (see `Directory.Build.props`) no `GenerateDocumentationFile`
-requirement — it's a one-file compiler probe, not part of the documented codebase.
+**Project references:** `MediatrUnionPoc.Application` (the probe's own types do not use it; it keeps
+the four probes' project setup identical). No package references, and (see `Directory.Build.props`)
+no `GenerateDocumentationFile` requirement — it's a one-file compiler probe, not part of the
+documented codebase.
 
 ## Usage
 

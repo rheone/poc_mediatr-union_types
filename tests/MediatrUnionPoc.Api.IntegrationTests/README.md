@@ -14,10 +14,24 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
 
 - `ProductListingTests.cs` — the list endpoint's query-string contract over HTTP: filter and sort
   binding, per-field `400`s, the paging metadata in the body, `X-Total-Count`, and the `Link`
-  header's exact URLs. It swaps in a manually controlled `TimeProvider` so creation timestamps are
-  deterministic.
-- `ListingOpenApiTests.cs` — the list operation's documented parameters, paging response headers and
-  example in the generated OpenAPI document.
+  header's exact URLs. It swaps in a manually controlled `TimeProvider` (`TestData/ManualTimeProvider`)
+  so creation timestamps are deterministic.
+- `PatchProductTests.cs` — `PATCH` (JSON Merge Patch): absent versus present members, `415` for other
+  media types, `If-Match` rules, ownership, duplicate names and racing patches.
+- `DuplicateProductNameTests.cs` — the `409` duplicate-name rule over HTTP, including racing `POST`s
+  settled by the unique index.
+- `ResultHttpMappingTests.cs` — the `ToProblemResult` extension members and `HttpMappingOptions`
+  (custom error-code statuses, per-call overrides, RFC 7807 shape).
+- `TraceIdTests.cs`, `TraceIdMiddlewareTests.cs` — the trace id in problem bodies, the `X-Trace-Id`
+  header and the log scope.
+- `GlobalExceptionHandlerTests.cs`, `UnhandledExceptionTests.cs` — the `500` problem for an
+  unexpected exception, Development-only `detail`, and client aborts (using `ThrowingSender` and
+  `BlockingSender`).
+- `OptionalJsonConverterTests.cs` — `Optional<T>` binding.
+- `ListingOpenApiTests.cs`, `ConcurrencyOpenApiTests.cs`, `PatchOpenApiTests.cs`,
+  `ProductContractExampleTransformerTests.cs` — what the generated OpenAPI document declares:
+  list parameters and paging headers, the `ETag` header and `409`/`412`/`428` responses, the merge
+  patch media type, and the example bodies.
 
 Nothing here substitutes any dependency other than the database name — this is deliberately the
 one seam in the suite that crosses every layer at once. Tests that need a real database but not a

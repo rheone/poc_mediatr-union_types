@@ -9,11 +9,15 @@ values may be `null` so an explicit JSON `null` reaches the validator and fails 
 the load / ownership / version steps with Update (`Features/Products/Common/ProductChangeExtensions`)
 and the name and price rules with Create and Update (`ProductRuleExtensions`).
 `Common/` holds the shared pipeline machinery: marker interfaces (`ICommand<TResponse>`,
-`ITransactionalCommand<TResponse>`, `IQuery<TResponse>`, `IValidatable<TSelf>`,
-`ICommitFailable<TSelf>`), the MediatR pipeline behaviors (`LoggingBehavior`, `ValidationBehavior`,
-`TransactionBehavior`), and the meaning-free *shared* case types (`Success`, `NotFound`, `Error`,
-`ValidationErrors`, `Failure`, `NotAuthorized`, `PreconditionFailed`, `Conflict`) that the per-feature result unions compose from alongside their own *bespoke*
-case types (e.g. `ProductDto`).
+`ITransactionalCommand<TResponse>`, `IQuery<TResponse>`, `IRequiresAuthorization`,
+`IValidatable<TSelf>`, `IAuthorizable<TSelf>`, `ITransactionOutcome<TSelf>`,
+`ICommitFailable<TSelf>`), the MediatR pipeline behaviors (`LoggingBehavior`,
+`AuthorizationBehavior`, `ValidationBehavior`, `TransactionBehavior`), the authorization
+requirements and handlers (`Common/Authorization/`), and the meaning-free *shared* case types
+(`Success`, `NotFound<TId>`, `Error`, `ValidationErrors`, `Failure`, `NotAuthorized`,
+`PreconditionFailed`, `Conflict`, one file each in `Common/Results/`) that the per-feature result
+unions compose from alongside their own *bespoke* case types (e.g. `ProductDto`). `Failure` is
+defined but no Products union declares it.
 
 Every command/query returns a [`union`](../../README.md#the-c-union-type) of exactly the outcomes
 that operation can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error, Conflict)`)
@@ -94,7 +98,9 @@ prove union/`ShouldCommit` exhaustiveness is a real compiler error — see
 Registered via `AddApplication()` in `DependencyInjection.cs`, called from
 `MediatrUnionPoc.Api`'s `Program.cs`. That one call wires up MediatR (scanning this assembly for
 handlers), the pipeline behaviors in their required order (`LoggingBehavior` →
-`ValidationBehavior` → `TransactionBehavior`), and all FluentValidation validators.
+`AuthorizationBehavior` → `ValidationBehavior` → `TransactionBehavior`: who is calling is checked
+before whether their input is well-formed), the authorization policies and handlers, a
+`TimeProvider`, and all FluentValidation validators.
 
 To add a new operation: create a new `Features/Products/<Operation>/` folder with a
 request/response union pair, a handler, and (if the request needs validation) a validator —
@@ -113,3 +119,8 @@ interface based on what it does:
   returns `FromCommitFailure(...)` when `IUnitOfWork.CommitAsync` reports a failure.
 - Needs `ValidationBehavior` to short-circuit before the handler runs → the response union also
   implements `IValidatable<TSelf>` (`static abstract TSelf FromValidationErrors(ValidationErrors)`).
+- Needs a role/policy check before the handler → the request implements `IRequiresAuthorization`
+  (`Principal`, `PolicyName`) and the response union implements `IAuthorizable<TSelf>`
+  (`static abstract TSelf FromNotAuthorized(NotAuthorized)`); `DeleteProductCommand` does this. An
+  ownership check that needs the loaded resource happens inside the handler instead (`Update` and
+  `Patch`, through `LoadForChangeAsync`).

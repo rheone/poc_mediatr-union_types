@@ -1,7 +1,7 @@
 # MediatrUnionPoc.Domain.Tests
 
 Unit tests for `MediatrUnionPoc.Domain` in isolation — no MediatR, no FluentValidation, no EF Core,
-no mocking framework. Just the two Vogen value objects and the one entity:
+no mocking framework. Just the Vogen value objects, the entity and the Domain's listing vocabulary:
 
 - `MoneyTests.cs` — verifies `Money`'s `Validate` rejects negative amounts and accepts everything
   else.
@@ -13,6 +13,11 @@ no mocking framework. Just the two Vogen value objects and the one entity:
 - `PagedResultTests.cs` — the page arithmetic with hand-worked examples (25 items at size 10 is 3
   pages; no previous on page 1; no next on the last; an empty result has one empty page).
 - `ProductSortTests.cs` — the default sort and the wire names of the sort vocabulary.
+- `ProductVersionTests.cs` — the version's start value, `Next()`, and the weak `ETag` round trip
+  (`ToETag` / `ParseETag`, including what is rejected).
+- `ProductNamesTests.cs` — `ProductNames.Normalize`, the single definition of a duplicate name.
+- `ProductApplyChangesTests.cs` — `Product.ApplyChanges` (the partial-update entry point): which
+  fields change, one version bump per call, and what it never touches.
 
 ## Dependencies
 
