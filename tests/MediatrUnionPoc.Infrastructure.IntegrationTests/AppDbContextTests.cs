@@ -7,8 +7,8 @@ namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 
 /// <summary>
 /// Verifies the EF Core model <see cref="AppDbContext"/> builds for <see cref="Product"/>. The
-/// InMemory provider enforces neither length limits nor value converters' storage types on its own,
-/// so the model metadata is the only place these configuration choices are observable.
+/// model metadata is the direct place to observe these configuration choices (length limits, value
+/// converters' storage types) without depending on what a given database chooses to enforce.
 /// </summary>
 [Trait("Category", "Integration")]
 public class AppDbContextTests
@@ -17,9 +17,10 @@ public class AppDbContextTests
 
     private static IEntityType ProductEntity()
     {
-        using var dbContext = DbContextMother.Create(
-            DbContextMother.NameFor(nameof(AppDbContextTests))
-        );
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        using var dbContext = new AppDbContext(options);
         return dbContext.Model.FindEntityType(typeof(Product))!;
     }
 

@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using MediatrUnionPoc.Domain;
 using MediatrUnionPoc.Infrastructure.IntegrationTests.TestData;
 using Microsoft.EntityFrameworkCore;
@@ -6,12 +5,11 @@ using Microsoft.EntityFrameworkCore;
 namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 
 /// <summary>
-/// Exercises <see cref="EfCoreUnitOfWork"/> end-to-end against the EF Core InMemory provider (no
-/// transactions) and a SQLite <c>:memory:</c> connection (real transactions), confirming that a
-/// rolled-back unit of work never reaches the database while a committed one does — the behavior
+/// Exercises <see cref="EfCoreUnitOfWork"/> end-to-end against a SQLite <c>:memory:</c> connection
+/// (real transactions), confirming that a rolled-back unit of work never reaches the database while
+/// a committed one does — the behavior
 /// <see cref="MediatrUnionPoc.Application.Common.Behaviors.TransactionBehavior{TRequest,TResponse}"/>
-/// depends on. Commit, rollback and dispose semantics are theories asserted identically on both
-/// providers; only what a provider does about holding a transaction is asserted per provider.
+/// depends on.
 /// </summary>
 [Trait("Category", "Integration")]
 public class EfCoreUnitOfWorkTests
@@ -19,30 +17,15 @@ public class EfCoreUnitOfWorkTests
     private const string UpdatedName = "Changed";
     private const decimal UpdatedPrice = 1m;
 
-    /// <summary>Gets every provider the shared contract is asserted against.</summary>
-    public static TheoryData<UnitOfWorkProvider> Providers =>
-        new(UnitOfWorkProvider.InMemory, UnitOfWorkProvider.Sqlite);
-
-    private static Task<UnitOfWorkTestDatabase> CreateDatabaseAsync(
-        UnitOfWorkProvider provider,
-        [CallerMemberName] string test = ""
-    ) =>
-        UnitOfWorkTestDatabase.CreateAsync(
-            provider,
-            DbContextMother.NameFor(nameof(EfCoreUnitOfWorkTests), $"{test}.{provider}")
-        );
-
     /// <summary>Verifies a committed unit of work's changes are visible to a fresh context.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task CommitAsync_AddedProduct_PersistsForFreshContext_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task CommitAsync_AddedProduct_PersistsForFreshContext_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
@@ -64,14 +47,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies a rolled-back unit of work's changes never reach the database.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task RollbackAsync_AddedProduct_DiscardsProduct_Test(UnitOfWorkProvider provider)
+    [Fact]
+    public async Task RollbackAsync_AddedProduct_DiscardsProduct_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
@@ -93,16 +76,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies a rollback leaves nothing in the change tracker, so a later commit cannot persist it.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task RollbackAsync_FollowedByCommitAsync_DoesNotPersistRolledBackProduct_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task RollbackAsync_FollowedByCommitAsync_DoesNotPersistRolledBackProduct_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
@@ -121,16 +102,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies a rollback detaches every tracked entity, including unmodified ones loaded from the database.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task RollbackAsync_TrackedUnmodifiedProduct_DetachesProduct_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task RollbackAsync_TrackedUnmodifiedProduct_DetachesProduct_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         var product = ProductMother.Widget();
         await database.SeedAsync([product], TestContext.Current.CancellationToken);
         await using var dbContext = database.CreateContext();
@@ -145,16 +124,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies a rollback discards an in-place update to a tracked product.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task RollbackAsync_UpdatedTrackedProduct_KeepsStoredValues_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task RollbackAsync_UpdatedTrackedProduct_KeepsStoredValues_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         var product = ProductMother.Widget();
         await database.SeedAsync([product], TestContext.Current.CancellationToken);
         await using var dbContext = database.CreateContext();
@@ -179,16 +156,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies committing an in-place update to a tracked product persists the new values.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task CommitAsync_UpdatedTrackedProduct_PersistsUpdate_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task CommitAsync_UpdatedTrackedProduct_PersistsUpdate_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         var product = ProductMother.Widget();
         await database.SeedAsync([product], TestContext.Current.CancellationToken);
         await using var dbContext = database.CreateContext();
@@ -216,16 +191,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies committing without a prior <see cref="EfCoreUnitOfWork.BeginTransactionAsync"/> still saves staged changes.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task CommitAsync_WithoutBeginTransactionAsync_PersistsStagedChanges_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task CommitAsync_WithoutBeginTransactionAsync_PersistsStagedChanges_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
@@ -246,16 +219,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies a cancelled token stops <see cref="EfCoreUnitOfWork.CommitAsync"/> before anything is saved.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task CommitAsync_CancelledToken_ThrowsAndPersistsNothing_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task CommitAsync_CancelledToken_ThrowsAndPersistsNothing_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
@@ -275,16 +246,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies <see cref="EfCoreUnitOfWork.DisposeAsync"/> is safe when no transaction is held.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task DisposeAsync_NoTransaction_CompletesWithoutThrowing_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task DisposeAsync_NoTransaction_CompletesWithoutThrowing_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var unitOfWork = new EfCoreUnitOfWork(dbContext);
 
@@ -296,16 +265,14 @@ public class EfCoreUnitOfWorkTests
     }
 
     /// <summary>Verifies <see cref="EfCoreUnitOfWork.Dispose"/> is safe when no transaction is held.</summary>
-    /// <param name="provider">The provider under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task Dispose_NoTransaction_CompletesWithoutThrowing_Test(
-        UnitOfWorkProvider provider
-    )
+    [Fact]
+    public async Task Dispose_NoTransaction_CompletesWithoutThrowing_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(provider);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var unitOfWork = new EfCoreUnitOfWork(dbContext);
 
@@ -316,35 +283,15 @@ public class EfCoreUnitOfWorkTests
         Assert.Null(exception);
     }
 
-    /// <summary>Verifies a provider without transaction support begins without throwing and holds no transaction.</summary>
+    /// <summary>Verifies a begin yields a held transaction after <see cref="EfCoreUnitOfWork.BeginTransactionAsync"/>.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task BeginTransactionAsync_ProviderWithoutTransactions_HoldsNoTransaction_Test()
+    public async Task BeginTransactionAsync_Called_StartsTransaction_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.InMemory);
-        await using var dbContext = database.CreateContext();
-        await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
-
-        // Act
-        var exception = await Record.ExceptionAsync(() =>
-            unitOfWork.BeginTransactionAsync(CancellationToken.None)
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
         );
-
-        // Assert
-        Assert.Multiple(
-            () => Assert.Null(exception),
-            () => Assert.Null(dbContext.Database.CurrentTransaction)
-        );
-    }
-
-    /// <summary>Verifies a relational provider yields a held transaction after <see cref="EfCoreUnitOfWork.BeginTransactionAsync"/>.</summary>
-    /// <returns>A task representing the asynchronous test.</returns>
-    [Fact]
-    public async Task BeginTransactionAsync_RelationalProvider_StartsTransaction_Test()
-    {
-        // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.Sqlite);
         await using var dbContext = database.CreateContext();
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
 
@@ -361,7 +308,9 @@ public class EfCoreUnitOfWorkTests
     public async Task BeginTransactionAsync_CalledTwice_ReplacesFirstTransaction_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.Sqlite);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
         await unitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);
@@ -376,13 +325,15 @@ public class EfCoreUnitOfWorkTests
         Assert.NotSame(first, second);
     }
 
-    /// <summary>Verifies a failure to start a transaction on a relational provider propagates instead of being swallowed.</summary>
+    /// <summary>Verifies a failure to start a transaction propagates instead of being swallowed.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task BeginTransactionAsync_RelationalProviderFailsToBegin_Throws_Test()
+    public async Task BeginTransactionAsync_FailsToBegin_Throws_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.Sqlite);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
         await using var foreignTransaction = await dbContext.Database.BeginTransactionAsync(
@@ -402,7 +353,9 @@ public class EfCoreUnitOfWorkTests
     public async Task CommitAsync_AfterBeginTransactionAsync_PersistsAndReleasesTransaction_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.Sqlite);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
         var product = ProductMother.Widget();
@@ -433,7 +386,9 @@ public class EfCoreUnitOfWorkTests
     public async Task RollbackAsync_AfterSavedChangesInTransaction_DiscardsChangesAndReleasesTransaction_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.Sqlite);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
         await unitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);
@@ -463,7 +418,9 @@ public class EfCoreUnitOfWorkTests
     public async Task CommitAsync_ConnectionClosedMidTransaction_ThrowsInvalidOperationException_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.Sqlite);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
         await unitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);
@@ -471,7 +428,7 @@ public class EfCoreUnitOfWorkTests
             ProductMother.Widget(),
             TestContext.Current.CancellationToken
         );
-        await database.Sqlite.Connection.CloseAsync();
+        await database.Connection.CloseAsync();
 
         // Act
         // Assert
@@ -486,7 +443,9 @@ public class EfCoreUnitOfWorkTests
     public async Task DisposeAsync_TransactionHeld_RollsBackSavedChanges_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.Sqlite);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var unitOfWork = new EfCoreUnitOfWork(dbContext);
         await unitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);
@@ -516,7 +475,9 @@ public class EfCoreUnitOfWorkTests
     public async Task Dispose_TransactionHeld_RollsBackSavedChanges_Test()
     {
         // Arrange
-        await using var database = await CreateDatabaseAsync(UnitOfWorkProvider.Sqlite);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = database.CreateContext();
         var unitOfWork = new EfCoreUnitOfWork(dbContext);
         await unitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);

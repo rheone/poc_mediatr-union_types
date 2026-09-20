@@ -12,12 +12,10 @@ namespace MediatrUnionPoc.Infrastructure;
 /// </summary>
 /// <remarks>
 /// The <see cref="IUnitOfWork"/> adapter for EF Core, named for the persistence technology it
-/// adapts rather than for a provider. It serves every EF Core provider: a relational one gets a
-/// real transaction, one without transaction support (InMemory) gets commit-only-saves plus a
-/// change-tracker detach on rollback. Which case applies is decided by a capability check
-/// (<c>Database.IsRelational()</c>), never by catching a provider's exception. A different
-/// persistence technology (NHibernate, say) would be a separate <see cref="IUnitOfWork"/>
-/// implementation, not a branch inside this one.
+/// adapts rather than for a provider. It assumes a relational provider: every begin starts a real
+/// database transaction, and a failure to start one propagates. A different persistence technology
+/// (NHibernate, say) would be a separate <see cref="IUnitOfWork"/> implementation, not a branch
+/// inside this one.
 /// </remarks>
 /// <exception cref="ArgumentNullException"><paramref name="dbContext"/> is <see langword="null"/>.</exception>
 public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
@@ -32,9 +30,7 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Starts a real transaction only when the provider is relational; a provider without
-    /// transaction support (e.g. InMemory) has nothing to begin, so this is a no-op there. Any
-    /// failure to start a transaction on a relational provider propagates. Disposes any
+    /// Starts a real database transaction; any failure to start one propagates. Disposes any
     /// transaction already held first, so a repeated call cannot leak it.
     /// </remarks>
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
@@ -45,10 +41,7 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
             _transaction = null;
         }
 
-        if (_dbContext.Database.IsRelational())
-        {
-            _transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-        }
+        _transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -66,10 +59,9 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Detaches every tracked entity on every provider, in addition to rolling back the relational
-    /// transaction (if any). Without detaching, staged-but-unsaved changes would stay in the change
-    /// tracker and could be persisted by a later <see cref="CommitAsync"/> on the same scoped
-    /// context — and on a provider with no transaction, detaching is the only rollback there is.
+    /// Rolls back the held transaction (if any) and detaches every tracked entity. Without
+    /// detaching, staged-but-unsaved changes would stay in the change tracker and could be
+    /// persisted by a later <see cref="CommitAsync"/> on the same scoped context.
     /// </remarks>
     public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {

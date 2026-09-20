@@ -81,6 +81,7 @@ public class DependencyInjectionTests
     {
         // Arrange
         using var provider = BuildProvider();
+        await provider.EnsureInfrastructureCreatedAsync(TestContext.Current.CancellationToken);
         var product = ProductMother.Widget();
         using (var writeScope = provider.CreateScope())
         {
@@ -98,6 +99,39 @@ public class DependencyInjectionTests
             .ServiceProvider.GetRequiredService<IProductRepository>()
             .GetByIdAsync(product.Id, CancellationToken.None);
         Assert.NotNull(stored);
+    }
+
+    /// <summary>Verifies a rollback undoes changes the scoped context had already saved inside the transaction, as seen from a new scope.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task RollbackAsync_ChangesSavedInsideTransaction_AreAbsentForNewScope_Test()
+    {
+        // Arrange
+        using var provider = BuildProvider();
+        var product = ProductMother.Widget();
+        await provider.EnsureInfrastructureCreatedAsync(TestContext.Current.CancellationToken);
+
+        using (var writeScope = provider.CreateScope())
+        {
+            var unitOfWork = writeScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            await unitOfWork.BeginTransactionAsync(CancellationToken.None);
+            await writeScope
+                .ServiceProvider.GetRequiredService<IProductRepository>()
+                .AddAsync(product, CancellationToken.None);
+            await writeScope
+                .ServiceProvider.GetRequiredService<AppDbContext>()
+                .SaveChangesAsync(TestContext.Current.CancellationToken);
+
+            // Act
+            await unitOfWork.RollbackAsync(CancellationToken.None);
+        }
+
+        // Assert
+        using var readScope = provider.CreateScope();
+        var stored = await readScope
+            .ServiceProvider.GetRequiredService<IProductRepository>()
+            .GetByIdAsync(product.Id, CancellationToken.None);
+        Assert.Null(stored);
     }
 
     /// <summary>Verifies <see cref="DependencyInjection.AddInfrastructure"/> rejects a <see langword="null"/> service collection.</summary>

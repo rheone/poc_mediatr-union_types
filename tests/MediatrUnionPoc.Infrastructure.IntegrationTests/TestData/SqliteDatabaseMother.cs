@@ -1,3 +1,4 @@
+using MediatrUnionPoc.Domain;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -38,6 +39,20 @@ public sealed class SqliteDatabaseMother : IAsyncDisposable
     {
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(Connection).Options;
         return new AppDbContext(options);
+    }
+
+    /// <summary>Saves the given products into the database through a throwaway context.</summary>
+    /// <param name="products">The products to persist.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous seeding.</param>
+    /// <returns>A task representing the asynchronous seeding.</returns>
+    public async Task SeedAsync(
+        IReadOnlyCollection<Product> products,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var seedContext = CreateContext();
+        await seedContext.Products.AddRangeAsync(products, cancellationToken);
+        await seedContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc/>

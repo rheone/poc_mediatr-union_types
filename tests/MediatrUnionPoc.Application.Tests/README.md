@@ -14,7 +14,7 @@ Unit tests for `MediatrUnionPoc.Application`, organized by what's under test:
 - `Handlers/` — every command/query handler (`Create`, `Update`, `Delete`, `GetById`,
   `GetPaged`), with `IProductRepository` substituted via NSubstitute rather than hitting
   `MediatrUnionPoc.Infrastructure`'s real EF Core provider. (The tests that *do* exercise the real
-  EF Core InMemory provider — `EfCoreUnitOfWorkTests` and `ProductRepositoryTests` — live in
+  EF Core SQLite provider — `EfCoreUnitOfWorkTests` and `ProductRepositoryTests` — live in
   `MediatrUnionPoc.Infrastructure.IntegrationTests` instead, since they're database tests, not
   handler tests.)
 - `Validators/` — the FluentValidation validators for each command/query.

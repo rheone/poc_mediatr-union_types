@@ -77,6 +77,7 @@ keep their `Async` suffix in MVC's route/action metadata — `Program.cs` sets
 `CreatedAtAction`'s `nameof(GetByIdAsync)` calls would otherwise silently stop matching the action
 name MVC registers.
 
-There's nothing to configure beyond what `Program.cs` already wires up — no connection string, no
-external service. `MediatrUnionPoc.Infrastructure`'s EF Core provider is in-memory, so each run
-starts with an empty product catalog.
+There's nothing to configure beyond what `Program.cs` already wires up. Persistence is SQLite;
+with no `ConnectionStrings:Products` value the app uses a private in-memory database created at
+startup, so each run starts with an empty product catalog. Set `ConnectionStrings:Products` to a
+SQLite connection string (for example `Data Source=products.db`) to persist across runs.

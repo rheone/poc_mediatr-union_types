@@ -2,11 +2,12 @@
 
 Integration tests for `MediatrUnionPoc.Api` — the one place in the suite that boots the real
 ASP.NET Core host end-to-end: real DI container, real MediatR pipeline, real controller routing,
-and a real (InMemory) database, exercised through actual HTTP requests via
+and a real (SQLite in-memory) database, exercised through actual HTTP requests via
 `Microsoft.AspNetCore.Mvc.Testing`'s `WebApplicationFactory`.
 
-- `ProductsApiFactory.cs` — boots the real host with one substitution: a uniquely-named InMemory
-  database per factory instance, so tests using their own factory never see another test's data.
+- `ProductsApiFactory.cs` — boots the real host with nothing substituted: with no
+  `ConnectionStrings:Products` value each host gets its own private in-memory SQLite database (its
+  schema created at startup), so tests using their own factory never see another test's data.
 - `ProductsControllerTests.cs` — exercises the union-to-HTTP-status mapping each controller
   action's `switch` performs, end to end through routing and the real MediatR pipeline behaviors.
   A fresh `ProductsApiFactory` per test gives each test its own isolated database.
@@ -61,4 +62,4 @@ dotnet test tests/MediatrUnionPoc.Api.IntegrationTests
 ```
 
 Slower than the unit-test projects (each test boots a real host), but still fast in absolute terms
-since the "database" is EF Core's InMemory provider, not a real server round-trip.
+since the database is an in-memory SQLite one, not a real server round-trip.

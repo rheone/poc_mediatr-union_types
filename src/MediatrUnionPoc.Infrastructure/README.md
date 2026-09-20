@@ -8,10 +8,13 @@ the Vogen value objects (`ProductId`, `Money`). The converters are written by ha
 Vogen's own generated EF Core converter support specifically so `MediatrUnionPoc.Domain` never
 needs an EF Core package reference.
 
-Persistence is EF Core's in-memory provider — there's no real database here. This is a proof of
-concept about union-typed MediatR responses, not about data access, so persistence is kept as
-thin as it can be while still exercising `IUnitOfWork`/`IProductRepository` through a real
-`DbContext`.
+Persistence is EF Core over SQLite. This is a proof of concept about union-typed MediatR
+responses, not about data access, so persistence is kept as thin as it can be while still
+exercising `IUnitOfWork`/`IProductRepository` through a real `DbContext` with real transactions.
+`ConnectionStrings:Products` selects the database; with no value each service provider gets a
+private in-memory database kept alive by one open connection (`ProductsDatabase`). The schema is
+created with `EnsureCreated` (no migrations) by `EnsureInfrastructureCreatedAsync`, which
+`MediatrUnionPoc.Api`'s `Program.cs` calls at startup.
 
 ## Dependencies
 
@@ -24,8 +27,8 @@ thin as it can be while still exercising `IUnitOfWork`/`IProductRepository` thro
 
 **Key packages:**
 
-- `Microsoft.EntityFrameworkCore` / `Microsoft.EntityFrameworkCore.InMemory` — the `DbContext` and
-  in-memory provider.
+- `Microsoft.EntityFrameworkCore` / `Microsoft.EntityFrameworkCore.Sqlite` — the `DbContext` and
+  SQLite provider.
 - `Microsoft.Extensions.DependencyInjection` — registers the `DbContext` and repository/unit-of-work
   implementations from this project's `DependencyInjection.cs`.
 
@@ -73,8 +76,8 @@ flowchart LR
 Registered via `AddInfrastructure()` in this project's `DependencyInjection.cs`, called from
 `MediatrUnionPoc.Api`'s `Program.cs` alongside `AddApplication()`. Handlers in
 `MediatrUnionPoc.Application` depend only on `IProductRepository`/`IUnitOfWork` from
-`MediatrUnionPoc.Domain` — they never reference this project directly, so swapping the in-memory
-provider for a real database only means changing registrations and the `ValueConverter`s here.
+`MediatrUnionPoc.Domain` — they never reference this project directly, so swapping the
+database only means changing registrations and the `ValueConverter`s here.
 
 If the `Product` entity or its Vogen value objects change shape, update the `ValueConverter`s here
 to match — a mismatch surfaces at runtime (EF Core mapping failure), not at compile time.

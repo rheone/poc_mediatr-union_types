@@ -20,6 +20,8 @@ builder.Services.AddInfrastructure();
 
 var app = builder.Build();
 
+await app.Services.EnsureInfrastructureCreatedAsync();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

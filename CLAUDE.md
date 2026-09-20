@@ -47,11 +47,11 @@ project wherever tests need a real database, a real HTTP host, or both:
   (`Unions/`, `Behaviors/`, `Handlers/`, `Validators/`). Handlers are tested against a substituted
   `IProductRepository`, never the real EF Core provider.
 - `tests/MediatrUnionPoc.Infrastructure.IntegrationTests` — the one project that exercises the real
-  EF Core InMemory provider end-to-end (`EfCoreUnitOfWorkTests`), rather than substituting
-  `IUnitOfWork`.
+  EF Core SQLite provider (an in-memory database on one kept-open connection per test) end-to-end
+  (`EfCoreUnitOfWorkTests`), rather than substituting `IUnitOfWork`.
 - `tests/MediatrUnionPoc.Api.IntegrationTests` — boots the real ASP.NET Core host via
-  `WebApplicationFactory` and exercises it through actual HTTP requests, with a uniquely-named
-  InMemory database per test.
+  `WebApplicationFactory` and exercises it through actual HTTP requests, against the real SQLite
+  provider; each host gets its own private in-memory database.
 - `tests/MediatrUnionPoc.ArchitectureTests` — `NetArchTest.Rules` assertions on the compiled `src/`
   assemblies enforcing the layering described above.
 

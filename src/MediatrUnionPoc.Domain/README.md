@@ -3,7 +3,7 @@
 The innermost layer: the `Product` entity, Vogen-generated value objects (`ProductId`, `Money`),
 and the repository/unit-of-work abstractions (`IProductRepository`, `IUnitOfWork`) that outer
 layers implement. Holds no MediatR, ASP.NET Core, or EF Core reference — nothing here knows it's
-part of a web API or that persistence happens in memory.
+part of a web API or which database persists it.
 
 Value objects are declared with [Vogen](https://github.com/SteveDunn/Vogen) rather than hand-rolled
 wrapper structs, so `ProductId`/`Money` get value equality, parsing, and validation from a source

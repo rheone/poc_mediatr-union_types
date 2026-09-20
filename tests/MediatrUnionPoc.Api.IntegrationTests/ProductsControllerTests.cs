@@ -14,7 +14,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 /// Exercises the one seam nothing else in the suite crosses: the real ASP.NET Core pipeline,
 /// through real routing and the real MediatR pipeline behaviors, to the union-to-HTTP-status
 /// mapping each controller action's <c>switch</c> performs. A fresh <see cref="ProductsApiFactory"/>
-/// per test gives each test its own InMemory database, so tests never see each other's data.
+/// per test gives each test its own SQLite in-memory database, so tests never see each other's data.
 /// </summary>
 /// <remarks>
 /// <see cref="ProductsController"/> is exercised over HTTP, so a null request body is answered by

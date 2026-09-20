@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using MediatrUnionPoc.Domain;
 using MediatrUnionPoc.Infrastructure.IntegrationTests.TestData;
 using Microsoft.EntityFrameworkCore;
@@ -6,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace MediatrUnionPoc.Infrastructure.IntegrationTests;
 
 /// <summary>
-/// Exercises <see cref="ProductRepository"/> directly against the real EF Core InMemory provider,
+/// Exercises <see cref="ProductRepository"/> directly against the real EF Core SQLite provider,
 /// covering the query logic <see cref="EfCoreUnitOfWorkTests"/> doesn't: paging's ordering,
 /// skip/take math, change-tracking behavior of each read path, and a plain lookup miss. Nothing here substitutes <see cref="AppDbContext"/> —
 /// that's the point of an integration test for a repository.
@@ -37,16 +36,16 @@ public class ProductRepositoryTests
     private const int DefaultPageSize = 10;
     private const int SeededProductCount = 5;
 
-    private static string DatabaseName([CallerMemberName] string test = "") =>
-        DbContextMother.NameFor(nameof(ProductRepositoryTests), test);
-
     /// <summary>Verifies <see cref="ProductRepository.GetByIdAsync"/> returns <see langword="null"/> for an id that was never added.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
     public async Task GetByIdAsync_UnknownId_ReturnsNull_Test()
     {
         // Arrange
-        await using var dbContext = DbContextMother.Create(DatabaseName());
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
 
         // Act
@@ -65,7 +64,10 @@ public class ProductRepositoryTests
     public async Task GetByIdAsync_AddedAndSavedProduct_ReturnsProduct_Test()
     {
         // Arrange
-        await using var dbContext = DbContextMother.Create(DatabaseName());
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         var product = ProductMother.Widget();
         await repository.AddAsync(product, CancellationToken.None);
@@ -86,14 +88,12 @@ public class ProductRepositoryTests
     public async Task GetByIdAsync_PersistedProduct_ReturnsAllStoredProperties_Test()
     {
         // Arrange
-        var databaseName = DatabaseName();
-        var product = ProductMother.Widget();
-        await DbContextMother.SeedAsync(
-            databaseName,
-            [product],
+        await using var database = await SqliteDatabaseMother.CreateAsync(
             TestContext.Current.CancellationToken
         );
-        await using var dbContext = DbContextMother.Create(databaseName);
+        var product = ProductMother.Widget();
+        await database.SeedAsync([product], TestContext.Current.CancellationToken);
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
 
         // Act
@@ -114,14 +114,12 @@ public class ProductRepositoryTests
     public async Task GetByIdAsync_PersistedProduct_ReturnsTrackedEntity_Test()
     {
         // Arrange
-        var databaseName = DatabaseName();
-        var product = ProductMother.Widget();
-        await DbContextMother.SeedAsync(
-            databaseName,
-            [product],
+        await using var database = await SqliteDatabaseMother.CreateAsync(
             TestContext.Current.CancellationToken
         );
-        await using var dbContext = DbContextMother.Create(databaseName);
+        var product = ProductMother.Widget();
+        await database.SeedAsync([product], TestContext.Current.CancellationToken);
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
 
         // Act
@@ -139,8 +137,10 @@ public class ProductRepositoryTests
     public async Task AddAsync_Product_StagesWithoutPersisting_Test()
     {
         // Arrange
-        var databaseName = DatabaseName();
-        await using var dbContext = DbContextMother.Create(databaseName);
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         var product = ProductMother.Widget();
 
@@ -148,7 +148,7 @@ public class ProductRepositoryTests
         await repository.AddAsync(product, CancellationToken.None);
 
         // Assert
-        await using var verifyContext = DbContextMother.Create(databaseName);
+        await using var verifyContext = database.CreateContext();
         Assert.Multiple(
             () => Assert.Equal(EntityState.Added, dbContext.Entry(product).State),
             () => Assert.Empty(verifyContext.Products)
@@ -162,7 +162,10 @@ public class ProductRepositoryTests
     public async Task AddAsync_NullProduct_ThrowsArgumentNullException_Test()
     {
         // Arrange
-        await using var dbContext = DbContextMother.Create(DatabaseName());
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
 
         // Act
@@ -179,7 +182,10 @@ public class ProductRepositoryTests
     public async Task Remove_SavedProduct_DeletesRowOnceSaved_Test()
     {
         // Arrange
-        await using var dbContext = DbContextMother.Create(DatabaseName());
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         var product = ProductMother.Widget();
         await repository.AddAsync(product, CancellationToken.None);
@@ -200,14 +206,12 @@ public class ProductRepositoryTests
     public async Task Remove_SavedProduct_KeepsRowUntilSaved_Test()
     {
         // Arrange
-        var databaseName = DatabaseName();
-        var product = ProductMother.Widget();
-        await DbContextMother.SeedAsync(
-            databaseName,
-            [product],
+        await using var database = await SqliteDatabaseMother.CreateAsync(
             TestContext.Current.CancellationToken
         );
-        await using var dbContext = DbContextMother.Create(databaseName);
+        var product = ProductMother.Widget();
+        await database.SeedAsync([product], TestContext.Current.CancellationToken);
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         var tracked = await repository.GetByIdAsync(product.Id, CancellationToken.None);
 
@@ -215,7 +219,7 @@ public class ProductRepositoryTests
         repository.Remove(tracked!);
 
         // Assert
-        await using var verifyContext = DbContextMother.Create(databaseName);
+        await using var verifyContext = database.CreateContext();
         Assert.Single(verifyContext.Products);
     }
 
@@ -226,7 +230,10 @@ public class ProductRepositoryTests
     public async Task Remove_NullProduct_ThrowsArgumentNullException_Test()
     {
         // Arrange
-        await using var dbContext = DbContextMother.Create(DatabaseName());
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
 
         // Act
@@ -243,7 +250,10 @@ public class ProductRepositoryTests
     public async Task GetPagedAsync_UnorderedProducts_OrdersResultsByName_Test()
     {
         // Arrange
-        await using var dbContext = DbContextMother.Create(DatabaseName());
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
         await repository.AddAsync(ProductMother.Named("Widget"), CancellationToken.None);
         await repository.AddAsync(ProductMother.Named("Anvil"), CancellationToken.None);
@@ -283,13 +293,14 @@ public class ProductRepositoryTests
     )
     {
         // Arrange
-        var databaseName = $"{DatabaseName()}.{pageNumber}";
-        await DbContextMother.SeedAsync(
-            databaseName,
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await database.SeedAsync(
             [.. new[] { "A", "B", "C", "D", "E" }.Select(ProductMother.Named)],
             TestContext.Current.CancellationToken
         );
-        await using var dbContext = DbContextMother.Create(databaseName);
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
 
         // Act
@@ -311,7 +322,10 @@ public class ProductRepositoryTests
     public async Task GetPagedAsync_NoProducts_ReturnsEmptyPage_Test()
     {
         // Arrange
-        await using var dbContext = DbContextMother.Create(DatabaseName());
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
 
         // Act
@@ -331,13 +345,11 @@ public class ProductRepositoryTests
     public async Task GetPagedAsync_PersistedProduct_ReturnsUntrackedEntities_Test()
     {
         // Arrange
-        var databaseName = DatabaseName();
-        await DbContextMother.SeedAsync(
-            databaseName,
-            [ProductMother.Widget()],
+        await using var database = await SqliteDatabaseMother.CreateAsync(
             TestContext.Current.CancellationToken
         );
-        await using var dbContext = DbContextMother.Create(databaseName);
+        await database.SeedAsync([ProductMother.Widget()], TestContext.Current.CancellationToken);
+        await using var dbContext = database.CreateContext();
         var repository = new ProductRepository(dbContext);
 
         // Act

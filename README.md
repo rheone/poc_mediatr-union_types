@@ -83,7 +83,7 @@ reopen the solution so it re-resolves.
 | `MediatrUnionPoc.Api`             | Controllers that map each union to an `IActionResult`                      |
 | `MediatrUnionPoc.Domain.Tests`    | Unit tests for `Money`, `ProductId`, and `Product`                          |
 | `MediatrUnionPoc.Application.Tests` | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators |
-| `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core InMemory provider, end to end |
+| `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core SQLite provider (in-memory database), end to end |
 | `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests           |
 | `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions enforcing the layering above               |
 
@@ -519,8 +519,8 @@ whole unit of work happened, or none of it did.
 **What actually gets undone**: everything the underlying `DbContext`'s change tracker recorded
 during the handler's execution but never reached the database via `SaveChangesAsync` — inserts,
 updates, and deletes alike. Nothing about this repo's own handler code has to remember what to
-undo; the database (or, for a provider without transactions such as InMemory, `EfCoreUnitOfWork`'s
-change-tracker detach — see [Notes and gotchas](#notes-and-gotchas)) does that bookkeeping.
+undo; the database transaction (plus `EfCoreUnitOfWork`'s change-tracker detach — see
+[Notes and gotchas](#notes-and-gotchas)) does that bookkeeping.
 
 **Why this is a benefit, not just a safety net**: it lets a handler write code that assumes success
 and bail out cleanly on any unexpected outcome, without manually tracking "what have I already done
@@ -1255,13 +1255,14 @@ in their own boundary code.
   leaks a persistence concern into the Domain layer. This repo keeps Domain persistence-agnostic
   (`Conversions.SystemTextJson` only) and hand-writes `ValueConverter<T,TPrimitive>` classes in
   Infrastructure instead — see [`ValueConverters.cs`](src/MediatrUnionPoc.Infrastructure/ValueConverters.cs).
-- **EF Core InMemory provider doesn't support real transactions.** `EfCoreUnitOfWork.BeginTransactionAsync`
-  asks `Database.IsRelational()` and only opens a transaction when the provider is relational;
-  otherwise commit just calls `SaveChangesAsync`. Rollback detaches every tracked entry on every
-  provider, so "rollback discards staged changes" holds even where there is no transaction to undo.
-  The class is named for the persistence technology it adapts (EF Core), not for a provider: a
-  future NHibernate adapter would be a separate `IUnitOfWork` implementation, while provider
-  differences inside EF Core are handled by capability checks like this one.
+- **Persistence is SQLite, so transactions are real.** `EfCoreUnitOfWork.BeginTransactionAsync`
+  always opens a database transaction (a failure to open one propagates), commit saves then commits
+  it, and rollback rolls it back and detaches every tracked entry so a later commit cannot persist
+  staged changes. Runtime and tests both use SQLite; with no `ConnectionStrings:Products` value the
+  app uses a private in-memory database kept alive by one open connection, with the schema created
+  at startup (`EnsureCreated`, no migrations). The class is named for the persistence technology it
+  adapts (EF Core), not for a provider: a future NHibernate adapter would be a separate
+  `IUnitOfWork` implementation.
 - **NSubstitute + Vogen structs:** two `Arg.Any<T>()` matchers in the same mocked call, where one
   `T` is a Vogen value object (custom equality), can throw `AmbiguousArgumentsException`. Use a
   concrete value object instance instead of `Arg.Any<T>()` for at least one of the arguments.
