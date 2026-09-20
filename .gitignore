@@ -488,3 +488,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Code-graph MCP server snapshot artifact (written next to the source when the graph is exported)
+.codebase-memory/

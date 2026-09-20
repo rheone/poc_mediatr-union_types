@@ -1,0 +1,10 @@
+{
+  "extraKnownMarketplaces": {
+    "devcontainer-lsp": {
+      "source": { "source": "directory", "path": "/usr/local/share/devcontainer/claude-plugins" }
+    }
+  },
+  "enabledPlugins": {
+    "devcontainer-lsp@devcontainer-lsp": true
+  }
+}

@@ -27,6 +27,7 @@ Details below.
 ## Table of contents
 
 - [Getting started](#getting-started)
+  - [Development environment](#development-environment)
   - [Project layout](#project-layout)
 - [Motivation](#motivation)
 - [What this pattern provides, and its actual scope](#what-this-pattern-provides-and-its-actual-scope)
@@ -108,6 +109,14 @@ back to the newest *stable* SDK it finds and fail with `NETSDK1045` ("does not s
 .NET 11.0") — `allowPrerelease: true` is what tells it a preview SDK is expected here, not a
 missing `<TargetFramework>` value. If VS still shows the error after pulling this file, close and
 reopen the solution so it re-resolves.
+
+### Development environment
+
+`.devcontainer/` defines an isolated Linux dev container (Docker Desktop with WSL 2 on Windows) with
+the pinned SDK, language servers, Claude Code, the `mattpocock-skills` plugin, a code-graph MCP
+server and a default-deny egress firewall. The repository lives in a Docker volume, never a mount
+of the Windows file system. See [docs/DevContainer.md](docs/DevContainer.md) for how to open it,
+the isolation model and its limits.
 
 ### Project layout
 

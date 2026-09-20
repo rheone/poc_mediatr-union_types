@@ -84,11 +84,10 @@ null.
 | **Analyzers enforced** | StyleCop, Sonar and threading analyzers; a public member without XML docs warns | `.editorconfig`, `GenerateDocumentationFile` | Repo-wide | Consistency and documentation are not optional |
 | **Central package management** | Every package version in one file | `Directory.Packages.props` | Repo root | One place to upgrade |
 | **Pinned preview SDK** | The exact .NET 11 preview SDK is fixed | `global.json` | Repo root | Every machine and CI job builds with the same compiler |
+| **Dev container for agentic development** | An isolated Linux container (Docker Desktop, WSL 2) in which Claude Code can build, test and navigate the repo. The repository is in a named Docker volume, with no host mounts, no Docker socket, no sudo, dropped capabilities and `no-new-privileges`. Outbound traffic is default-deny with an allow-list (Anthropic, GitHub, NuGet, VS Code hosts). Ships the exact SDK from `global.json`, `git`, `gh`, `rg`, Node, pinned Claude Code, C#, Markdown, JSON, YAML and Bash language servers, the `mattpocock-skills` plugin and a code-graph MCP server. Documentation MCP servers (Microsoft Learn, Context7) are wired but off | Dev Containers (`devcontainer.json`, a pinned `Dockerfile`), an iptables/ipset firewall started by the image ENTRYPOINT and failing closed, `verify-isolation.sh` and `smoke-test.sh`, project `.claude/settings.json` (read-mostly permissions, plugins, a format-on-edit hook), `.mcp.json` with codebase-memory-mcp | `.devcontainer/`, `.claude/settings.json`, `.claude/hooks/`, `.mcp.json`, [DevContainer.md](DevContainer.md) | One reproducible environment for agentic work whose blast radius is the container: a mistake or a prompt-injected command cannot read the host, and cannot send code or secrets to an arbitrary host. It is a best-effort control, not a kernel-level boundary (see the doc) |
 
 ## Planned (not yet built)
 
 See [Hardening-Plan.md](Hardening-Plan.md) for scope, order and tests.
 
-| Feature | Intended mechanism | Why |
-| --- | --- | --- |
-| Dev container for agentic development | Linux container on a Windows host with the pinned SDK, language servers, Claude Code, skills and a code-graph MCP server | One command to a safe, reproducible environment in which an agent can build, test and navigate the code |
+Nothing is currently planned: every step of the hardening plan is implemented.

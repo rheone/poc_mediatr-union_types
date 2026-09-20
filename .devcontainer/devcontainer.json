@@ -1,0 +1,69 @@
+// Isolated Linux dev container for agentic work on this repo. Read docs/DevContainer.md first.
+//
+// OPEN IT AS A CONTAINER VOLUME, not from a local folder:
+//   VS Code: F1 > "Dev Containers: Clone Repository in Container Volume..." (paste the repo URL), or open
+//   vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=<repo https URL>
+// "workspaceMount" is deliberately NOT set. Opening the local Windows folder would make VS Code
+// bind-mount it into the container; post-create.sh (verify-isolation.sh) then refuses to continue.
+{
+  "name": "MediatR union POC (isolated)",
+  "build": { "dockerfile": "Dockerfile", "context": "." },
+
+  // The image ENTRYPOINT applies the egress firewall as PID 1 and fails the start if it cannot.
+  // (Use the image's command, not VS Code's "sleep" override, or the firewall would never run.)
+  "overrideCommand": false,
+  "init": true,
+
+  // The tooling attaches as this user via exec: no capabilities, no sudo, no setuid binaries.
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": false,
+  "userEnvProbe": "none",
+
+  "runArgs": [
+    "--cap-drop=ALL",
+    // Only PID 1 (root, firewall setup) can use these two; the exec'd user has empty effective caps
+    // and no_new_privs blocks regaining them. Residual risk is documented in docs/DevContainer.md.
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW",
+    "--security-opt=no-new-privileges:true",
+    "--pids-limit=4096"
+    // Absent on purpose: --privileged, --device, --network=host, --pid=host, Docker socket, GPU flags.
+  ],
+
+  // Two named volumes and nothing else from the host. The repo itself lives in a volume too when
+  // opened with "Clone Repository in Container Volume".
+  "mounts": [
+    "source=mediatr-union-poc-claude,target=/home/vscode/.claude,type=volume",
+    "source=mediatr-union-poc-nuget,target=/home/vscode/.nuget/packages,type=volume"
+  ],
+
+  // Static values only: no ${localEnv:...}, so no host environment variable is forwarded.
+  "containerEnv": {
+    "DEVCONTAINER": "true",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
+  },
+  "remoteEnv": {},
+
+  // Only the API's port. VS Code's automatic port detection is switched off below.
+  "forwardPorts": [5233],
+  "portsAttributes": { "5233": { "label": "MediatrUnionPoc.Api", "onAutoForward": "notify" } },
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
+
+  "hostRequirements": { "memory": "4gb" },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "shutdownAction": "stopContainer",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["anthropic.claude-code"],
+      "settings": {
+        "remote.autoForwardPorts": false,
+        "telemetry.telemetryLevel": "off",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

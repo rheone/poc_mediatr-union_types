@@ -299,6 +299,8 @@ Status: implemented.
 
 ## Step 9: Dev container for agentic development
 
+Status: implemented.
+
 A reproducible environment on a Windows host in which Claude Code can build, test and navigate the
 repo safely. Independent of the API work, so it can be done last.
 
@@ -361,6 +363,37 @@ builds match.
 **Tests/verification:** the container builds from scratch, `dotnet build` and `dotnet test` pass
 inside it, and the smoke test above passes. Docs: a `docs/DevContainer.md` covering prerequisites
 (Docker Desktop + WSL 2), first run, updating the SDK pin, and the safety model.
+
+**As built.** Delivered in `.devcontainer/` (`Dockerfile`, `devcontainer.json`, `init-firewall.sh`, `verify-isolation.sh`,
+`smoke-test.sh`, `post-create.sh`, `lsp-query.mjs`), `.claude/settings.json` and `.claude/hooks/`, `.mcp.json`, and
+[DevContainer.md](DevContainer.md).
+
+- **SDK.** The exact `global.json` SDK is installed from its official tarball with a checked SHA-512 (no stable apt package or MCR tag
+  carries an exact RC). Claude Code is installed with npm at a pinned version.
+- **Isolation.** The workspace is a named volume via *Clone Repository in Container Volume*; `workspaceMount` is deliberately unset and
+  `post-create.sh` fails if the workspace turns out to be a host bind mount. `NET_ADMIN` and `NET_RAW` remain in the bounding set for the
+  root PID 1 that programs the firewall; the attached user has none. The git-config and credential forwarding of VS Code are host user
+  settings the repo cannot set, so they are documented and *detected* by `verify-isolation.sh` rather than prevented.
+- **Language servers.** `csharp-ls` 0.27.0 was chosen. Neither it nor the newest Roslyn language server package found lists a C# 15
+  `union` declaration as a document symbol; regular types work. The Markdown, JSON, YAML and Bash servers are delivered by a plugin in
+  root-owned managed settings.
+- **Code graph.** codebase-memory-mcp 0.11.0 (MIT, local, single binary) over Serena (GPL, LSP-backed, so the same `union` gap) and
+  code-graph-rag (needs Memgraph, Qdrant and an LLM provider). Its Tree-sitter C# grammar reports partial parses for about 20 files that
+  contain `union` or C# 14 extension members and models a `union` as a module.
+- **Hook.** The format-on-edit hook runs `dotnet format whitespace --folder` (about 1.3 s) and only inside the container.
+
+*Verified* on Docker Desktop (WSL 2) by building the image and bringing it up with the Dev Containers CLI 0.89.0 using the committed
+`devcontainer.json` (only the workspace mount pointed at a volume holding a copy of the working tree): the firewall applied,
+`post-create.sh` succeeded, and `smoke-test.sh` passed, including `dotnet build` (9 warnings, the baseline), all 1,052 tests, every
+`verify-isolation.sh` check, symbol queries against three language servers (the JSON and YAML servers were queried once by hand), and a
+code-graph caller query. `verify-isolation.sh` was also shown to fail for a Windows bind mount and for a mounted Docker socket. A clean
+NuGet restore worked through the firewall with only `api.nuget.org` allowed. `claude plugin validate` accepts the LSP marketplace and
+`claude doctor` reports no settings errors.
+
+*Not verified:* opening the container from VS Code (VS Code Server and extension install through the allowed VS Code hosts, and the
+host-side forwarding settings); Claude Code actually loading the marketplace-provided language servers, the pinned skills marketplace and
+the MCP server (needs an interactive login and workspace trust); the optional Microsoft Learn and Context7 servers; Serena beyond
+reading its repository; and a from-scratch clone in a volume, because the test copied the working tree.
 
 ## Cross-cutting: documentation and tests
 
