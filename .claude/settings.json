@@ -31,17 +31,7 @@
       "Bash(gh issue list *)",
       "Bash(gh run list *)",
       "Bash(gh run view *)",
-      "Bash(gh repo view *)",
-      "mcp__codebase-memory-mcp__search_graph",
-      "mcp__codebase-memory-mcp__trace_path",
-      "mcp__codebase-memory-mcp__get_architecture",
-      "mcp__codebase-memory-mcp__get_code_snippet",
-      "mcp__codebase-memory-mcp__get_graph_schema",
-      "mcp__codebase-memory-mcp__query_graph",
-      "mcp__codebase-memory-mcp__search_code",
-      "mcp__codebase-memory-mcp__detect_changes",
-      "mcp__codebase-memory-mcp__list_projects",
-      "mcp__codebase-memory-mcp__index_status"
+      "Bash(gh repo view *)"
     ]
   },
   "hooks": {
@@ -82,7 +72,5 @@
   "enabledPlugins": {
     "csharp-lsp@claude-plugins-official": true,
     "mattpocock-skills@mattpocock": true
-  },
-  "enabledMcpjsonServers": ["codebase-memory-mcp"],
-  "disabledMcpjsonServers": ["microsoft-learn", "context7"]
+  }
 }
