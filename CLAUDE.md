@@ -36,7 +36,12 @@ machine and fail with `NETSDK1045`.
   hand-written `ValueConverter`s for the Vogen types — not Vogen's own generated converter, to
   keep Domain free of an EF Core reference).
 - `src/MediatrUnionPoc.Api` — one controller (`ProductsController`); every action's only job is to
-  `switch` on the union MediatR returns and produce an `IActionResult`.
+  `switch` on the union MediatR returns and produce an `IActionResult`. The repeated failure arms
+  are one-line calls to C# 14 extension members in `Api/Http/` (`error.ToProblemResult(HttpContext)`
+  etc., all RFC 7807 `application/problem+json`, the 404 with a `code: "NOT_FOUND"` member) whose
+  shared policy is a DI-registered `HttpMappingOptions` (`AddResultHttpMapping(...)` in
+  `Program.cs`: `Error.Code` to status table, `type` URI switch); each extension also takes per-call
+  overrides, and the controller keeps its own `switch` so `CS8509` exhaustiveness still applies.
 
 Each `src/` project has its own unit test project, named after it, plus a separate integration test
 project wherever tests need a real database, a real HTTP host, or both:

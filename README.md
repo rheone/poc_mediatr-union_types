@@ -178,7 +178,7 @@ var response = result switch
 {
     ProductDto dto => Ok(dto),          // matches result.Value is ProductDto
     ValidationErrors e => BadRequest(e),
-    Error err => Problem(err.Message),
+    Error err => Problem(err.Message),  // or err.ToProblemResult(HttpContext), see below
     // no default/discard needed — the compiler knows these are the only three cases
 };
 ```
@@ -193,8 +193,32 @@ it has never seen.
 #### Switch-and-unwrap: why controllers never return the union directly
 
 Every action in [`ProductsController`](src/MediatrUnionPoc.Api/Controllers/ProductsController.cs)
-`switch`es on the union and returns a plain DTO/`ProblemPayload`/status code — it never does
-`return Ok(result)` with the raw union itself.
+`switch`es on the union and returns a plain DTO/RFC 7807 problem/status code — it never does
+`return Ok(result)` with the raw union itself. The `switch` stays in the controller so the
+compiler keeps enforcing exhaustiveness (`CS8509`); only the repeated failure *arms* are one-liners
+that call C# 14 extension members from [`Api/Http`](src/MediatrUnionPoc.Api/Http/):
+
+```csharp
+return result switch
+{
+    ProductDto dto => Ok(dto),
+    NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product"),
+    Error error => error.ToProblemResult(HttpContext),
+};
+```
+
+Each `ToProblemResult` (on `Error`, `NotFound<TId>`, `NotAuthorized`, `ValidationErrors`) builds an
+`application/problem+json` body, so every non-2xx response in the API is RFC 7807 (the not-found
+body carries a `code` member, `"NOT_FOUND"`). Shared policy lives in `HttpMappingOptions`,
+registered in `Program.cs` with `AddResultHttpMapping(...)`: an `Error.Code` to HTTP status table
+(default: `Error.ValidationFailureCode` is 400, every other code 500) and a switch for RFC 7807
+`type` URIs. Each extension also takes optional per-call overrides (`statusCode`, `title`,
+`detail`), and nothing is sealed: a controller can write any arm by hand, or its own extension
+members over the same case types.
+
+```csharp
+services.AddResultHttpMapping(o => o.ErrorStatusCodes["OUT_OF_STOCK"] = 503);
+```
 
 > [!NOTE]
 > It's not because `System.Text.Json` would otherwise serialize the generated struct's own
@@ -693,7 +717,7 @@ var result = await sender.Send(new PingQuery("hi"), cancellationToken);
 return result switch
 {
     PongDto pong => Ok(pong),
-    Error error => Problem(detail: error.Message, statusCode: 500, title: error.Code),
+    Error error => error.ToProblemResult(HttpContext),
 };
 ```
 
@@ -960,24 +984,9 @@ This POC has no real authentication — no login, no JWTs, no cookies. Instead,
 - **`X-Caller-Id`** — its value becomes the caller's `ClaimTypes.NameIdentifier` claim, read by
   `CreateAsync` (to set the new product's owner) and `UpdateAsync` (to prove ownership).
 
-```csharp
-private static ClaimsPrincipal CallerPrincipal(string? adminHeader, string? callerIdHeader)
-{
-    var identity = new ClaimsIdentity(authenticationType: "Header");
-
-    if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
-    {
-        identity.AddClaim(new Claim(ClaimTypes.Role, AuthorizationRoles.Administrator));
-    }
-
-    if (!string.IsNullOrEmpty(callerIdHeader))
-    {
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, callerIdHeader));
-    }
-
-    return new ClaimsPrincipal(identity);
-}
-```
+The principal is built by a static extension member in `Api/Http`
+(`extension(ClaimsPrincipal) { public static ClaimsPrincipal FromCallerHeaders(...) }`), called as
+`ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader)`.
 
 Try both against a running instance (`dotnet run --project src/MediatrUnionPoc.Api`):
 
@@ -1012,7 +1021,7 @@ curl -i -X DELETE https://localhost:<port>/api/products/<id> -H "X-Admin: true"
 
 > [!WARNING]
 > `X-Admin` and `X-Caller-Id` are stand-ins for real authentication, appropriate only for this
-> POC. A real deployment would replace `CallerPrincipal(...)` with `HttpContext.User` — populated
+> POC. A real deployment would replace `ClaimsPrincipal.FromCallerHeaders(...)` with `HttpContext.User` — populated
 > by an actual authentication scheme (cookies, JWT bearer, etc.) via `app.UseAuthentication()` —
 > and delete the header-reading code entirely. `AuthorizationBehavior`, `ResourceAuthorizationService`,
 > `IRequiresAuthorization`, and `IAuthorizable<TSelf>` wouldn't need to change at all: they only

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MediatR;
 using MediatrUnionPoc.Api.Contracts;
+using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
@@ -22,7 +23,7 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// <listheader><term>Action</term><description>Cases</description></listheader>
 /// <item><term>CreateAsync</term><description>ProductDto 201; ValidationErrors 400; Error 500.</description></item>
 /// <item><term>GetByIdAsync</term><description>ProductDto 200; NotFound 404; Error 500.</description></item>
-/// <item><term>GetPagedAsync</term><description>PagedResult 200; Error with <see cref="Error.ValidationFailureCode"/> 400; other Error 500.</description></item>
+/// <item><term>GetPagedAsync</term><description>PagedResult 200; Error 400 for <see cref="Error.ValidationFailureCode"/> and 500 otherwise (the default of <c>HttpMappingOptions</c>).</description></item>
 /// <item><term>UpdateAsync</term><description>Success 204; NotFound 404; ValidationErrors 400; NotAuthorized 403; Error 500.</description></item>
 /// <item><term>DeleteAsync</term><description>Success 204; NotFound 404; NotAuthorized 403; Error 500.</description></item>
 /// </list>
@@ -78,7 +79,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             new CreateProductCommand(
                 request.Name,
                 request.Price,
-                CallerPrincipal(adminHeader: null, callerIdHeader)
+                ClaimsPrincipal.FromCallerHeaders(adminHeader: null, callerIdHeader)
             ),
             cancellationToken
         );
@@ -86,12 +87,8 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         return result switch
         {
             ProductDto dto => CreatedAtAction(nameof(GetByIdAsync), new { id = dto.Id.Value }, dto),
-            ValidationErrors errors => ValidationProblemFrom(errors),
-            Error error => Problem(
-                detail: error.Message,
-                statusCode: StatusCodes.Status500InternalServerError,
-                title: error.Code
-            ),
+            ValidationErrors errors => errors.ToProblemResult(HttpContext),
+            Error error => error.ToProblemResult(HttpContext),
         };
     }
 
@@ -102,7 +99,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemPayload), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetByIdAsync(
         Guid id,
@@ -114,19 +111,8 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         return result switch
         {
             ProductDto dto => Ok(dto),
-            NotFoundCase notFound => NotFound(
-                new ProblemPayload($"Product '{notFound.Id}' was not found.", "NOT_FOUND")
-            ),
-            Error { Code: Error.ValidationFailureCode } error => Problem(
-                detail: error.Message,
-                statusCode: StatusCodes.Status400BadRequest,
-                title: error.Code
-            ),
-            Error error => Problem(
-                detail: error.Message,
-                statusCode: StatusCodes.Status500InternalServerError,
-                title: error.Code
-            ),
+            NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product"),
+            Error error => error.ToProblemResult(HttpContext),
         };
     }
 
@@ -157,16 +143,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         return result switch
         {
             PagedResult<ProductDto> page => Ok(page),
-            Error { Code: Error.ValidationFailureCode } error => Problem(
-                detail: error.Message,
-                statusCode: StatusCodes.Status400BadRequest,
-                title: error.Code
-            ),
-            Error error => Problem(
-                detail: error.Message,
-                statusCode: StatusCodes.Status500InternalServerError,
-                title: error.Code
-            ),
+            Error error => error.ToProblemResult(HttpContext),
         };
     }
 
@@ -186,7 +163,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// </returns>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(typeof(ProblemPayload), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -202,7 +179,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
                 id,
                 request.Name,
                 request.Price,
-                CallerPrincipal(adminHeader: null, callerIdHeader)
+                ClaimsPrincipal.FromCallerHeaders(adminHeader: null, callerIdHeader)
             ),
             cancellationToken
         );
@@ -210,20 +187,10 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         return result switch
         {
             Success => NoContent(),
-            NotFoundCase notFound => NotFound(
-                new ProblemPayload($"Product '{notFound.Id}' was not found.", "NOT_FOUND")
-            ),
-            ValidationErrors errors => ValidationProblemFrom(errors),
-            NotAuthorized notAuthorized => Problem(
-                detail: string.Join("; ", notAuthorized.Reasons),
-                statusCode: StatusCodes.Status403Forbidden,
-                title: "Forbidden"
-            ),
-            Error error => Problem(
-                detail: error.Message,
-                statusCode: StatusCodes.Status500InternalServerError,
-                title: error.Code
-            ),
+            NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product"),
+            ValidationErrors errors => errors.ToProblemResult(HttpContext),
+            NotAuthorized notAuthorized => notAuthorized.ToProblemResult(HttpContext),
+            Error error => error.ToProblemResult(HttpContext),
         };
     }
 
@@ -244,7 +211,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(typeof(ProblemPayload), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteAsync(
         Guid id,
@@ -253,71 +220,19 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     )
     {
         var result = await _sender.Send(
-            new DeleteProductCommand(id, CallerPrincipal(adminHeader, callerIdHeader: null)),
+            new DeleteProductCommand(
+                id,
+                ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader: null)
+            ),
             cancellationToken
         );
 
         return result switch
         {
             Success => NoContent(),
-            NotFoundCase notFound => NotFound(
-                new ProblemPayload($"Product '{notFound.Id}' was not found.", "NOT_FOUND")
-            ),
-            NotAuthorized notAuthorized => Problem(
-                detail: string.Join("; ", notAuthorized.Reasons),
-                statusCode: StatusCodes.Status403Forbidden,
-                title: "Forbidden"
-            ),
-            Error { Code: Error.ValidationFailureCode } error => Problem(
-                detail: error.Message,
-                statusCode: StatusCodes.Status400BadRequest,
-                title: error.Code
-            ),
-            Error error => Problem(
-                detail: error.Message,
-                statusCode: StatusCodes.Status500InternalServerError,
-                title: error.Code
-            ),
+            NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product"),
+            NotAuthorized notAuthorized => notAuthorized.ToProblemResult(HttpContext),
+            Error error => error.ToProblemResult(HttpContext),
         };
-    }
-
-    /// <summary>Projects a <see cref="ValidationErrors"/> case into an RFC 7807 validation problem response.</summary>
-    private ActionResult ValidationProblemFrom(ValidationErrors errors)
-    {
-        foreach (var error in errors.Errors)
-        {
-            ModelState.AddModelError(error.PropertyName ?? string.Empty, error.ErrorMessage);
-        }
-
-        return ValidationProblem(ModelState);
-    }
-
-    /// <summary>
-    /// Builds the caller's <see cref="ClaimsPrincipal"/> from the <see cref="AdminHeaderName"/>
-    /// and <see cref="CallerIdHeaderName"/> headers' bound values — the only identity source this
-    /// POC has, in place of real authentication.
-    /// </summary>
-    /// <param name="adminHeader">The <see cref="AdminHeaderName"/> header's value, or <see langword="null"/> if absent.</param>
-    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> header's value, or <see langword="null"/> if absent.</param>
-    /// <returns>
-    /// A principal with an <c>Administrator</c> role claim when <paramref name="adminHeader"/> is
-    /// <c>"true"</c>, and/or a <see cref="ClaimTypes.NameIdentifier"/> claim when
-    /// <paramref name="callerIdHeader"/> is non-empty; an anonymous principal if neither is present.
-    /// </returns>
-    private static ClaimsPrincipal CallerPrincipal(string? adminHeader, string? callerIdHeader)
-    {
-        var identity = new ClaimsIdentity(authenticationType: "Header");
-
-        if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
-        {
-            identity.AddClaim(new Claim(ClaimTypes.Role, AuthorizationRoles.Administrator));
-        }
-
-        if (!string.IsNullOrEmpty(callerIdHeader))
-        {
-            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, callerIdHeader));
-        }
-
-        return new ClaimsPrincipal(identity);
     }
 }

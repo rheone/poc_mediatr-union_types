@@ -9,6 +9,23 @@ web concern. See the repo root README's
 for why, and its [Authorization](../../README.md#authorization) section for how the two
 `X-Admin`/`X-Caller-Id` request headers this controller reads stand in for real authentication.
 
+## HTTP mapping (`Http/`)
+
+The controller keeps its own exhaustive `switch`; the repeated failure arms are one-line calls to
+C# 14 extension members in `MediatrUnionPoc.Api.Http` (`ResultHttpExtensions`):
+`error.ToProblemResult(HttpContext)`, `notFound.ToProblemResult(HttpContext, resource: "Product")`,
+`notAuthorized.ToProblemResult(HttpContext)`, `errors.ToProblemResult(HttpContext)`, plus the static
+`ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader)`. Every failure body is
+`application/problem+json`; the 404 carries a `code` member (`"NOT_FOUND"`).
+
+- `HttpMappingOptions` (registered by `AddResultHttpMapping(Action<HttpMappingOptions>?)` in
+  `Program.cs`, resolved through `HttpContext.RequestServices`): `ErrorStatusCodes` maps an
+  `Error.Code` to a status (default `VALIDATION_ERROR` to 400; `DefaultErrorStatusCode` 500 for the
+  rest), `IncludeTypeUris` / `TypeUris` control the RFC 7807 `type` member.
+- Each extension takes optional per-call overrides (`statusCode`, `title`, `detail`) to treat one
+  case differently, and everything is public: write a hand-rolled arm or your own extension members
+  whenever the built-ins do not fit.
+
 Uses the `Microsoft.NET.Sdk.Web` SDK (not the plain `Microsoft.NET.Sdk` the other projects use),
 since it's the one project that's actually a runnable web application.
 

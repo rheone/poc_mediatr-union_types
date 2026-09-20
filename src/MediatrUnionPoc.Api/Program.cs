@@ -1,3 +1,4 @@
+using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Api.OpenApi;
 using MediatrUnionPoc.Application;
 using MediatrUnionPoc.Infrastructure;
@@ -15,6 +16,7 @@ builder.Services.AddOpenApi(options =>
     options.AddSchemaTransformer<ProductContractExampleTransformer>()
 );
 
+builder.Services.AddResultHttpMapping();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 

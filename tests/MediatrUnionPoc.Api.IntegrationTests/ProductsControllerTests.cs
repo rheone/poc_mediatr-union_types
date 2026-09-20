@@ -258,6 +258,33 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    /// <summary>Verifies a missing product's 404 body is an RFC 7807 problem document carrying the stable NOT_FOUND code.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task GetByIdAsync_MissingProduct_ReturnsProblemJsonWithNotFoundCode_Test()
+    {
+        // Arrange
+        var uri = $"{ProductsUri}/{ProductRequestMother.UnknownId}";
+
+        // Act
+        using var response = await _client.GetAsync(uri, CancellationToken.None);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var document = JsonDocument.Parse(body);
+
+        // Assert
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Multiple(
+            () => Assert.Equal(404, document.RootElement.GetProperty("status").GetInt32()),
+            () => Assert.Equal("NOT_FOUND", document.RootElement.GetProperty("code").GetString()),
+            () =>
+                Assert.Contains(
+                    ProductRequestMother.UnknownId.ToString(),
+                    document.RootElement.GetProperty("detail").GetString(),
+                    StringComparison.OrdinalIgnoreCase
+                )
+        );
+    }
+
     /// <summary>Verifies an empty-guid id fails validation and returns 400 rather than 500.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
