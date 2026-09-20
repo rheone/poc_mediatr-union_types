@@ -23,11 +23,6 @@ Persistence is SQLite everywhere. With no `ConnectionStrings:Products` value the
 in-memory database (empty on every start, schema via `EnsureCreated`); set it to e.g.
 `Data Source=products.db` to persist. There is no EF Core InMemory provider anywhere.
 
-An isolated Linux dev container is defined in `.devcontainer/` (a base image plus published and local Dev Container Features, no Dockerfile; open it with *Dev Containers: Clone Repository in Container Volume*; see
-`docs/DevContainer.md`). Inside it `rg` (ripgrep), `gh`, the pinned SDK, `csharp-ls` and the `codebase-memory-mcp` code-graph server are
-installed; egress is default-deny, so a host that is not in `.devcontainer/features/egress-firewall/allowed-hosts.txt` is unreachable. `.devcontainer/smoke-test.sh`
-checks the whole setup.
-
 The SDK is pinned via `global.json` to an exact .NET 11 preview build (`allowPrerelease: true`).
 Without it, some tools (Visual Studio in particular) fall back to the newest *stable* SDK on the
 machine and fail with `NETSDK1045`.
