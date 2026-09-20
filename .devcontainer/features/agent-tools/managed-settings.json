@@ -1,7 +1,7 @@
 {
   "extraKnownMarketplaces": {
     "devcontainer-lsp": {
-      "source": { "source": "directory", "path": "/usr/local/share/devcontainer/claude-plugins" }
+      "source": { "source": "directory", "path": "/usr/local/share/agent-tools/claude-plugins" }
     }
   },
   "enabledPlugins": {

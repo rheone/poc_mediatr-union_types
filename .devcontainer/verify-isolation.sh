@@ -35,7 +35,7 @@ check "effective capabilities are empty" test "$(status_field CapEff)" = 0000000
 bnd="$(status_field CapBnd)"
 check "capability bounding set is at most NET_ADMIN+NET_RAW (CapBnd=$bnd)" test $(( 0x${bnd:-ffffffffffffffff} & ~0x3000 )) -eq 0
 check "not able to change firewall rules (iptables)" bash -c '! iptables -P OUTPUT ACCEPT'
-check "image tools are read-only for this user" bash -c '! test -w /opt/npm-global && ! test -w /usr/local/share/devcontainer/allowed-hosts.txt'
+check "image tools are read-only for this user" bash -c '! test -w /opt/npm-global && ! test -w /usr/local/share/egress-firewall/allowed-hosts.txt'
 
 # ---- host filesystem, sockets, devices --------------------------------------------------------
 # Host-backed filesystem types on Docker Desktop: 9p/drvfs (Windows), virtiofs/fuse (macOS), plus network shares.

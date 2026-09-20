@@ -1,0 +1,9 @@
+{
+  "id": "egress-firewall",
+  "version": "1.0.0",
+  "name": "Default-deny egress firewall",
+  "description": "iptables/ipset egress allow-list applied by the root entrypoint. The container stops instead of running open when it cannot be applied.",
+  "entrypoint": "/usr/local/share/egress-firewall/entrypoint.sh",
+  "capAdd": ["NET_ADMIN", "NET_RAW"],
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}

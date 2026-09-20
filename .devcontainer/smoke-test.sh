@@ -35,7 +35,7 @@ lsp() { # lsp <description> <file> <lang> <expected symbol> -- <server cmd...>
 }
 lsp "csharp-ls: ProductNames.Normalize in a regular file" src/MediatrUnionPoc.Domain/ProductNames.cs csharp Normalize csharp-ls
 lsp "marksman: README heading" README.md markdown "$(head -n1 README.md | sed 's/^# //')" marksman server
-lsp "bash-language-server: is_ipv4 in init-firewall.sh" "$here/init-firewall.sh" shellscript is_ipv4 bash-language-server start
+lsp "bash-language-server: is_ipv4 in init-firewall.sh" "$here/features/egress-firewall/init-firewall.sh" shellscript is_ipv4 bash-language-server start
 # Known gap, reported rather than failed: csharp-ls does not surface the C# 15 `union` declaration as a symbol.
 u=src/MediatrUnionPoc.Application/Features/Products/Create/CreateProductResult.cs
 if node "$here/lsp-query.mjs" --root . --file "$u" --lang csharp --expect CreateProductResult --timeout 30 -- csharp-ls >/dev/null 2>&1; then

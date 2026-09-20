@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Default-deny egress firewall. Adapted from Anthropic's reference dev container
 # (anthropics/claude-code/.devcontainer/init-firewall.sh), with these differences:
-#   - runs from the image ENTRYPOINT as root, so the user needs no sudo;
+#   - runs from the Feature entrypoint (PID 1 chain) as root, so the user needs no sudo;
 #   - the host/gateway network is NOT allowed (the reference allows the whole /24 of the host);
 #   - no SSH (git uses HTTPS only), and DNS only to private-range resolvers;
 #   - IPv6 is dropped rather than ignored; the host list lives in allowed-hosts.txt;
@@ -12,7 +12,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-HOSTS_FILE="${HOSTS_FILE:-/usr/local/share/devcontainer/allowed-hosts.txt}"
+HOSTS_FILE="${HOSTS_FILE:-/usr/local/share/egress-firewall/allowed-hosts.txt}"
 SET=allowed-v4
 
 is_ipv4() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$ ]]; }
@@ -96,7 +96,7 @@ if ip6tables -F 2>/dev/null; then
   ip6tables -P INPUT DROP
   ip6tables -P FORWARD DROP
   ip6tables -P OUTPUT DROP
-elif ip -6 addr show scope global 2>/dev/null | rg -q inet6; then
+elif ip -6 addr show scope global 2>/dev/null | awk '/inet6/ {found = 1} END {exit !found}'; then
   echo "init-firewall: global IPv6 present but ip6tables unavailable" >&2
   exit 1
 fi

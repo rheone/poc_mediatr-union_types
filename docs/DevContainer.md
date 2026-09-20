@@ -72,23 +72,23 @@ Setting names come from the Dev Containers issue tracker and were not checkable 
 | Repository | No, lives in a named volume | "Clone Repository in Container Volume"; no `workspaceMount` | Workspace not on `9p`/`virtiofs`/`fuse`/`cifs`/`nfs` |
 | Other host files, home, `.ssh`, `.aws`, browser profile | No | The only mounts are the workspace volume and two named volumes | No host-backed filesystem mounted; no `/mnt/c`, `/host_mnt`, `/run/desktop`; no `~/.ssh`, `~/.aws`, ... |
 | Docker socket | No | Never mounted, no Docker CLI | Socket absent, `DOCKER_HOST` unset, no `docker` binary |
-| Privileges | No `--privileged`, no sudo, non-root user | `runArgs`: `--cap-drop=ALL` plus `NET_ADMIN`, `NET_RAW`; `no-new-privileges`; image has no sudo and no setuid bits | uid is not 0, no sudo, no setuid files, `NoNewPrivs=1`, seccomp active, `CapEff=0`, `CapBnd` is at most `NET_ADMIN`+`NET_RAW` |
+| Privileges | No `--privileged`, no sudo, non-root user | `devcontainer.json`: `runArgs` `--cap-drop=ALL`, `securityOpt` `no-new-privileges`; the `egress-firewall` Feature's `capAdd` adds `NET_ADMIN`, `NET_RAW`; the `lockdown` Feature purges sudo and strips setuid bits | uid is not 0, no sudo, no setuid files, `NoNewPrivs=1`, seccomp active, `CapEff=0`, `CapBnd` is at most `NET_ADMIN`+`NET_RAW` |
 | Devices, GPU, USB, clipboard | No | No `--device`, no GPU flags, no X11/Wayland mounts | No `/dev/dri`, `nvidia*`, `bus/usb`, `kvm`, `fuse`, audio/video; `DISPLAY`/`WAYLAND_DISPLAY` unset |
 | Credentials | No implicit flow | Host VS Code settings above; `containerEnv` has static values only, no `${localEnv:...}` | No `SSH_AUTH_SOCK`, no credential helper, no token variables |
-| Network | Outbound allow-list only | `init-firewall.sh` (below) | `example.com`, `1.1.1.1`, IPv6 and the host gateway are unreachable; GitHub, Anthropic and NuGet are reachable |
+| Network | Outbound allow-list only | `egress-firewall` Feature: `features/egress-firewall/init-firewall.sh` (below) | `example.com`, `1.1.1.1`, IPv6 and the host gateway are unreachable; GitHub, Anthropic and NuGet are reachable |
 | Ports | Only the API's `5233` | `forwardPorts`, `otherPortsAttributes: ignore`, `remote.autoForwardPorts: false` | Not checkable from inside; check the Ports panel |
 | Claude login and memory | Own volume | `mediatr-union-poc-claude` mounted at `~/.claude` | `HOME/.claude` is its own mount |
 | NuGet cache | Own volume | `mediatr-union-poc-nuget` at `~/.nuget/packages` | Own mount |
-| Tools and firewall config | Read-only to the user | Root-owned `/opt`, `/usr/local/share/devcontainer` | Not writable by the user |
+| Tools and firewall config | Read-only to the user | `lockdown` Feature re-owns nvm to root; `agent-tools` installs into root-owned `/opt`, `/usr/local/bin`; the firewall list is in root-owned `/usr/local/share/egress-firewall` | Not writable by the user |
 
 Run `bash .devcontainer/verify-isolation.sh` after every rebuild; it exits non-zero on any violation.
 I confirmed it also fails (exit 1) when the workspace is a Windows bind mount and when the Docker socket is mounted.
 
 ## Egress firewall
 
-`.devcontainer/init-firewall.sh` is adapted from the reference in
+`.devcontainer/features/egress-firewall/init-firewall.sh` is adapted from the reference in
 [anthropics/claude-code `.devcontainer`](https://github.com/anthropics/claude-code/tree/main/.devcontainer),
-which I read before writing it. Differences: it is started by the image ENTRYPOINT as root (so the user needs no
+which I read before writing it. Differences: it is started as root by the Feature's `entrypoint` (so the user needs no
 sudo), the host/gateway network is **not** allowed (the reference allows the host's /24), SSH is not allowed,
 IPv6 is dropped, and the host list is a file.
 
@@ -99,7 +99,8 @@ IPv6 is dropped, and the host list is a file.
   such as `api.nuget.org` (Azure Front Door) rotate addresses. Right after a rotation an allowed host can be
   rejected for a few seconds; `verify-isolation.sh` retries the allowed checks for that reason.
 - **Fail closed:** if any step fails, or the self-check reaches `example.com` or cannot reach `api.github.com`,
-  the script exits non-zero and the container exits; the tooling then reports the start as failed.
+  the script exits non-zero, `entrypoint.sh` kills the CLI's wrapper shell (so the image's default command never starts) and the
+  container stops; the tooling then reports the start as failed. Observed for an unresolvable host entry and for a missing `NET_ADMIN` capability.
 
 | Allowed host | Needed for | Source |
 | --- | --- | --- |
@@ -113,7 +114,7 @@ Not allowed by default: `registry.npmjs.org` (only needed at image build, for `n
 (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING` are set), and
 `mcp-proxy.anthropic.com` (`ENABLE_CLAUDEAI_MCP_SERVERS=false`).
 
-**To allow a new host:** add a line to `.devcontainer/allowed-hosts.txt` and run *Dev Containers: Rebuild
+**To allow a new host:** add a line to `.devcontainer/features/egress-firewall/allowed-hosts.txt` and run *Dev Containers: Rebuild
 Container*. The list is baked into the image so that the agent, which can edit the workspace but not the image,
 cannot widen its own network access. Wildcards are not supported; list each hostname.
 
@@ -128,21 +129,46 @@ API key in an `Authorization: Bearer` header; this repo does not configure one. 
 
 ## What is in the image
 
-| Tool | Version | Pinned how |
-| --- | --- | --- |
-| Ubuntu | 24.04 | Image digest in `Dockerfile` |
-| .NET SDK | `11.0.100-rc.1.26425.128` (equals `global.json`) | Exact tarball from `builds.dotnet.microsoft.com`, SHA-512 checked. `dotnet-install.sh --version` uses the same URL; no stable apt package or MCR tag carries an exact RC, so a checked tarball is the reproducible option |
-| Node | 24.21.0 (LTS) | Tarball, SHA-256 checked |
-| Claude Code | 2.1.278 | `npm install -g` at a fixed version (npm package is the same native binary; `DISABLE_AUTOUPDATER=1`) |
-| git 2.43, `gh` 2.101.0, ripgrep 14.1 (`rg`), jq, shellcheck | as shown | apt; `gh` tarball SHA-256 checked |
-| csharp-ls | 0.27.0 | `dotnet tool install`, same version as `.config/dotnet-tools.json` |
-| marksman | 2026-02-08 | Binary, SHA-256 checked |
-| yaml-language-server 1.24.0, vscode-langservers-extracted 4.10.0, bash-language-server 5.8.1 | as shown | `npm install -g` |
-| codebase-memory-mcp | 0.11.0 | Release tarball, SHA-256 checked (`checksums.txt` of the release) |
-| `csharpier` 1.3.0, `husky` 0.9.1 | | `dotnet tool restore` |
+`.devcontainer/` is a stock base image, four published Features and three small local Features. There is no Dockerfile.
 
-The image is about 1.8 GB. `DOTNET_ROLL_FORWARD=Major` is set because `csharp-ls` targets .NET 10 and only the .NET 11
-runtime is installed.
+```text
+.devcontainer/
+  devcontainer.json          base image, Feature list and versions, isolation settings, volumes, env
+  devcontainer-lock.json     digests of the published Features (`devcontainer upgrade`)
+  features/
+    egress-firewall/         iptables/ipset, init-firewall.sh, allowed-hosts.txt, root entrypoint
+    agent-tools/             pinned Claude Code, language servers, code-graph binary, rg, shellcheck, managed settings
+    lockdown/                no sudo or ssh client, no setuid bits, root-owned nvm, volume mount points
+  post-create.sh  verify-isolation.sh  smoke-test.sh  lsp-query.mjs
+```
+
+### Published pieces
+
+| Piece | Version | Maintainer | Pinned how | Integrity check |
+| --- | --- | --- | --- | --- |
+| `mcr.microsoft.com/devcontainers/base` (Ubuntu 24.04) | `3.0.8-noble` | Microsoft (dev container team) | Tag plus image digest in `devcontainer.json` | Docker verifies the digest. Ships user `vscode` (uid 1000), git and `common-utils` (its image metadata lists `common-utils:2` and `git:1`), so those are not repeated |
+| Feature `ghcr.io/devcontainers/features/dotnet` | `2.5.0`, option `version` = the `global.json` SDK | devcontainers/features | Exact tag, digest in `devcontainer-lock.json` | **None for the SDK archive**: the Feature runs its vendored `dotnet-install.sh`, which downloads over HTTPS from `builds.dotnet.microsoft.com` and only checks the installed version afterwards (source read). No SHA-512 of the SDK archive is pinned. `smoke-test.sh` fails if `dotnet --version` differs from `global.json` |
+| Feature `ghcr.io/devcontainers/features/node` | `2.1.0`, options `version` = `24.21.0`, `nvmVersion` = `0.40.7` | devcontainers/features | Exact tag and exact Node version | Installed by nvm, which checks the archive against `SHASUMS256.txt` from nodejs.org; the hash is not pinned in this repo |
+| Feature `ghcr.io/devcontainers/features/github-cli` | `1.1.2`, option `version` = `2.101.0` | devcontainers/features | Exact tag and exact `gh` version | `installDirectlyFromGitHubRelease: false` installs from the GPG-signed apt repository at cli.github.com (signing key fetched by fingerprint from a keyserver at build time); the default would `dpkg -i` an unverified .deb |
+
+`ghcr.io/anthropics/devcontainer-features/claude-code` (MIT, Anthropic) exists but is not used: it has no options (no way to pin a version, it runs
+`npm install -g @anthropic-ai/claude-code` unpinned), installs with whatever `npm` is first on the path (the nvm prefix, which the node Feature makes writable by the user) and was last changed in June 2025.
+`ripgrep` and `shellcheck` community Features (`devcontainers-extra`) download release binaries without a checksum through a
+nested, separately versioned installer, so both come from Ubuntu's archive instead (ripgrep 14.1.0, shellcheck 0.9.0).
+
+### Local Features (custom, and why)
+
+| Feature | What it does | Why no published Feature does it |
+| --- | --- | --- |
+| `egress-firewall` | Installs iptables, ipset and dig; installs `init-firewall.sh`, `allowed-hosts.txt` and the entrypoint. Its metadata carries `entrypoint` and `capAdd` (`NET_ADMIN`, `NET_RAW`) | The default-deny policy is this repo's own script; the Anthropic reference firewall is a copy-in script, not a Feature |
+| `agent-tools` | Claude Code, `csharp-ls`, `marksman`, the YAML/JSON/Bash language servers and `codebase-memory-mcp` at exact versions (Feature options, defaults in `devcontainer-feature.json`), SHA-256 checked where a binary is downloaded, in root-owned prefixes; the managed settings and LSP marketplace | See the Claude Code note above; the rest are tools with no maintained Feature |
+| `lockdown` | Removes sudo and the ssh client, strips setuid/setgid bits, re-owns nvm to root, creates the volume mount points for `vscode` | Isolation policy specific to this repo. Must run last (`overrideFeatureInstallOrder`) |
+
+`agent-tools` puts these on `PATH`: `/opt/npm-global/bin` (Claude Code and the npm language servers), `/opt/dotnet-tools` (`csharp-ls`); binaries go
+to `/usr/local/bin`. `DOTNET_ROLL_FORWARD=Major` is set by that Feature because `csharp-ls` targets .NET 10 and only the .NET 11 runtime is installed.
+`csharpier` 1.3.0 and `husky` 0.9.1 come from `dotnet tool restore`.
+
+The built image is about 2.6 GB (measured with `docker images`). The base image adds zsh, Oh My Zsh and a from-source git that the tools here do not need.
 
 ## Language servers
 
@@ -151,7 +177,7 @@ Claude Code loads LSP servers from plugins (per the [plugins reference](https://
 
 - **C#:** the official `csharp-lsp@claude-plugins-official` plugin (already enabled in `.claude/settings.json`; its
   entry runs `csharp-ls`, which is on `PATH`).
-- **Markdown, JSON, YAML, Bash:** `.devcontainer/claude/plugins` is a small marketplace (`devcontainer-lsp`) copied into the
+- **Markdown, JSON, YAML, Bash:** `.devcontainer/features/agent-tools/plugins` is a small marketplace (`devcontainer-lsp`) copied into the
   image and enabled by `/etc/claude-code/managed-settings.d/10-devcontainer.json`. Managed settings are used so these
   servers (which do not exist on your Windows host) are not enabled in your host's Claude Code sessions, and the agent
   cannot edit them.
@@ -224,20 +250,23 @@ and `bash-language-server`; and a code-graph `trace_path` asking who calls `Prod
 
 ## Updating pins
 
-- **SDK:** change `global.json`, then `DOTNET_SDK_VERSION` and `DOTNET_SDK_SHA512` in the `Dockerfile` (the hash is in
-  `https://builds.dotnet.microsoft.com/dotnet/Sdk/<version>/dotnet-sdk-<version>-linux-x64.tar.gz.sha512`), and
-  the SDK version in `.github/workflows/ci.yml` if it changes channel. Rebuild.
-- **Claude Code, language servers, `gh`, Node, marksman, codebase-memory-mcp:** the `ARG`s at the top of the `Dockerfile`, with the new
-  checksum where there is one. `csharp-ls` must match `.config/dotnet-tools.json`.
-- **mattpocock skills:** update `sha` in `.claude/settings.json`.
-- **Base image digest:** `docker pull ubuntu:24.04` and copy the new `RepoDigests` value.
+| What | Where to edit | Notes |
+| --- | --- | --- |
+| .NET SDK | `global.json`, then `features["...dotnet:2.5.0"].version` in `devcontainer.json` | Must be identical; `smoke-test.sh` checks. Also the SDK version in `.github/workflows/ci.yml` if the channel changes |
+| Node | `version` option of the node Feature in `devcontainer.json` | |
+| `gh` | `version` option of the github-cli Feature in `devcontainer.json` | Must exist in the cli.github.com apt repository |
+| Published Features | The tag in `devcontainer.json`, then `devcontainer upgrade --workspace-folder .` | Dependabot (`devcontainers` ecosystem, monthly) opens these PRs and updates `devcontainer-lock.json`. Do not merge without a rebuild and the smoke test |
+| Base image | The tag and digest in `devcontainer.json` `image` | `docker pull <tag>` and copy `RepoDigests`. Dependabot does not cover this |
+| Claude Code, language servers, marksman, codebase-memory-mcp | Feature options in `features/agent-tools/devcontainer-feature.json` (defaults), or set the option in `devcontainer.json` | New SHA-256 with a new binary version (`marksmanSha256`, `codebaseMemorySha256`; codebase-memory publishes `checksums.txt` with the release). `csharpLsVersion` must match `.config/dotnet-tools.json` |
+| mattpocock skills | `sha` in `.claude/settings.json` | |
+| Allowed hosts | `features/egress-firewall/allowed-hosts.txt` | Rebuild |
 
 After a bump, rebuild, run the smoke test, and re-run the `union` symbol check in `lsp-query.mjs`.
 
 ## Troubleshooting
 
 - **Container exits at start / "init-firewall: FAILED":** read the container log. Usually GitHub's `meta` endpoint or a host in
-  `allowed-hosts.txt` did not resolve (no network, VPN, DNS). The container is meant to stop rather than run open.
+  `features/egress-firewall/allowed-hosts.txt` did not resolve (no network, VPN, DNS). The container is meant to stop rather than run open.
 - **A tool cannot reach a host:** it is not on the allow-list; see [Egress firewall](#egress-firewall). After a CDN
   rotation, retry after 15 seconds.
 - **post-create fails on "workspace is on a host filesystem":** you opened a local folder. Use *Clone Repository in Container Volume*.

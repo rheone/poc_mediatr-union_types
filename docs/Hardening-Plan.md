@@ -364,15 +364,17 @@ builds match.
 inside it, and the smoke test above passes. Docs: a `docs/DevContainer.md` covering prerequisites
 (Docker Desktop + WSL 2), first run, updating the SDK pin, and the safety model.
 
-**As built.** Delivered in `.devcontainer/` (`Dockerfile`, `devcontainer.json`, `init-firewall.sh`, `verify-isolation.sh`,
-`smoke-test.sh`, `post-create.sh`, `lsp-query.mjs`), `.claude/settings.json` and `.claude/hooks/`, `.mcp.json`, and
+**As built.** Delivered in `.devcontainer/` (`devcontainer.json` on a stock base image with published Features, `devcontainer-lock.json`, three local
+Features under `features/` (`egress-firewall`, `agent-tools`, `lockdown`), `verify-isolation.sh`, `smoke-test.sh`, `post-create.sh`,
+`lsp-query.mjs`), `.github/dependabot.yml` (the `devcontainers` ecosystem), `.claude/settings.json` and `.claude/hooks/`, `.mcp.json`, and
 [DevContainer.md](DevContainer.md).
 
-- **SDK.** The exact `global.json` SDK is installed from its official tarball with a checked SHA-512 (no stable apt package or MCR tag
-  carries an exact RC). Claude Code is installed with npm at a pinned version.
+- **SDK.** The dotnet Feature (`ghcr.io/devcontainers/features/dotnet`) installs the exact `global.json` SDK through its vendored
+  `dotnet-install.sh` (its `version` option accepts an exact pre-release string). That path has no archive checksum (no SHA-512 is pinned for the SDK); `smoke-test.sh` checks `dotnet --version` against `global.json` instead. Claude Code is installed at a pinned
+  npm version by the local `agent-tools` Feature, because Anthropic's published Feature cannot pin a version.
 - **Isolation.** The workspace is a named volume via *Clone Repository in Container Volume*; `workspaceMount` is deliberately unset and
-  `post-create.sh` fails if the workspace turns out to be a host bind mount. `NET_ADMIN` and `NET_RAW` remain in the bounding set for the
-  root PID 1 that programs the firewall; the attached user has none. The git-config and credential forwarding of VS Code are host user
+  `post-create.sh` fails if the workspace turns out to be a host bind mount. `NET_ADMIN` and `NET_RAW` (the `egress-firewall` Feature's `capAdd`) remain in the bounding set for the
+  root entrypoint that programs the firewall; the attached user has none. The git-config and credential forwarding of VS Code are host user
   settings the repo cannot set, so they are documented and *detected* by `verify-isolation.sh` rather than prevented.
 - **Language servers.** `csharp-ls` 0.27.0 was chosen. Neither it nor the newest Roslyn language server package found lists a C# 15
   `union` declaration as a document symbol; regular types work. The Markdown, JSON, YAML and Bash servers are delivered by a plugin in
