@@ -238,6 +238,23 @@ since it's the one project that's actually a runnable web application.
   (`HealthEndpointsOptionsValidator`) driven by DataAnnotations on the options class. Configure the
   paths with `HealthEndpoints:LivePath` / `HealthEndpoints:ReadyPath` (must start with `/`).
 
+## CORS (`Cors/`)
+
+- `AddApiCors()` registers `ApiCorsOptions` (section `Cors`, validated on start by
+  `ApiCorsOptionsValidator` and the `CorsOriginList` / `CorsTokenList` attributes) and one default
+  policy built from it; `UseApiCors()` applies it to every request. No `[EnableCors]` anywhere.
+- No configuration means no allowed origin and no CORS headers. The wildcard `*` is rejected in every
+  list. Only `appsettings.Development.json` lists origins (the localhost dev servers).
+- Defaults live in `ApiCorsOptions.DefaultAllowedMethods` / `DefaultAllowedHeaders` /
+  `DefaultExposedHeaders`; read the effective lists with `GetAllowedMethods()` etc. The lists are
+  nullable because the configuration binder appends configured items to an array that already has
+  defaults.
+- Pipeline position: after routing and HTTPS redirection, before `UseAuthentication`, so a preflight
+  (no `Authorization` header) is answered before the fallback authorization policy can refuse it. It
+  sits inside `TraceIdMiddleware`, request logging and the exception handler, so every CORS answer
+  carries `X-Trace-Id`. See the root README's [CORS](../../README.md#cors-letting-a-browser-client-call-the-api)
+  section for the options table and the exposed-headers contract.
+
 ## Dependencies
 
 **Project references:**

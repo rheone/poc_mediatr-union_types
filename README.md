@@ -64,6 +64,7 @@ Details below.
   - [Why not `IAuthorizationRequirementData` attributes](#why-not-iauthorizationrequirementdata-attributes)
 - [Impersonation: acting as another identity](#impersonation-acting-as-another-identity)
 - [Audit stream: a separate record of security-relevant actions](#audit-stream-a-separate-record-of-security-relevant-actions)
+- [CORS: letting a browser client call the API](#cors-letting-a-browser-client-call-the-api)
 - [Worked example: `UpdateProductCommand`, case by case](#worked-example-updateproductcommand-case-by-case)
 - [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index)
 - [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
@@ -2060,6 +2061,92 @@ capture and that the audit files hold none of the operational fields.
 same members as columns, `details` as JSON, insert-only permissions for the application's database user)
 replaces `FileAuditLog` in `AddAudit` and changes no caller. It would also make the trail queryable and give
 tamper-resistance the files cannot. It is not built.
+
+## CORS: letting a browser client call the API
+
+A browser refuses to let a page from one origin read responses from another unless the API opts in
+(cross-origin resource sharing). The API ships one CORS policy, built from the `Cors` configuration
+section (`ApiCorsOptions`, `Api/Cors/`), applied to every endpoint by `UseApiCors()`. It is secure by
+default: with no configuration `AllowedOrigins` is empty, no origin is allowed, and no `Access-Control-*`
+header is ever sent. `appsettings.json` has an empty list; only `appsettings.Development.json` lists the
+localhost dev servers (`http://localhost:5173`, `:4200`, `:3000`).
+
+### Options
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `AllowedOrigins` | empty (nothing allowed) | Each entry is `scheme://host[:port]` exactly as a browser sends it: lowercase, `http` or `https`, no path, query, fragment, user info or trailing slash, default port omitted. No duplicates. |
+| `AllowedMethods` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Method tokens; at least one when set. |
+| `AllowedHeaders` | `Authorization`, `Content-Type`, `If-Match`, `Accept` | Request headers a preflight may ask for; at least one when set. `Content-Type` is needed because `application/json` and `application/merge-patch+json` are not CORS-safelisted. |
+| `ExposedHeaders` | `ETag`, `Link`, `X-Total-Count`, `X-Trace-Id`, `Location`, `Retry-After`, `api-supported-versions` | See below. An empty list exposes nothing. |
+| `AllowCredentials` | `false` | See the warning below. |
+| `PreflightMaxAgeSeconds` | `600` | 0 to 86400; how long a browser may cache a preflight answer. |
+
+Every rule is validated when the host starts (`[OptionsValidator]` plus `CorsOriginListAttribute` and
+`CorsTokenListAttribute`), so a malformed value stops startup instead of silently never matching. A
+configured method, header or exposed-header list replaces the default list; it is not appended to it.
+
+### No wildcard origin
+
+`*` is rejected outright, in every list: an origin is always named explicitly. A wildcard origin
+would let any site on the internet script the API from a visitor's browser, and it cannot be combined
+with credentials anyway. Allowing "every subdomain" or "any localhost port" is the same mistake in a
+smaller size, so those patterns are refused too.
+
+### The exposed-headers contract
+
+A browser hides every response header that is not CORS-safelisted from page scripts unless the
+response lists it in `Access-Control-Expose-Headers`. The default list is therefore the contract with a
+browser client, and `ApiCorsOptions.DefaultExposedHeaders` is its only definition (a test checks that
+this table and the tables above name every default):
+
+| Header | Emitted by | Why a client needs it |
+| --- | --- | --- |
+| `ETag` | `GET`, `POST`, `PUT`, `PATCH` on one product | The value to send back in `If-Match`. |
+| `Link` | `GET /api/v1/products` | Next and previous page URLs (RFC 8288). |
+| `X-Total-Count` | `GET /api/v1/products` | The total number of matches. |
+| `X-Trace-Id` | Every response | The id to quote when reporting a problem. |
+| `Location` | `POST /api/v1/products` | The URL of the created product. |
+| `Retry-After` | Throttled responses (reserved; nothing emits it yet) | How long to wait before retrying. |
+| `api-supported-versions` | Every versioned response | The API versions the server offers. |
+
+### Where it sits in the pipeline, and why
+
+```text
+routing (implicit) -> TraceIdMiddleware -> Serilog request logging -> exception handler
+  -> status-code pages -> HTTPS redirection -> CORS -> authentication -> user log context
+  -> impersonation audit -> authorization -> endpoint
+```
+
+CORS runs after routing and before authentication. A preflight is a browser-sent `OPTIONS` request with
+`Access-Control-Request-Method` that, by design, carries no `Authorization` header. If authentication
+and the fallback authorization policy ran first they would answer it with a `401`, and the browser would
+refuse every cross-origin call that needs a preflight (all writes and every call with an
+`Authorization` header). CORS answers the preflight itself and never calls the rest of the pipeline;
+`tests/.../CorsTests.cs` proves it against the real pipeline, including the fallback policy. CORS runs
+inside the trace-id middleware, request logging and the exception handler, so a preflight, a request
+from a refused origin and a request that fails later all still carry `X-Trace-Id` and appear in the
+request log. Nothing is special-cased: health endpoints and, in Development, the OpenAPI and Scalar
+documents get the same policy as the API.
+
+The policy allows a preflight to be answered with the full allowed method and header lists rather than
+refusing a disallowed one; the browser compares them with what the page asked for and blocks the call.
+With more than one allowed origin the response carries `Vary: Origin` (the framework omits it when a
+single origin is configured).
+
+### Allowing a new origin
+
+Add it to the list in configuration for the environment that needs it, for example the environment
+variable `Cors__AllowedOrigins__0=https://app.example.com` (increment the index for each further origin),
+or the `Cors:AllowedOrigins` array in that environment's settings file. Do not commit a production origin
+to `appsettings.Development.json`.
+
+### Warning: `AllowCredentials`
+
+`AllowCredentials: true` lets scripts from the allowed origins send cookies and other browser-held
+credentials. The API authenticates with a bearer token that the client attaches itself, so it does not
+need this. Enable it only if a cookie-based client is added, and then only with a short, trusted origin
+list and CSRF protection in place: an allowed origin can act with the user's ambient credentials.
 
 ## Worked example: `UpdateProductCommand`, case by case
 

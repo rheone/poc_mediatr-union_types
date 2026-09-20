@@ -61,6 +61,7 @@ null.
 | **Validated options convention** | Settings bind from configuration and are validated when the host starts | `AddOptions<T>().BindConfiguration().ValidateOnStart()` with an `[OptionsValidator]` source-generated validator (plus a hand-written `IValidateOptions` for cross-field rules where needed) | `Api/Health/HealthEndpointsOptions.cs`, `Api/Impersonation/ImpersonationOptions.cs` | A bad setting stops startup instead of failing at runtime; one pattern for every future setting |
 | **OpenAPI and Scalar UI** | Generated OpenAPI with `ETag`, paging and precondition headers and example bodies; Scalar reference UI in Development | `Microsoft.AspNetCore.OpenApi` transformers, Scalar | `Api/OpenApi/` | The documented contract includes the conditional-request behaviour |
 | **URL-segment API versioning** | Routes are `/api/v1/...`; every versioned response reports `api-supported-versions`; `Location` and `Link` always carry the versioned URL; one OpenAPI document per version; the old unversioned URLs stay as a transitional alias for v1 | `Asp.Versioning.Mvc`, `Asp.Versioning.Mvc.ApiExplorer`, `[ApiVersion]`, a second `[Route]` and `AssumeDefaultVersionWhenUnspecified` for the alias, `AddVersionedOpenApi` | `Api/Http/ApiVersions.cs`, `Api/Controllers/`, `Api/OpenApi/OpenApiServiceCollectionExtensions.cs`, `ApiVersioningTests` | The contract can evolve without breaking clients, and existing callers move at their own pace |
+| **CORS** | One policy for a future browser client: secure by default (no configured origin, no CORS headers), explicit origins only (`*` is rejected), a preflight answered without credentials, and the response headers a browser must read exposed (`ETag`, `Link`, `X-Total-Count`, `X-Trace-Id`, `Location`, `Retry-After`, `api-supported-versions`). Localhost dev origins ship in Development configuration only | `AddApiCors`/`UseApiCors`, `ApiCorsOptions` (`Cors` section, validated on start with `CorsOriginList` and `CorsTokenList` attributes), placed after HTTPS redirection and before authentication | `Api/Cors/`, `CorsTests`, `CorsOptionsTests` | A browser client works without weakening the API: the preflight never meets the fallback authorization policy, and no site is allowed unless configured |
 
 ### Authorization
 
@@ -87,7 +88,6 @@ See [Hardening-Plan.md](Hardening-Plan.md) for scope, order and tests.
 
 | Feature | Intended mechanism | Why |
 | --- | --- | --- |
-| CORS stub | Named policy from options, exposing the headers a browser needs | Ready for a browser client |
 | Rate limiting | Built-in rate limiter, per-user partitions | Protects the API and the impersonation endpoint |
 | Request timeouts and OpenAPI contract check | `AddRequestTimeouts`, build-time OpenAPI diff test | Bounded requests and no accidental contract drift |
 | Dev container for agentic development | Linux container on a Windows host with the pinned SDK, language servers, Claude Code, skills and a code-graph MCP server | One command to a safe, reproducible environment in which an agent can build, test and navigate the code |

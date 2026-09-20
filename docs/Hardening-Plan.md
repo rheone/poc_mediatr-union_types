@@ -15,7 +15,7 @@ passing.
 | Audit | A separate, simple audit stream (see step 5); a database table and Seq are deferred |
 | Logging | Serilog with enrichment. Seq is **not** part of this plan (a new deployment is overkill for a POC) |
 | Versioning | URL segment: `/api/v1/products`; the unversioned URLs stay as a transitional alias for v1 |
-| CORS | A configurable stub policy for a future browser client |
+| CORS | A configurable policy for a future browser client; explicit origins only, none by default |
 | Rate limiting | Built-in ASP.NET Core rate limiter, per-user partitioning |
 | Language | No `field` keyword or primary-constructor work; only touch a file for other reasons |
 
@@ -178,7 +178,7 @@ is the reference.
 
 ## Step 6: API versioning and CORS
 
-Status: versioning implemented; CORS pending.
+Status: implemented.
 
 **Versioning.**
 
@@ -206,10 +206,25 @@ the path, a version that is not served is an unmatched route: a `404` problem (o
 anonymous caller, by the fallback policy), not a `400`. The Application layer has no versioning
 dependency (architecture test).
 
-**CORS.** A named policy bound to `CorsOptions` (allowed origins, methods, headers), empty or
-localhost by default. Never a wildcard origin combined with credentials. Placed before
-authentication. `WithExposedHeaders` lists the headers a browser must be able to read: `ETag`,
-`Link`, `X-Total-Count`, `X-Trace-Id`, `Retry-After`. A pre-flight test asserts the policy.
+**CORS.**
+
+Status: implemented.
+
+A named policy bound to `ApiCorsOptions` (allowed origins, methods, headers), empty by default.
+Never a wildcard origin combined with credentials. Placed before authentication.
+`WithExposedHeaders` lists the headers a browser must be able to read: `ETag`, `Link`,
+`X-Total-Count`, `X-Trace-Id`, `Retry-After`. A pre-flight test asserts the policy.
+
+**As built (CORS).** The wildcard origin is rejected outright rather than only when combined with
+credentials: origins are an explicit list, validated on start as canonical `http`/`https` origins.
+Localhost dev origins live in `appsettings.Development.json` only. The exposed list also carries
+`Location` and `api-supported-versions`; `Retry-After` is listed ahead of the rate limiter that will
+emit it (step 7). The method, header and exposed-header lists are nullable in the options class
+because the configuration binder appends to arrays that hold defaults; the effective values come
+from `GetAllowedMethods()` and its siblings. `UseCors` sits after HTTPS redirection and before
+authentication, inside the trace-id middleware. ASP.NET Core answers a preflight with the full
+allowed lists instead of refusing a disallowed method or header, and adds `Vary: Origin` only for
+more than one configured origin; the tests assert those behaviours.
 
 ## Step 7: Rate limiting
 

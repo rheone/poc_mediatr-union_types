@@ -243,6 +243,8 @@ scope as a `TraceId` property). `GlobalExceptionHandler` maps any unhandled exce
 problem (exception text in `detail` only in Development), logs it once at Error, and swallows client
 aborts. No exception-tracking service is bundled (OpenTelemetry and Sentry are the named options).
 
+**CORS** (`Api/Cors/`): one default policy from `ApiCorsOptions` (`Cors` section, validated on start; `AddApiCors()` + `UseApiCors()`, no `[EnableCors]`). No config means no allowed origin and no CORS headers; `*` is rejected outright; only `appsettings.Development.json` lists (localhost) origins. Method, header and exposed-header lists are nullable so configured values replace the defaults (the binder appends to arrays); the exposed-headers defaults are the browser contract. `UseCors` sits after HTTPS redirection and before `UseAuthentication`, inside the trace-id middleware, so a preflight never meets the fallback policy and still carries `X-Trace-Id`. Test hosts run in Development: post-configure `ApiCorsOptions` to pin a list.
+
 **Logging** (`Api/Logging/`): `ILogger` is the only logging API; Serilog is wired behind it in the Api
 host only (`builder.Host.UseApiLogging()`, non-static, `preserveStaticLogger`), configured by the
 `Serilog` section of `appsettings*.json` (console plus a rolling JSON file under `logs/`;

@@ -17,6 +17,18 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   `Link` always on the versioned URL (also when the alias or `v1.0` was used), a version that is not
   served is a `404` problem with the trace id (`401` when anonymous), and the v1 OpenAPI document lists
   only the versioned paths, each operation once, with Scalar pointing at it.
+- `CorsTests.cs` — the CORS policy over real HTTP with the fallback policy in place: the allowed origin
+  is echoed exactly (with `Vary: Origin` for several origins), a refused origin or an empty
+  configuration gets no `Access-Control-*` header, a `PATCH` preflight with `If-Match` and
+  `application/merge-patch+json` is answered with no credentials (while the same anonymous caller gets
+  `401` on a real request) and carries `X-Trace-Id`, disallowed methods and headers are not listed, the
+  exposed-headers list appears on real responses and each header the API emits is present, credentials
+  are off unless configured, an authenticated cross-origin write works, and configured lists replace
+  the defaults. The host runs in Development, so tests that need a specific list post-configure
+  `ApiCorsOptions`.
+- `CorsOptionsTests.cs` — the CORS defaults, every validation rule (origins, wildcard, duplicates,
+  method and header tokens, max-age bounds, each also refusing host start) and a check that the root
+  README names every default method, header and exposed header.
 - `ApiAuthentication.cs`, `TestAuthenticationHandler.cs`, `TestIdentityExtensions.cs` — how tests state
   who is calling. By default the factory registers a header-driven test scheme as the default
   authentication scheme, and `client.AsUser("alice", roles)` (or `request.AsUser(...)` for one request)

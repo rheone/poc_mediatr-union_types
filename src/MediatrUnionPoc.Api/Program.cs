@@ -2,6 +2,7 @@ using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
 using MediatrUnionPoc.Api.Audit;
 using MediatrUnionPoc.Api.Authentication;
+using MediatrUnionPoc.Api.Cors;
 using MediatrUnionPoc.Api.Health;
 using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Api.Impersonation;
@@ -52,6 +53,7 @@ builder.Services.AddResultHttpMapping();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 builder.Services.AddHealthEndpoints();
+builder.Services.AddApiCors();
 builder.Services.AddJwtAuthentication();
 builder.Services.AddImpersonation();
 builder.Services.AddAudit();
@@ -83,6 +85,10 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 
 app.UseHttpsRedirection();
+
+// After routing (implicit in the minimal host) and before authentication: a preflight carries no
+// credentials and is answered here, never reaching the fallback authorization policy.
+app.UseApiCors();
 
 app.UseAuthentication();
 
