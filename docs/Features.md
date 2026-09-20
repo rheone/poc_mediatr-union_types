@@ -89,3 +89,4 @@ See [Hardening-Plan.md](Hardening-Plan.md) for scope, order and tests.
 | CORS stub | Named policy from options, exposing the headers a browser needs | Ready for a browser client |
 | Rate limiting | Built-in rate limiter, per-user partitions | Protects the API and the impersonation endpoint |
 | Request timeouts and OpenAPI contract check | `AddRequestTimeouts`, build-time OpenAPI diff test | Bounded requests and no accidental contract drift |
+| Dev container for agentic development | Linux container on a Windows host with the pinned SDK, language servers, Claude Code, skills and a code-graph MCP server | One command to a safe, reproducible environment in which an agent can build, test and navigate the code |

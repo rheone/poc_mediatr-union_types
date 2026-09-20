@@ -164,6 +164,54 @@ Built into the framework (`Microsoft.AspNetCore.RateLimiting`).
 - OpenAPI generated at build time (`Microsoft.Extensions.ApiDescription.Server`); a test diffs it
   against a committed copy so an unintended contract change fails the build.
 
+## Step 9: Dev container for agentic development
+
+A reproducible environment on a Windows host in which Claude Code can build, test and navigate the
+repo safely. Independent of the API work, so it can be done last.
+
+**Windows-based means a Linux container on a Windows host.** Windows containers are the wrong tool:
+the Dev Containers tooling, Claude Code's reference setup, the language servers and the code-graph
+tools all target Linux, and Windows base images are very large. The container runs under Docker
+Desktop with the WSL 2 backend and is opened from VS Code (Dev Containers) or the CLI. If a Windows
+container is genuinely required it should be raised as a separate decision.
+
+- `.devcontainer/devcontainer.json` + `Dockerfile` (or a base image plus Features): the exact SDK
+  from `global.json` (.NET 11 preview, `allowPrerelease`), `git`, `gh`, **ripgrep** (the repo
+  instructions require `rg` over `grep`), Node (Claude Code and Husky), and the repo's local dotnet
+  tools restored (`dotnet tool restore`: csharpier, Husky.Net).
+- **Language servers:** C# (Roslyn language server or `csharp-ls`, wired into Claude Code's LSP
+  support so it gets symbol navigation and diagnostics), plus lightweight ones for Markdown, JSON,
+  YAML and shell. The implementing agent verifies which C# server actually handles C# 15 `union`
+  syntax on the preview SDK before committing to one, and reports honestly if none does yet.
+- **Claude Code** installed in the image, with `~/.claude` on a named volume so login and memory
+  survive rebuilds. No credentials are baked into the image or the repo.
+- **Skills:** the `mattpocock-skills` plugin set installed and enabled by committed project settings,
+  alongside the repo's own `csharp-union` skill if it is project-scoped. The agent verifies the
+  current install mechanism rather than assuming one.
+- **Code graph:** an MCP server that indexes the solution into a symbol and call graph so the agent
+  can ask "who calls this" instead of grepping. Candidates to evaluate (verify each exists, is
+  maintained, its licence, and that it handles C#): Serena (LSP-backed semantic tools) and a
+  tree-sitter based graph server. Pick one, wire it in a committed `.mcp.json`, and document the
+  reindex step.
+- **Safety:** an egress allow-list (firewall init script in the style of Anthropic's reference dev
+  container) so a container running with relaxed permission prompts can only reach NuGet, GitHub,
+  the Anthropic API and the chosen docs sources.
+- **Project settings:** a committed `.claude/settings.json` with a read-mostly permission allow-list
+  (`dotnet build|test|format`, `rg`, read-only `git`), and a post-edit hook running
+  `dotnet format whitespace` on changed files, so agent edits arrive already formatted.
+- A `NuGet` cache volume for fast rebuilds, and a documented smoke test: open the container, run
+  `dotnet build && dotnet test`, confirm the LSP answers a symbol query and the code graph answers a
+  call query.
+
+Suggested extras, each optional and separately switchable: Microsoft Learn and Context7 MCP servers
+for current framework documentation, the GitHub MCP server for issues and PRs, git worktree support
+so parallel agents do not share a working tree, and the same image reused by CI so local and CI
+builds match.
+
+**Tests/verification:** the container builds from scratch, `dotnet build` and `dotnet test` pass
+inside it, and the smoke test above passes. Docs: a `docs/DevContainer.md` covering prerequisites
+(Docker Desktop + WSL 2), first run, updating the SDK pin, and the safety model.
+
 ## Cross-cutting: documentation and tests
 
 Each step updates the README sections it invalidates (the "Where the identity comes from" section
