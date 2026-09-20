@@ -22,6 +22,9 @@ public static class ResultHttpExtensions
     /// <summary>The <see cref="CodeExtensionName"/> value on a not-found problem.</summary>
     public const string NotFoundCode = "NOT_FOUND";
 
+    /// <summary>The <see cref="CodeExtensionName"/> value on a 429 the rate limiter answers.</summary>
+    public const string RateLimitedCode = "RATE_LIMITED";
+
     private const string ProblemJson = "application/problem+json";
 
     private const string MissingIfMatchDetail =

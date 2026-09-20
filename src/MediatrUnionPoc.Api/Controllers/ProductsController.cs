@@ -4,6 +4,7 @@ using MediatR;
 using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Api.OpenApi;
+using MediatrUnionPoc.Api.RateLimiting;
 using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
@@ -15,6 +16,7 @@ using MediatrUnionPoc.Application.Features.Products.Patch;
 using MediatrUnionPoc.Application.Features.Products.Update;
 using MediatrUnionPoc.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace MediatrUnionPoc.Api.Controllers;
 
@@ -22,7 +24,8 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// Product CRUD. Each action sends one request and <c>switch</c>es exhaustively over the union it
 /// returns; no expected outcome is signalled by an exception. Every action requires an authenticated
 /// caller (the host's fallback policy); a missing or invalid token is answered 401 by the
-/// authentication middleware before an action runs. Case-to-status mapping (also declared
+/// authentication middleware before an action runs. Every action is rate limited (429 with
+/// <c>Retry-After</c>): the mutating ones by the <c>Writes</c> policy, the reads by the default <c>Reads</c> one. Case-to-status mapping (also declared
 /// via <c>ProducesResponseType</c> on each action):
 /// <list type="table">
 /// <listheader><term>Action</term><description>Cases</description></listheader>
@@ -61,6 +64,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// fails validation; 403 if the token carries no subject; 409 if another product already has an equivalent name (ignoring case and surrounding whitespace); 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpPost]
+    [EnableRateLimiting(RateLimitPolicyNames.Writes)]
     [ReturnsETag]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -181,6 +185,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// absent; 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpPut("{id:guid}")]
+    [EnableRateLimiting(RateLimitPolicyNames.Writes)]
     [ReturnsETag]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -221,6 +226,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpPatch("{id:guid}")]
+    [EnableRateLimiting(RateLimitPolicyNames.Writes)]
     [Consumes(MediaTypes.MergePatchJson)]
     [ReturnsETag]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
@@ -347,6 +353,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpDelete("{id:guid}")]
+    [EnableRateLimiting(RateLimitPolicyNames.Writes)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]

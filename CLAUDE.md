@@ -233,6 +233,19 @@ document per version via `AddVersionedOpenApi("v1")` (`Asp.Versioning.OpenApi` c
 `Microsoft.OpenApi` 2.x, the built-in generator 3.x). Domain/Application/Infrastructure never reference
 `Asp.Versioning` (architecture test). Integration tests take every URL from `tests/.../ApiRoutes.cs`.
 
+**Rate limiting and proxies** (`Api/RateLimiting/`, `Api/Proxies/`): the built-in limiter with three
+fixed-window policies, `Reads` / `Writes` / `Impersonation` (`RateLimitingOptions`, section `RateLimiting`,
+read through `IOptions`: restart to change). Every controller action is limited: `MapControllers()
+.WithDefaultRateLimiting()` gives an action that declares nothing `Reads`, `[EnableRateLimiting(...)]` picks
+another, and only an explicit `DisableRateLimiting()` exempts (health, Development OpenAPI/Scalar); a test
+walks every endpoint to enforce it. The partition (`RateLimitCaller`) is `user:<sub>`, the real `act` actor
+for an impersonated token, else `ip:<address>`. Middleware order: forwarded headers (only with
+`ForwardedHeaders:TrustedProxies`), trace id, request logging, exception handler, status-code pages, HTTPS
+redirection, CORS, authentication, user log context, impersonation audit, rate limiter, authorization,
+endpoints. `RateLimitRejectionHandler` writes the `429` problem (`code` `RATE_LIMITED`, `Retry-After`) and,
+for `Impersonation` only, a best-effort `RateLimited` audit event. The default test host uses maximal limits;
+rate-limit tests use `factory.WithLimits(...)`. See README "Rate limiting".
+
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It
 is stamped as the `traceId` member on every ProblemDetails body (`AddApiProblemDetails()` +

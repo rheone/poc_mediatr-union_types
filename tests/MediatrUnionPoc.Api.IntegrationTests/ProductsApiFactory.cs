@@ -68,6 +68,14 @@ public sealed class ProductsApiFactory(
         builder.UseSetting("Audit:Directory", AuditDirectory);
         builder.UseSetting("Serilog:WriteTo:File:Args:restrictedToMinimumLevel", "Fatal");
         builder.UseSetting("Serilog:WriteTo:Console:Args:restrictedToMinimumLevel", "Fatal");
+
+        // Generous limits, so no ordinary test ever meets the limiter; the rate-limiting tests override
+        // these through WithWebHostBuilder with tiny limits and very long windows.
+        foreach (var policy in new[] { "Reads", "Writes", "Impersonation" })
+        {
+            builder.UseSetting($"RateLimiting:{policy}:PermitLimit", GenerousPermitLimit);
+        }
+
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<ILogEventSink>(LogSink);
@@ -88,6 +96,12 @@ public sealed class ProductsApiFactory(
             );
         }
     }
+
+    /// <summary>The per-window permit limit every policy gets unless a test overrides it (the largest the options allow).</summary>
+    public const string GenerousPermitLimit = "1000000";
+
+    /// <summary>A request header that overrides <see cref="TestRemoteAddress"/> for that one request, so a test can be several distinct network callers.</summary>
+    public const string RemoteAddressHeaderName = "X-Test-Remote-Address";
 
     /// <summary>The source address every request appears to come from (the in-memory test server has none of its own), documentation range TEST-NET-3.</summary>
     public const string TestRemoteAddress = "203.0.113.7";
@@ -155,7 +169,12 @@ public sealed class ProductsApiFactory(
                     (context, nextMiddleware) =>
                     {
                         context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(
-                            TestRemoteAddress
+                            context.Request.Headers.TryGetValue(
+                                RemoteAddressHeaderName,
+                                out var over
+                            )
+                                ? over.ToString()
+                                : TestRemoteAddress
                         );
                         return nextMiddleware(context);
                     }

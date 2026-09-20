@@ -17,7 +17,8 @@ C# 14 extension members in `MediatrUnionPoc.Api.Http` (`ResultHttpExtensions`):
 `notAuthorized.ToProblemResult(HttpContext)`, `errors.ToProblemResult(HttpContext)`,
 `preconditionFailed.ToProblemResult(HttpContext)` (412), `conflict.ToProblemResult(HttpContext)`
 (409) and `missingIfMatch.ToProblemResult(HttpContext)` (428). Every failure body is
-`application/problem+json`; the 404 carries a `code` member (`"NOT_FOUND"`).
+`application/problem+json`; the 404 carries a `code` member (`"NOT_FOUND"`), and the 429 the rate
+limiter writes one (`"RATE_LIMITED"`, `ResultHttpExtensions.RateLimitedCode`).
 
 - `HttpMappingOptions` (registered by `AddResultHttpMapping(Action<HttpMappingOptions>?)` in
   `Program.cs`, resolved through `HttpContext.RequestServices`): `ErrorStatusCodes` maps an
@@ -230,7 +231,8 @@ since it's the one project that's actually a runnable web application.
 - `GET /health/live` runs no checks (proves the process answers). `GET /health/ready` runs the
   checks tagged `ready`: a `SELECT 1` round trip on `AppDbContext` (`AddDbContextCheck`, from
   `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore`). Both are
-  `.AllowAnonymous()` and return the default plain-text status only (`503` when unhealthy).
+  `.AllowAnonymous().DisableRateLimiting()` and return the default plain-text status only (`503` when
+  unhealthy).
 - Caveat: with the default private in-memory SQLite database the readiness check is trivially
   healthy; it is only meaningful with a real `ConnectionStrings:Products`.
 - **Options convention for new settings:** `AddOptions<T>().BindConfiguration("Section")
@@ -254,6 +256,37 @@ since it's the one project that's actually a runnable web application.
   sits inside `TraceIdMiddleware`, request logging and the exception handler, so every CORS answer
   carries `X-Trace-Id`. See the root README's [CORS](../../README.md#cors-letting-a-browser-client-call-the-api)
   section for the options table and the exposed-headers contract.
+
+## Rate limiting (`RateLimiting/`)
+
+- `AddApiRateLimiting()` registers `RateLimitingOptions` (section `RateLimiting`, one `RateLimitPolicyOptions`
+  per policy, validated on start by the source-generated `RateLimitingOptionsValidator` and
+  `RateLimitPolicyOptionsValidator`), the framework's rate limiter and three fixed-window policies named in
+  `RateLimitPolicyNames`: `Reads`, `Writes`, `Impersonation`. The limits are read once through `IOptions`
+  (restart to change; with `IOptionsMonitor` an invalid reloaded value made every later request a `500`).
+- `RateLimitCaller.From(HttpContext)` is the one definition of the partition: `user:<sub>` for an authenticated
+  caller, `user:<actor>` (the `act` subject, never the effective identity) for an impersonated one, else
+  `ip:<address>` (`ip:unknown` when the connection has none).
+- `UseApiRateLimiting()` sits after `UseImpersonationAudit()` and before `UseAuthorization()`.
+  `MapControllers().WithDefaultRateLimiting()` gives every action that declares nothing the `Reads` policy;
+  actions opt into another with `[EnableRateLimiting(RateLimitPolicyNames.Writes)]`, and only an explicit
+  `DisableRateLimiting()` exempts an endpoint (health, and the Development OpenAPI and Scalar endpoints).
+- `RateLimitRejectionHandler` (the limiter's `OnRejected`) writes the `429` problem (`code` `RATE_LIMITED`,
+  `traceId`, `Retry-After`), logs a `Warning` (event id 1300) and, for the `Impersonation` policy only, a
+  best-effort audit event (`Impersonation.IssueToken`, outcome `RateLimited`; a failed write is event id 1301).
+- `OpenApi/RateLimitResponseTransformer` declares the `429` (with `Retry-After` and an example) on every
+  operation that is not exempt.
+
+## Forwarded headers (`Proxies/`)
+
+- `AddApiForwardedHeaders()` registers `ApiForwardedHeadersOptions` (section `ForwardedHeaders`,
+  `TrustedProxies`: IP addresses or CIDR networks, validated on start by `ApiForwardedHeadersOptionsValidator`)
+  and, when any are configured, the framework's `ForwardedHeadersOptions` trusting exactly those proxies for
+  `X-Forwarded-For` and `X-Forwarded-Proto`.
+- `UseApiForwardedHeaders()` is the first middleware, and adds nothing at all when no proxy is configured, so
+  a client-supplied `X-Forwarded-For` is ignored by default. The address it produces feeds the rate limiter,
+  the request log and the audit `sourceIp`. See the root README's
+  [Rate limiting](../../README.md#rate-limiting-a-budget-per-caller) section.
 
 ## Dependencies
 

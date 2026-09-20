@@ -29,6 +29,29 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
 - `CorsOptionsTests.cs` — the CORS defaults, every validation rule (origins, wildcard, duplicates,
   method and header tokens, max-age bounds, each also refusing host start) and a check that the root
   README names every default method, header and exposed header.
+- `RateLimitingTests.cs` — the limiter over real HTTP with tiny limits and hour-long windows (count
+  requests, never wait): the exact `429` problem (`type`, `title`, `status`, `code` `RATE_LIMITED`, `traceId`
+  equal to `X-Trace-Id`, whole-second `Retry-After`), the `Warning` log with policy and partition kind but no
+  address, reads and writes on independent budgets, two users and two addresses on independent budgets, an
+  address budget that can never be an authenticated caller's (even a user named like the address), a `401` and
+  a `403` still spending budget, health and OpenAPI never limited, a CORS preflight never counted or refused,
+  and `Retry-After` exposed on a cross-origin `429`.
+- `RateLimitingImpersonationTests.cs` — with real JWTs: impersonated requests spend the real actor's budget
+  (and are audited as `429`), minting is limited by its own tighter budget, a refused mint is audited
+  (`RateLimited`, actor, source address, trace id; no actor when anonymous), a refusal by another policy is
+  not, an audit write failure is logged at `Error` and the `429` still goes out, and a bad token still spends
+  the address budget.
+- `RateLimitingSecureByDefaultTests.cs` — a throwaway controller (`TestData/RateLimitProbeController`, added as
+  an application part) proves an unannotated action is limited, a declared policy beats the default and
+  `DisableRateLimiting` exempts; walks every mapped endpoint to prove each declares a policy or is an
+  explicit operational exemption, and that each controller action's policy fits its verb.
+- `RateLimitingOptionsTests.cs` — defaults (equal in code, `appsettings.json` and the README table), every
+  bound of every policy, host start refusing an invalid limit, and a configuration reload (valid or invalid)
+  changing nothing until restart. `RateLimitingOpenApiTests.cs` — every operation declares the `429` with its
+  header and example.
+- `ForwardedHeadersTests.cs` — with no trusted proxy a spoofed `X-Forwarded-For` cannot change the rate-limit
+  partition; with trusted proxies (an address or a CIDR network) the forwarded client is the partition and the
+  audit `sourceIp`, and from an untrusted sender the header is ignored; entry validation and host start.
 - `ApiAuthentication.cs`, `TestAuthenticationHandler.cs`, `TestIdentityExtensions.cs` — how tests state
   who is calling. By default the factory registers a header-driven test scheme as the default
   authentication scheme, and `client.AsUser("alice", roles)` (or `request.AsUser(...)` for one request)
@@ -90,7 +113,12 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
 system temp path (`factory.AuditDirectory`, set through `Audit:Directory`), never under the repository;
 `factory.ReadAuditEvents()` reads the events back, and the directory is removed on dispose (and at process
 exit as a backstop). The factory also gives every request a fixed remote address, since the in-memory
-server has none. A test makes the audit path unwritable by pointing `Audit:Directory` at an existing file.
+server has none (a test overrides it per request with the `X-Test-Remote-Address` header, and
+`TestData/RateLimitTestSupport` does that for the rate-limiting tests). A test makes the audit path unwritable by pointing `Audit:Directory` at an existing file.
+
+**Rate limits.** The factory sets every policy's limit to the maximum the options allow, so no ordinary test
+ever meets the limiter; a rate-limiting test derives a host with `factory.WithLimits(reads: 2, ...)`, which
+sets a tiny limit and an hour-long window through configuration.
 
 **Capturing logs.** `ProductsApiFactory` runs the real Serilog setup and registers a
 `CapturingLogEventSink` (`factory.LogSink.Events`, shared with derived hosts), which sees every

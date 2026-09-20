@@ -8,6 +8,8 @@ using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Api.Impersonation;
 using MediatrUnionPoc.Api.Logging;
 using MediatrUnionPoc.Api.OpenApi;
+using MediatrUnionPoc.Api.Proxies;
+using MediatrUnionPoc.Api.RateLimiting;
 using MediatrUnionPoc.Application;
 using MediatrUnionPoc.Infrastructure;
 using Scalar.AspNetCore;
@@ -57,6 +59,8 @@ builder.Services.AddApiCors();
 builder.Services.AddJwtAuthentication();
 builder.Services.AddImpersonation();
 builder.Services.AddAudit();
+builder.Services.AddApiForwardedHeaders();
+builder.Services.AddApiRateLimiting();
 
 var app = builder.Build();
 
@@ -65,14 +69,20 @@ await app.Services.EnsureInfrastructureCreatedAsync();
 if (app.Environment.IsDevelopment())
 {
     // The documents stay anonymous in Development so the UI can load before a token is entered.
-    app.MapOpenApi().AllowAnonymous();
+    app.MapOpenApi().AllowAnonymous().DisableRateLimiting();
 
     // One entry per API version, so the UI's document picker lists /openapi/v1.json, /openapi/v2.json, ...
     app.MapScalarApiReference(options =>
             options.AddDocuments(app.DescribeApiVersions().Select(version => version.GroupName))
         )
-        .AllowAnonymous();
+        .AllowAnonymous()
+        .DisableRateLimiting();
 }
+
+// First: with trusted proxies configured, everything after it (rate limiting, request logging, the
+// audit source address) sees the client's address instead of the proxy's. With none configured this
+// adds nothing and a client's X-Forwarded-* headers are ignored.
+app.UseApiForwardedHeaders();
 
 app.UseMiddleware<TraceIdMiddleware>();
 
@@ -98,9 +108,17 @@ app.UseUserLogContext();
 // impersonated caller receives is recorded too.
 app.UseImpersonationAudit();
 
+// After authentication (the caller is the partition), CORS (a preflight is answered there and
+// neither spends nor is refused by a budget) and the impersonation audit (a request refused with a
+// 429 under an impersonation token is still recorded), and before authorization, so a request
+// answered 401 or 403 still spends budget.
+app.UseApiRateLimiting();
+
 app.UseAuthorization();
 
-app.MapControllers();
+// Every controller action is rate limited: [EnableRateLimiting] picks a policy, and an action that
+// names none gets the Reads policy. Exempting an endpoint takes an explicit DisableRateLimiting.
+app.MapControllers().WithDefaultRateLimiting();
 
 app.MapHealthEndpoints();
 

@@ -228,6 +228,8 @@ more than one configured origin; the tests assert those behaviours.
 
 ## Step 7: Rate limiting
 
+Status: implemented.
+
 Built into the framework (`Microsoft.AspNetCore.RateLimiting`).
 - Policies by intent: a generous `reads` policy and a stricter `writes` policy, plus a tight policy
   for the impersonation endpoint. Applied with `[EnableRateLimiting]`; health endpoints use
@@ -240,6 +242,29 @@ Built into the framework (`Microsoft.AspNetCore.RateLimiting`).
 - Documented limitation: limits are per instance and in memory; multi-instance enforcement needs a
   gateway or shared store.
 - **Tests:** tiny limit with a long window, count requests, assert the `429` shape (no timing).
+
+**As built.**
+- **Read once, not live.** The plan leaned to `IOptionsMonitor`; it was tried and rejected. Once an invalid value
+  was written to a watched settings file the monitor's current value threw, and every request that needed a new
+  partition became a `500`. The limits are read through `IOptions` (restart to change): the limiter keeps the
+  limits it started with, and the next start refuses the bad value.
+- **Fixed windows**, no queue by default: the cheapest algorithm with an exact `Retry-After`; the burst across a
+  window boundary is the accepted cost.
+- **Secure by default** is `MapControllers().WithDefaultRateLimiting()` (an action that declares no policy gets
+  `Reads`; a declared policy or `DisableRateLimiting` always wins), backed by a test that walks every mapped
+  endpoint and one that adds a throwaway unannotated controller. An unmatched route has no endpoint and is not
+  counted.
+- **Partitions:** `user:<sub>`, the real actor (`act`) for an impersonated token (never the effective
+  identity), else `ip:<address>`. `RateLimitCaller` is the single definition.
+- **Position:** after the impersonation audit rather than directly after authentication, so a request refused
+  under an impersonation token is still audited as a `429`; still after CORS and authentication and before
+  authorization.
+- **Audit:** a refused request on the token endpoint is written by the rejection handler (`Impersonation.IssueToken`,
+  outcome `RateLimited`), best effort, which closes step 3's "denials audited" gap for the limiter.
+- **Forwarded headers** are opt-in (`ForwardedHeaders:TrustedProxies`, IP addresses or CIDR networks, validated
+  on start, catch-alls refused); with none configured the middleware is not added and `X-Forwarded-For` is ignored.
+  `X-Forwarded-Proto` is honoured alongside it, because a TLS-terminating proxy would otherwise loop HTTPS
+  redirection.
 
 ## Step 8: Request timeouts and the OpenAPI contract check
 

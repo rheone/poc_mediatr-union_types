@@ -65,6 +65,7 @@ Details below.
 - [Impersonation: acting as another identity](#impersonation-acting-as-another-identity)
 - [Audit stream: a separate record of security-relevant actions](#audit-stream-a-separate-record-of-security-relevant-actions)
 - [CORS: letting a browser client call the API](#cors-letting-a-browser-client-call-the-api)
+- [Rate limiting: a budget per caller](#rate-limiting-a-budget-per-caller)
 - [Worked example: `UpdateProductCommand`, case by case](#worked-example-updateproductcommand-case-by-case)
 - [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index)
 - [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
@@ -198,8 +199,8 @@ pipeline throws for an outcome it expected to see.
 
 - **An identity provider.** The API validates JWT bearer tokens but issues none (no login, no
   refresh, no user store); see [Where the identity comes from](#where-the-identity-comes-from).
-- **Rate limiting, CORS.** Neither is configured. (Health checks are; see
-  [Health checks and options](#health-checks-and-options).)
+- **Cross-instance rate limiting.** Limits are counted per instance, in memory; enforcing one limit across
+  instances needs a gateway or a shared store (see [Rate limiting](#rate-limiting-a-budget-per-caller)).
 - **Migrations and a production database.** The schema is created with `EnsureCreated` on SQLite.
   There is no migration history, and the unique-violation detection reads SQLite's error message,
   so another provider needs its own check (see
@@ -984,6 +985,12 @@ flowchart TD
     Map --> Done([HTTP response: status per The HTTP contract table])
 ```
 
+Before the controller runs, the request passes the host's middleware, in this order: forwarded headers (only
+with trusted proxies), trace id, request logging, exception handler, status-code pages, HTTPS redirection, CORS,
+authentication, user log context, impersonation audit, rate limiter, authorization. Each is explained where it
+is introduced ([CORS](#cors-letting-a-browser-client-call-the-api),
+[Rate limiting](#rate-limiting-a-budget-per-caller)); the diagram above starts after them.
+
 Only the last "Controller switches on the union" step is HTTP-aware — everything above it deals
 purely in domain outcomes; the status each case becomes is in
 [The HTTP contract](#the-http-contract-every-endpoint-and-outcome). The pipeline behaviors run in
@@ -1058,6 +1065,12 @@ row below applies; the table lists only what a valid caller can get. The middlew
 are problem bodies with a `traceId` like every other failure. Only `/health/live`, `/health/ready`
 and, in Development, `/openapi/v1.json` and `/scalar` are anonymous.
 
+**Rate limiting.** Every endpoint of the table below (all but the health probes and the Development documents)
+can also answer `429 Too Many Requests` once the caller has spent its budget: a problem body with `code`
+`RATE_LIMITED`, the `traceId` and a `Retry-After` header in whole seconds. It comes from the rate limiter,
+after authentication and before authorization, so it is not a union case and is not repeated per row; see
+[Rate limiting](#rate-limiting-a-budget-per-caller).
+
 Request headers the API reads:
 
 | Header | Used by | Meaning |
@@ -1065,6 +1078,7 @@ Request headers the API reads:
 | `Authorization: Bearer <jwt>` | every product endpoint | The caller's identity: its `sub` becomes the new product's owner on `POST` and must equal the owner on `PUT`/`PATCH`; a `role` of `Administrator` is required on `DELETE` |
 | `If-Match: W/"n"` | `PUT`, `PATCH` (required); `DELETE` (optional) | The `ETag` of the version being changed |
 | `Content-Type: application/merge-patch+json` | `PATCH` | Required for `PATCH`; anything else is `415` |
+| `X-Forwarded-For` | every endpoint, **only** from a configured trusted proxy | The client address a reverse proxy reports; ignored from anyone else. See [Behind a reverse proxy](#behind-a-reverse-proxy) |
 
 | Endpoint | Union case | Status | Notes |
 | --- | --- | --- | --- |
@@ -1111,8 +1125,8 @@ Request headers the API reads:
 Outside the union: the framework itself answers a body that cannot be bound (`400`), an unmatched
 route (`404`, including a non-GUID `{id}` and an API version this host does not serve; `401` first
 when the caller is anonymous, since the fallback policy covers unmatched requests too) and an
-unsupported media type (`415`) with the same problem shape and trace id, and `GlobalExceptionHandler`
-answers an unexpected exception with `500`.
+unsupported media type (`415`) with the same problem shape and trace id, `GlobalExceptionHandler`
+answers an unexpected exception with `500`, and the rate limiter answers `429`.
 The `Error` to status table is configurable (`HttpMappingOptions.ErrorStatusCodes`). The OpenAPI
 document at `/openapi/v1.json` declares these responses, the `ETag` and paging response headers,
 and example bodies.
@@ -1230,7 +1244,8 @@ That returns the request line and every log event written while it ran, includin
 
 ## Health checks and options
 
-Two anonymous probe endpoints, mapped with `.AllowAnonymous()` and answering the framework's default
+Two anonymous probe endpoints, mapped with `.AllowAnonymous().DisableRateLimiting()` (a probe must never be
+refused) and answering the framework's default
 plain-text status only (`Healthy`, `Degraded` or `Unhealthy`; never a JSON body of check details):
 
 | Endpoint | Runs | Answers |
@@ -1959,13 +1974,15 @@ behind an abstraction that a database table can replace later.
 | Action | Written by | Outcome |
 | --- | --- | --- |
 | `Impersonation.IssueToken` | `AuditBehavior`, for `IssueImpersonationTokenCommand` | The runtime union case: `ImpersonationToken`, `NotAuthorized`, `ValidationErrors`, `Error` |
+| `Impersonation.IssueToken` | `RateLimitRejectionHandler`, when the [rate limiter](#rate-limiting-a-budget-per-caller) refuses a request to the token endpoint before it reaches the pipeline | `RateLimited` (best effort: a failed write is logged at `Error` and the `429` is still sent) |
 | `Product.Create`, `Product.Update`, `Product.Patch`, `Product.Delete` | `AuditBehavior`, for the four product mutations | The case: `ProductDto`, `Success`, `NotFound`, `ValidationErrors`, `NotAuthorized`, `PreconditionFailed`, `Conflict`, `Error` |
 | `Impersonation.Request` | `ImpersonationAuditMiddleware`, for every HTTP request made under an impersonation token | The HTTP status code |
 
 Reads (`GET`) and requests made with ordinary tokens are not audited, and health probes (anonymous) never
 appear. **Not audited:** an anonymous request or a failed authentication (a missing, expired or badly
 signed token) never reaches a principal to attribute, so the framework's `401` is only in the operational
-request log; and `POST /api/v1/impersonation/tokens` answering `404` because impersonation is switched off
+request log (the one exception is an anonymous request the rate limiter refuses on the token endpoint, which
+is recorded with no actor); a `429` on any other endpoint is only in the operational log; and `POST /api/v1/impersonation/tokens` answering `404` because impersonation is switched off
 happens before the pipeline.
 
 ### The event
@@ -2107,18 +2124,19 @@ this table and the tables above name every default):
 | `X-Total-Count` | `GET /api/v1/products` | The total number of matches. |
 | `X-Trace-Id` | Every response | The id to quote when reporting a problem. |
 | `Location` | `POST /api/v1/products` | The URL of the created product. |
-| `Retry-After` | Throttled responses (reserved; nothing emits it yet) | How long to wait before retrying. |
+| `Retry-After` | Every `429` from the [rate limiter](#rate-limiting-a-budget-per-caller) | How long to wait before retrying. |
 | `api-supported-versions` | Every versioned response | The API versions the server offers. |
 
 ### Where it sits in the pipeline, and why
 
 ```text
-routing (implicit) -> TraceIdMiddleware -> Serilog request logging -> exception handler
-  -> status-code pages -> HTTPS redirection -> CORS -> authentication -> user log context
-  -> impersonation audit -> authorization -> endpoint
+forwarded headers (only with trusted proxies) -> routing (implicit) -> TraceIdMiddleware
+  -> Serilog request logging -> exception handler -> status-code pages -> HTTPS redirection -> CORS
+  -> authentication -> user log context -> impersonation audit -> rate limiter -> authorization -> endpoint
 ```
 
-CORS runs after routing and before authentication. A preflight is a browser-sent `OPTIONS` request with
+CORS runs after routing and before authentication (and before the rate limiter, which a preflight therefore
+never meets; see [Rate limiting](#rate-limiting-a-budget-per-caller)). A preflight is a browser-sent `OPTIONS` request with
 `Access-Control-Request-Method` that, by design, carries no `Authorization` header. If authentication
 and the fallback authorization policy ran first they would answer it with a `401`, and the browser would
 refuse every cross-origin call that needs a preflight (all writes and every call with an
@@ -2147,6 +2165,169 @@ to `appsettings.Development.json`.
 credentials. The API authenticates with a bearer token that the client attaches itself, so it does not
 need this. Enable it only if a cookie-based client is added, and then only with a short, trusted origin
 list and CSRF protection in place: an allowed origin can act with the user's ambient credentials.
+
+## Rate limiting: a budget per caller
+
+The API limits how fast one caller can call it, with the framework's own rate limiter
+(`Microsoft.AspNetCore.RateLimiting`, in the shared framework; no package). It is on by default and bounded
+by default: the limits below apply with no configuration at all. Registration and placement live in
+`Api/RateLimiting/` (`AddApiRateLimiting()`, `UseApiRateLimiting()`), so `Program.cs` stays a list of calls.
+
+### Options
+
+`RateLimitingOptions` (section `RateLimiting`) holds one budget per policy. Each budget is at most
+`PermitLimit` requests per caller in each fixed window of `WindowSeconds` seconds; a request over the limit is
+refused at once, never queued, unless `QueueLimit` says otherwise.
+
+| Policy | PermitLimit | WindowSeconds | QueueLimit | Applies to |
+| --- | --- | --- | --- | --- |
+| `Reads` | 120 | 60 | 0 | Every `GET`, and any action that names no policy (see below) |
+| `Writes` | 30 | 60 | 0 | `POST`, `PUT`, `PATCH` and `DELETE` on products |
+| `Impersonation` | 5 | 60 | 0 | `POST /api/v1/impersonation/tokens`: minting a credential |
+
+`PermitLimit` is 1 to 1,000,000, `WindowSeconds` 1 to 86,400 and `QueueLimit` 0 to 1,000. Every rule is
+validated when the host starts (`[OptionsValidator]`, nested per policy), so a zero or absurd value stops
+startup. The defaults are the same in code and in `appsettings.json`; a test checks that, and that this table
+lists them. Override per environment, for example `RateLimiting__Writes__PermitLimit=100`.
+
+**Fixed window, and why.** A fixed window is one counter per caller per window: the cheapest algorithm, the
+easiest to explain to a client, and the one whose `Retry-After` is exact (the time until the window rolls
+over). Its known weakness is a burst of up to twice the limit across a window boundary; for these limits that
+is acceptable, and a sliding window or a token bucket can replace it in one place (`PartitionFor`) if a client
+needs smoother pacing. `QueueLimit` stays 0 because a queued request holds a connection open, which makes the
+queue a resource an attacker can fill.
+
+**Restart to change a limit.** The limits are read once, through `IOptions`. Live reload through
+`IOptionsMonitor` was tried and rejected: a limit is a security control, and once an invalid value was written
+to a watched settings file the monitor's current value threw, so every caller arriving afterwards was answered
+`500` (the reload itself throws too, as it does for every validated options class in this host). With `IOptions`
+a configuration reload, valid or not, changes nothing until the next start: the limiter keeps the limits it
+started with, and the next start refuses an invalid value.
+
+### Who is counted
+
+Each policy keeps one counter per caller (a "partition"), so callers never share a budget and the three
+policies never share one either:
+
+- An **authenticated** caller is counted by identity: the key is `user:` plus the token's `sub`. A token with
+  no `sub` has no identity and is counted by address.
+- An **impersonated** request (a token that carries an `act` claim) is counted against the **real actor**,
+  never the identity it runs as. Otherwise an administrator could mint a token for each of a hundred users and
+  spend a fresh budget under each. The actor is read with the same `GetActorId()` the audit stream uses; a token
+  whose actor cannot be read falls back to the address, never to the effective identity. The `Impersonation`
+  policy uses the same rule, so it is always the real caller who is limited.
+- An **anonymous** caller, including one whose token was rejected, is counted by address: `ip:` plus the
+  connection's remote address (an IPv4-mapped IPv6 address is unwrapped; a connection with no address shares
+  the fixed key `ip:unknown`, so it is one bucket, not an exemption).
+
+The kind prefix means an address string can never collide with a user id (a user whose id is `203.0.113.7`
+does not share the budget of the address `203.0.113.7`; a test proves it). The keys are never logged or
+returned: a refusal logs only the policy and the kind (`user` or `ip`), and the user id is already a property of
+every log event. An address is never in a problem body.
+
+### Every endpoint is limited unless it says otherwise
+
+- Every controller action is limited. `[EnableRateLimiting(RateLimitPolicyNames.Writes)]` puts the four
+  mutating actions on `Writes` and `[EnableRateLimiting(RateLimitPolicyNames.Impersonation)]` the token
+  endpoint. An action with **no** attribute gets `Reads`: `MapControllers().WithDefaultRateLimiting()` adds it
+  as endpoint metadata only when the action declared nothing, so a declared policy always wins and a forgotten
+  attribute costs a looser budget, never no budget. A new mutating action should still say `Writes`.
+- **Exempt:** `/health/live` and `/health/ready` (a probe must never be refused), and in Development the
+  OpenAPI and Scalar endpoints. Each says `DisableRateLimiting()` where it is mapped, so an exemption is always
+  visible in the code.
+- A test walks every endpoint the host maps and fails if one carries neither `EnableRateLimiting` nor
+  `DisableRateLimiting`, or if a controller action's policy does not fit its verb; another adds a throwaway
+  controller with an unannotated action and proves it is limited.
+- **Not counted:** a request that matches no endpoint (an unknown route) has no policy to apply, and a CORS
+  preflight is answered before the limiter (below). Neither does any work.
+
+**Exempting a future endpoint.** Say so where it is declared: `[DisableRateLimiting]` on the action, or
+`.DisableRateLimiting()` on a mapped endpoint, and add its route to the exempt list in
+`EveryEndpoint_IsLimitedOrExplicitlyExempt_Test`, which is the guard against an exemption nobody chose. A
+non-controller endpoint that should be limited needs `.RequireRateLimiting(...)` (or
+`.WithDefaultRateLimiting()`); the same test fails until it has one or the other.
+
+### Where it sits in the pipeline
+
+```text
+forwarded headers (only with trusted proxies) -> routing (implicit) -> TraceIdMiddleware
+  -> Serilog request logging -> exception handler -> status-code pages -> HTTPS redirection -> CORS
+  -> authentication -> user log context -> impersonation audit -> rate limiter -> authorization -> endpoint
+```
+
+- After **authentication**, because the partition is the caller and the principal must exist.
+- After **CORS**, because a preflight is answered by CORS and never reaches the limiter: it neither spends
+  budget nor is refused when the budget is spent (a test proves both). CORS also adds its headers before the
+  request continues, so a `429` to an allowed origin carries them, and `Retry-After` is on the exposed list, so
+  browser code can read how long to wait (a test asserts it on a real `429` with an `Origin`).
+- Before **authorization**, so a request the fallback policy answers `401` (or a policy `403`) still spends
+  budget: an attacker guessing tokens is limited too.
+- After the **impersonation audit**, so a request made under an impersonation token that the limiter refuses is
+  still recorded (as a `429`) against the real actor.
+
+### The `429` response
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/problem+json
+Retry-After: 42
+X-Trace-Id: 4bf92f3577b34da6a3ce929d0e0e4736
+
+{
+  "type": "https://tools.ietf.org/html/rfc6585#section-4",
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Rate limit exceeded. Retry after 42 seconds.",
+  "code": "RATE_LIMITED",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736"
+}
+```
+
+It is a problem body like every other non-2xx response: `traceId` and `X-Trace-Id` agree, and `code` is the
+stable member a client matches on (as `NOT_FOUND` is for a 404). `Retry-After` is whole seconds, taken from the
+limiter's own hint (the time until the window rolls over); when the limiter gives none, the policy's whole
+window is used. The body says nothing about other callers, the limit or the address. A refusal is logged once
+at `Warning` (`RateLimited`, event id 1300) with the policy and the partition kind, and is declared on every
+operation of the OpenAPI document with the `Retry-After` header and this example.
+
+**A refused impersonation-token request is also audited**, closing the gap "every attempt is audited, including
+denials": the request never reaches the command, so the rejection handler writes an `Impersonation.IssueToken`
+event with outcome `RateLimited` (actor from the principal, or none for an anonymous caller; source address;
+trace id). It is best effort: a failure to write is logged at `Error` (event id 1301) and the `429` still goes
+out, because refusing the request is the point. A refusal by any other policy is not audited.
+
+### Behind a reverse proxy
+
+Behind a load balancer every connection comes from the proxy, so without help every anonymous caller would
+share one address and one budget. `ForwardedHeaders:TrustedProxies` (`ApiForwardedHeadersOptions`,
+`Api/Proxies/`) opts in:
+
+```json
+{ "ForwardedHeaders": { "TrustedProxies": ["10.0.0.5", "10.1.0.0/16"] } }
+```
+
+- **Empty (the default): the forwarded-headers middleware is not enabled at all.** A client's `X-Forwarded-For`
+  is ignored, so it cannot choose the address it is limited under (a test sends a different spoofed value on
+  every request and stays in one partition).
+- **With entries:** `UseForwardedHeaders` runs first in the pipeline and honours `X-Forwarded-For` and
+  `X-Forwarded-Proto` only from those addresses or networks (the framework's default trust of loopback is
+  removed). The client address a trusted proxy reports then feeds the rate limiter, the request log and the
+  audit `sourceIp`; from any other sender the headers are ignored.
+- Each entry is an IP address or a CIDR network, validated on start: a malformed entry, a network whose address
+  has host bits set (`10.0.0.1/24`), an unspecified address and a catch-all network (`0.0.0.0/0`, `::/0`) stop
+  the host, because trusting everyone is the same as trusting the client.
+- Only the nearest proxy hop is read (`ForwardLimit` 1). A chain of proxies needs each hop listed.
+
+### Limitations
+
+- **Per instance, in memory.** Each instance counts on its own, so the effective limit is the configured one
+  times the number of instances, and a restart clears every counter. Enforcing one limit across instances needs
+  a gateway in front of them or a shared store (a distributed limiter); this POC does neither.
+- **IPv6 callers** are counted by full address, so one client holding a whole `/64` can rotate addresses.
+  Counting by prefix is a small change to `RateLimitCaller` if that matters.
+- **Anonymous callers behind one NAT share a budget**, and so do all of them when the proxy is not trusted (see
+  above): configure the proxy.
+- **Memory:** a partition exists per caller seen; the framework discards a fully replenished, idle partition.
 
 ## Worked example: `UpdateProductCommand`, case by case
 
@@ -2370,7 +2551,7 @@ has its own README.
 | `MediatrUnionPoc.Domain.Tests` | `Money`, `ProductId`, `ProductVersion`, `Product`, `ProductNames`, `PagedResult`, `ProductSort`; no other project referenced | none |
 | `MediatrUnionPoc.Application.Tests` | Union mechanics, the pipeline behaviors and their registration order, every handler, validators, authorization, the audit behavior and event format | `IProductRepository` and `IUnitOfWork` substituted with NSubstitute |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | `EfCoreUnitOfWork` (commit, rollback, concurrency and unique-violation translation), `ProductRepository` including listing, converters, the EF model | real SQLite, an in-memory database on one kept-open connection per test |
-| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), impersonation (roles, escalation, chaining, keys, expiry, off switch, no token in logs), the audit stream (files, events, fail-closed and best-effort), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
+| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), impersonation (roles, escalation, chaining, keys, expiry, off switch, no token in logs), rate limiting (the `429` shape, per-user and per-address budgets, the real actor behind an impersonated token, secure by default, preflights and health never limited, trusted proxies), the audit stream (files, events, fail-closed and best-effort), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
 | `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions on the compiled assemblies (layering, only Infrastructure sees EF Core, only Api sees MVC) | none |
 
 There is no EF Core InMemory provider anywhere: runtime and tests both use SQLite, so transactions,

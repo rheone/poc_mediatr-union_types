@@ -45,6 +45,7 @@ public static class OpenApiServiceCollectionExtensions
                 options.AddOperationTransformer<ETagResponseHeaderTransformer>();
                 options.AddOperationTransformer<PagingResponseHeaderTransformer>();
                 options.AddOperationTransformer<PreconditionProblemExampleTransformer>();
+                options.AddOperationTransformer<RateLimitResponseTransformer>();
             }
         );
     }
