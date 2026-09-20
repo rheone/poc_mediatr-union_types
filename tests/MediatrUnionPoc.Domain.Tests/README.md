@@ -8,7 +8,11 @@ no mocking framework. Just the two Vogen value objects and the one entity:
 - `ProductIdTests.cs` — verifies `ProductId`'s `Validate` rejects `Guid.Empty`, and that
   `ProductId.New()` always produces a valid, non-empty id.
 - `ProductTests.cs` — verifies `Product.Create` assigns a fresh, distinct id per call, and
-  `Product.UpdateDetails` fully replaces name and price without touching identity.
+  `Product.UpdateDetails` fully replaces name and price without touching identity; `CreatedAt` is
+  the supplied instant and survives an update.
+- `PagedResultTests.cs` — the page arithmetic with hand-worked examples (25 items at size 10 is 3
+  pages; no previous on page 1; no next on the last; an empty result has one empty page).
+- `ProductSortTests.cs` — the default sort and the wire names of the sort vocabulary.
 
 ## Dependencies
 

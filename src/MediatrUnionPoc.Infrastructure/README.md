@@ -26,6 +26,14 @@ index, and `CommitAsync` reports a violation of it (SQLite extended error 2067 n
 collision, is not translated and propagates. `ProductRepository.ExistsWithNameAsync` is the
 up-front check the handlers use; the index is the backstop for races between two such checks.
 
+`ProductRepository.GetPagedAsync` is the only place the Domain's `ProductCriteria` and
+`ProductSort` become a query. The name filter matches the normalised search text against
+`NormalizedName` (case-insensitive with no provider-specific collation), price bounds compare
+`Money` (which defines the relational operators), and the sort is built key by key from the enum
+allowlist and always ends in `Id`. `Product.CreatedAt` is stored by `UtcTicksValueConverter` as UTC
+ticks in a `long`, because SQLite cannot `ORDER BY` a `DateTimeOffset`'s stored text; it sorts by
+instant, and a value read back is the same instant at offset zero.
+
 ## Dependencies
 
 **Project references:**

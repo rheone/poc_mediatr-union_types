@@ -7,8 +7,15 @@ namespace MediatrUnionPoc.Application.Features.Products.Common;
 /// <param name="Name">The product's display name.</param>
 /// <param name="Price">The product's price.</param>
 /// <param name="Version">The product's concurrency version; the API renders it as the <c>ETag</c> a client echoes back in <c>If-Match</c>.</param>
+/// <param name="CreatedAt">The instant the product was created (UTC).</param>
 /// <exception cref="ArgumentNullException"><paramref name="Name"/> is <see langword="null"/>.</exception>
-public sealed record ProductDto(ProductId Id, string Name, decimal Price, ProductVersion Version)
+public sealed record ProductDto(
+    ProductId Id,
+    string Name,
+    decimal Price,
+    ProductVersion Version,
+    DateTimeOffset CreatedAt
+)
 {
     /// <summary>The product's display name; never <see langword="null"/>.</summary>
     public string Name { get; init; } = Name ?? throw new ArgumentNullException(nameof(Name));
@@ -21,6 +28,12 @@ public sealed record ProductDto(ProductId Id, string Name, decimal Price, Produc
     {
         ArgumentNullException.ThrowIfNull(product);
 
-        return new(product.Id, product.Name, product.Price.Value, product.Version);
+        return new(
+            product.Id,
+            product.Name,
+            product.Price.Value,
+            product.Version,
+            product.CreatedAt
+        );
     }
 }

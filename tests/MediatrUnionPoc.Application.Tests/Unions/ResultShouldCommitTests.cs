@@ -34,7 +34,13 @@ public class ResultShouldCommitTests
         new(
             CreateRow(
                 "ProductDto",
-                new ProductDto(SomeProductId, ProductName, ProductPrice, ProductVersion.Initial),
+                new ProductDto(
+                    SomeProductId,
+                    ProductName,
+                    ProductPrice,
+                    ProductVersion.Initial,
+                    DateTimeOffset.UnixEpoch
+                ),
                 true
             ),
             CreateRow(
@@ -54,7 +60,13 @@ public class ResultShouldCommitTests
         new(
             UpdateRow(
                 "ProductDto",
-                new ProductDto(SomeProductId, ProductName, ProductPrice, ProductVersion.Initial),
+                new ProductDto(
+                    SomeProductId,
+                    ProductName,
+                    ProductPrice,
+                    ProductVersion.Initial,
+                    DateTimeOffset.UnixEpoch
+                ),
                 true
             ),
             UpdateRow("NotFound", new NotFound<ProductId>(SomeProductId), false),

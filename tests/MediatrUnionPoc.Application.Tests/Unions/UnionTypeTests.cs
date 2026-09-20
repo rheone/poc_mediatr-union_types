@@ -35,7 +35,13 @@ public class UnionTypeTests
     public void ImplicitConversion_EachDeclaredCaseType_ExposesCaseThroughUnionValue_Test()
     {
         // Arrange
-        var dto = new ProductDto(SomeProductId, ProductName, ProductPrice, ProductVersion.Initial);
+        var dto = new ProductDto(
+            SomeProductId,
+            ProductName,
+            ProductPrice,
+            ProductVersion.Initial,
+            DateTimeOffset.UnixEpoch
+        );
         var validationErrors = new ValidationErrors([new ValidationError("Name", "required")]);
         var error = new Error(ErrorMessage, ErrorCode);
 
@@ -64,7 +70,8 @@ public class UnionTypeTests
             SomeProductId,
             ProductName,
             ProductPrice,
-            ProductVersion.Initial
+            ProductVersion.Initial,
+            DateTimeOffset.UnixEpoch
         );
 
         // Act
@@ -125,7 +132,8 @@ public class UnionTypeTests
             SomeProductId,
             ProductName,
             ProductPrice,
-            ProductVersion.Initial
+            ProductVersion.Initial,
+            DateTimeOffset.UnixEpoch
         );
         UpdateProductResult notFound = new NotFound<ProductId>(SomeProductId);
 

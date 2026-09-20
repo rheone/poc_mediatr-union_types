@@ -6,6 +6,27 @@ namespace MediatrUnionPoc.Domain.Tests;
 /// </summary>
 public class MoneyTests
 {
+    /// <summary>Verifies amounts order numerically through the relational operators, with equal amounts satisfying the inclusive ones.</summary>
+    [Fact]
+    public void RelationalOperators_OrderAmountsNumerically_Test()
+    {
+        // Arrange
+        var ten = Money.From(10m);
+        var nineNinetyNine = Money.From(9.99m);
+        var alsoTen = Money.From(10.00m);
+
+        // Act / Assert
+        Assert.Multiple(
+            () => Assert.True(ten > nineNinetyNine),
+            () => Assert.False(nineNinetyNine > ten),
+            () => Assert.True(nineNinetyNine < ten),
+            () => Assert.True(ten >= alsoTen),
+            () => Assert.True(ten <= alsoTen),
+            () => Assert.False(ten < alsoTen),
+            () => Assert.False(ten > alsoTen)
+        );
+    }
+
     /// <summary>Verifies a negative amount fails validation via <c>Money.TryFrom</c>.</summary>
     [Fact]
     public void TryFrom_NegativeAmount_ReturnsFalse_Test()

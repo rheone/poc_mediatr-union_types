@@ -14,12 +14,16 @@ namespace MediatrUnionPoc.Application.Features.Products.Create;
 /// claim, if any — this is the only place a product's owner is ever assigned.
 /// </summary>
 /// <param name="repository">The repository the new product is added to.</param>
-/// <exception cref="ArgumentNullException"><paramref name="repository"/> is <see langword="null"/>.</exception>
-public sealed class CreateProductHandler(IProductRepository repository)
+/// <param name="timeProvider">The clock the new product's <see cref="Product.CreatedAt"/> is read from.</param>
+/// <exception cref="ArgumentNullException"><paramref name="repository"/> or <paramref name="timeProvider"/> is <see langword="null"/>.</exception>
+public sealed class CreateProductHandler(IProductRepository repository, TimeProvider timeProvider)
     : IRequestHandler<CreateProductCommand, CreateProductResult>
 {
     private readonly IProductRepository _repository =
         repository ?? throw new ArgumentNullException(nameof(repository));
+
+    private readonly TimeProvider _timeProvider =
+        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
@@ -37,7 +41,12 @@ public sealed class CreateProductHandler(IProductRepository repository)
 
         var ownerId =
             request.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
-        var product = Product.Create(request.Name, Money.From(request.Price), ownerId);
+        var product = Product.Create(
+            request.Name,
+            Money.From(request.Price),
+            _timeProvider.GetUtcNow(),
+            ownerId
+        );
         await _repository.AddAsync(product, cancellationToken);
         return ProductDto.FromDomain(product);
     }

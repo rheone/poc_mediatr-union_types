@@ -43,6 +43,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .HasConversion(new ProductVersionValueConverter())
                 .IsConcurrencyToken();
             builder.Property(p => p.OwnerId).IsRequired().HasMaxLength(200);
+            builder.Property(p => p.CreatedAt).HasConversion(new UtcTicksValueConverter());
         });
     }
 }

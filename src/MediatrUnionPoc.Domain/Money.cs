@@ -14,4 +14,28 @@ public readonly partial struct Money
     /// <summary>Invoked by every Vogen-generated factory method; rejects negative amounts.</summary>
     private static Validation Validate(decimal input) =>
         input >= 0 ? Validation.Ok : Validation.Invalid("Money cannot be negative.");
+
+    /// <summary>Reports whether <paramref name="left"/> is a larger amount than <paramref name="right"/>.</summary>
+    /// <param name="left">The first amount.</param>
+    /// <param name="right">The second amount.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is greater.</returns>
+    public static bool operator >(Money left, Money right) => left.Value > right.Value;
+
+    /// <summary>Reports whether <paramref name="left"/> is a smaller amount than <paramref name="right"/>.</summary>
+    /// <param name="left">The first amount.</param>
+    /// <param name="right">The second amount.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is smaller.</returns>
+    public static bool operator <(Money left, Money right) => left.Value < right.Value;
+
+    /// <summary>Reports whether <paramref name="left"/> is at least <paramref name="right"/>.</summary>
+    /// <param name="left">The first amount.</param>
+    /// <param name="right">The second amount.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than or equal.</returns>
+    public static bool operator >=(Money left, Money right) => left.Value >= right.Value;
+
+    /// <summary>Reports whether <paramref name="left"/> is at most <paramref name="right"/>.</summary>
+    /// <param name="left">The first amount.</param>
+    /// <param name="right">The second amount.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is less than or equal.</returns>
+    public static bool operator <=(Money left, Money right) => left.Value <= right.Value;
 }

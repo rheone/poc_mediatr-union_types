@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.GetPaged;
 using MediatrUnionPoc.Domain;
@@ -30,16 +31,23 @@ public class GetPagedProductsHandlerTests
     public async Task Handle_ProductsReturned_ProjectsEachToDtoInRepositoryOrder_Test()
     {
         // Arrange
-        var first = Product.Create(FirstName, Money.From(FirstPrice));
-        var second = Product.Create(SecondName, Money.From(SecondPrice));
+        var first = Product.Create(FirstName, Money.From(FirstPrice), DateTimeOffset.UnixEpoch);
+        var second = Product.Create(SecondName, Money.From(SecondPrice), DateTimeOffset.UnixEpoch);
         _repository
-            .GetPagedAsync(1, 10, Arg.Any<CancellationToken>())
+            .GetPagedAsync(
+                1,
+                10,
+                Arg.Any<ProductCriteria>(),
+                Arg.Any<IReadOnlyList<ProductSort>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(
                 new PagedResult<Product>(
                     [first, second],
                     PageNumber: 1,
                     PageSize: 10,
-                    TotalCount: 2
+                    TotalCount: 2,
+                    Sort: ProductSort.Default
                 )
             );
 
@@ -57,7 +65,15 @@ public class GetPagedProductsHandlerTests
             () => Assert.Equal([FirstName, SecondName], page.Items.Select(dto => dto.Name)),
             () => Assert.Equal([FirstPrice, SecondPrice], page.Items.Select(dto => dto.Price))
         );
-        await _repository.Received(1).GetPagedAsync(1, 10, Arg.Any<CancellationToken>());
+        await _repository
+            .Received(1)
+            .GetPagedAsync(
+                1,
+                10,
+                Arg.Any<ProductCriteria>(),
+                Arg.Any<IReadOnlyList<ProductSort>>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     /// <summary>Verifies the handler passes the repository's paging metadata through unchanged.</summary>
@@ -67,8 +83,22 @@ public class GetPagedProductsHandlerTests
     {
         // Arrange
         _repository
-            .GetPagedAsync(2, 5, Arg.Any<CancellationToken>())
-            .Returns(new PagedResult<Product>([], PageNumber: 2, PageSize: 5, TotalCount: 12));
+            .GetPagedAsync(
+                2,
+                5,
+                Arg.Any<ProductCriteria>(),
+                Arg.Any<IReadOnlyList<ProductSort>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                new PagedResult<Product>(
+                    [],
+                    PageNumber: 2,
+                    PageSize: 5,
+                    TotalCount: 12,
+                    Sort: ProductSort.Default
+                )
+            );
 
         // Act
         var result = await _sut.Handle(new GetPagedProductsQuery(2, 5), CancellationToken.None);
@@ -81,7 +111,145 @@ public class GetPagedProductsHandlerTests
             () => Assert.Equal(12, page.TotalCount),
             () => Assert.Empty(page.Items)
         );
-        await _repository.Received(1).GetPagedAsync(2, 5, Arg.Any<CancellationToken>());
+        await _repository
+            .Received(1)
+            .GetPagedAsync(
+                2,
+                5,
+                Arg.Any<ProductCriteria>(),
+                Arg.Any<IReadOnlyList<ProductSort>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    /// <summary>Verifies the query's filters reach the repository as the equivalent <see cref="ProductCriteria"/>.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_FiltersInQuery_PassesEquivalentCriteriaToRepository_Test()
+    {
+        // Arrange
+        _repository
+            .GetPagedAsync(
+                default,
+                default,
+                default!,
+                default!,
+                TestContext.Current.CancellationToken
+            )
+            .ReturnsForAnyArgs(new PagedResult<Product>([], 3, 20, 0, ProductSort.Default));
+        var query = new GetPagedProductsQuery(3, 20, "widget", 1.5m, 9.5m, "owner-1");
+
+        // Act
+        await _sut.Handle(query, TestContext.Current.CancellationToken);
+
+        // Assert
+        await _repository
+            .Received(1)
+            .GetPagedAsync(
+                3,
+                20,
+                new ProductCriteria("widget", 1.5m, 9.5m, "owner-1"),
+                Arg.Any<IReadOnlyList<ProductSort>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    /// <summary>Verifies the sort text is parsed into ordered keys before it reaches the repository.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_SortText_PassesParsedKeysInOrderToRepository_Test()
+    {
+        // Arrange
+        _repository
+            .GetPagedAsync(
+                default,
+                default,
+                default!,
+                default!,
+                TestContext.Current.CancellationToken
+            )
+            .ReturnsForAnyArgs(new PagedResult<Product>([], 1, 10, 0, ProductSort.Default));
+
+        // Act
+        await _sut.Handle(
+            new GetPagedProductsQuery(1, 10, Sort: "-price,name"),
+            CancellationToken.None
+        );
+
+        // Assert
+        await _repository
+            .Received(1)
+            .GetPagedAsync(
+                1,
+                10,
+                Arg.Any<ProductCriteria>(),
+                Arg.Is<IReadOnlyList<ProductSort>>(sort =>
+                    sort.SequenceEqual(
+                        new[]
+                        {
+                            new ProductSort(ProductSortField.Price, SortDirection.Descending),
+                            new ProductSort(ProductSortField.Name, SortDirection.Ascending),
+                        }
+                    )
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    /// <summary>Verifies the result carries the repository's applied sort and the derived navigation values worked out from its counts.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_MiddlePageOfMany_ReportsAppliedSortAndNavigation_Test()
+    {
+        // Arrange
+        ProductSort[] applied = [new(ProductSortField.CreatedAt, SortDirection.Descending)];
+        _repository
+            .GetPagedAsync(
+                default,
+                default,
+                default!,
+                default!,
+                TestContext.Current.CancellationToken
+            )
+            .ReturnsForAnyArgs(new PagedResult<Product>([], 2, 10, 25, applied));
+
+        // Act
+        var result = await _sut.Handle(new GetPagedProductsQuery(2, 10), CancellationToken.None);
+
+        // Assert
+        var page = Assert.IsType<PagedResult<ProductDto>>(((IUnion)result).Value);
+        Assert.Multiple(
+            () => Assert.Equal(applied, page.Sort),
+            () => Assert.Equal(25, page.TotalCount),
+            () => Assert.Equal(3, page.TotalPages),
+            () => Assert.Equal(1, page.PreviousPage),
+            () => Assert.Equal(3, page.NextPage)
+        );
+    }
+
+    /// <summary>Verifies an unparseable sort comes back as per-field validation errors without querying the repository.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_UnparseableSort_ReturnsValidationErrorsOnSortWithoutQuerying_Test()
+    {
+        // Act
+        var result = await _sut.Handle(
+            new GetPagedProductsQuery(1, 10, Sort: "weight"),
+            CancellationToken.None
+        );
+
+        // Assert
+        var errors = Assert.IsType<ValidationErrors>(((IUnion)result).Value);
+        Assert.Equal("Sort", Assert.Single(errors.Errors).PropertyName);
+        await _repository
+            .DidNotReceiveWithAnyArgs()
+            .GetPagedAsync(
+                default,
+                default,
+                default!,
+                default!,
+                TestContext.Current.CancellationToken
+            );
     }
 
     /// <summary>Verifies the constructor rejects a null repository instead of failing on first use.</summary>
@@ -111,6 +279,12 @@ public class GetPagedProductsHandlerTests
         Assert.Equal("request", ex.ParamName);
         await _repository
             .DidNotReceiveWithAnyArgs()
-            .GetPagedAsync(default, default, TestContext.Current.CancellationToken);
+            .GetPagedAsync(
+                default,
+                default,
+                default!,
+                default!,
+                TestContext.Current.CancellationToken
+            );
     }
 }

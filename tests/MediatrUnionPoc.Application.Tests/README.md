@@ -17,7 +17,9 @@ Unit tests for `MediatrUnionPoc.Application`, organized by what's under test:
   EF Core SQLite provider — `EfCoreUnitOfWorkTests` and `ProductRepositoryTests` — live in
   `MediatrUnionPoc.Infrastructure.IntegrationTests` instead, since they're database tests, not
   handler tests.)
-- `Validators/` — the FluentValidation validators for each command/query.
+- `Validators/` — the FluentValidation validators for each command/query, including the per-field
+  errors of `GetPagedProductsValidator`.
+- `Features/` — `ProductSortParser` (the `sort` text grammar and its errors) and `ProductDto`.
 
 `Unions/ResultShouldCommitTests.cs` covers `CreateProductResult.ShouldCommit` and
 `UpdateProductResult.ShouldCommit` — the two result unions `TransactionBehaviorTests` doesn't

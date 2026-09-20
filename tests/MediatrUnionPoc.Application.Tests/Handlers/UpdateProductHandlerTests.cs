@@ -285,7 +285,12 @@ public sealed class UpdateProductHandlerTests : IDisposable
 
     private Product StoredProduct()
     {
-        var product = Product.Create(OriginalName, Money.From(OriginalPrice), ownerId: OwnerId);
+        var product = Product.Create(
+            OriginalName,
+            Money.From(OriginalPrice),
+            DateTimeOffset.UnixEpoch,
+            ownerId: OwnerId
+        );
         _repository.GetByIdAsync(product.Id, Arg.Any<CancellationToken>()).Returns(product);
         return product;
     }

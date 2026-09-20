@@ -35,11 +35,13 @@ public class FromValidationErrorsTests
         // Act
         var create = CreateProductResult.FromValidationErrors(SomeErrors);
         var update = UpdateProductResult.FromValidationErrors(SomeErrors);
+        var paged = GetPagedProductsResult.FromValidationErrors(SomeErrors);
 
         // Assert
         Assert.Multiple(
             () => Assert.Same(SomeErrors, ((IUnion)create).Value),
-            () => Assert.Same(SomeErrors, ((IUnion)update).Value)
+            () => Assert.Same(SomeErrors, ((IUnion)update).Value),
+            () => Assert.Same(SomeErrors, ((IUnion)paged).Value)
         );
     }
 
@@ -56,7 +58,6 @@ public class FromValidationErrorsTests
         {
             DeleteProductResult.FromValidationErrors(SomeErrors),
             GetProductByIdResult.FromValidationErrors(SomeErrors),
-            GetPagedProductsResult.FromValidationErrors(SomeErrors),
         };
 
         // Assert

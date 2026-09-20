@@ -26,3 +26,16 @@ public sealed class ProductVersionValueConverter()
         version => version.Value,
         value => ProductVersion.From(value)
     );
+
+/// <summary>
+/// Converts a <see cref="DateTimeOffset"/> to and from the UTC tick count (<see cref="long"/>) EF
+/// Core stores. SQLite has no native date type and refuses <c>ORDER BY</c> on the text EF would
+/// otherwise store for a <see cref="DateTimeOffset"/>; an integer column orders by instant, and
+/// every provider agrees on what an integer means.
+/// </summary>
+/// <remarks>The offset is not stored: a value read back is the same instant expressed at offset zero.</remarks>
+public sealed class UtcTicksValueConverter()
+    : ValueConverter<DateTimeOffset, long>(
+        instant => instant.UtcTicks,
+        ticks => new DateTimeOffset(ticks, TimeSpan.Zero)
+    );

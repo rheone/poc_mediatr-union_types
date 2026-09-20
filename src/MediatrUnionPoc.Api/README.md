@@ -41,6 +41,21 @@ with example bodies (`PreconditionProblemExampleTransformer`) and the `ETag` res
 actions marked `[ReturnsETag]` (`ETagResponseHeaderTransformer`). See the repo root README's
 [Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).
 
+## Listing: filters, sort, paging headers (`Contracts/`, `Http/`, `OpenApi/`)
+
+`GET /api/products` binds a `ListProductsRequest` (`Contracts/ProductContracts.cs`) from the query
+string (`nameContains`, `minPrice`, `maxPrice`, `ownerId`, `sort`, `pageNumber`, `pageSize`; binding
+is case-insensitive) and sends a `GetPagedProductsQuery`. `GetPagedProductsResult` has a real
+`ValidationErrors` case, so bad input answers `400` with per-field `errors` like every other
+validated action; the action's `switch` has no `Error` special case for validation. The `200` body
+is a `PagedResult<ProductDto>` (applied sort, `totalCount`, `totalPages`, `firstPage`, `lastPage`,
+`nextPage`, `previousPage`), and `Response.SetPagingHeaders(page)` (`PagingHttpExtensions`) adds
+`X-Total-Count` and an RFC 8288 `Link` header (`first`, `prev`, `next`, `last`; `prev`/`next` omitted
+at the ends; the request URL with only `pageNumber` replaced). The OpenAPI document declares those
+headers on actions marked `[ReturnsPagingHeaders]` (`PagingResponseHeaderTransformer`) and carries an
+example paged body (`ProductContractExampleTransformer`). See the repo root README's
+[Listing products](../../README.md#listing-products-filtering-sorting-and-paging).
+
 ## Trace id and unhandled exceptions (`Http/`)
 
 - **Trace id.** `HttpContext.TraceId` (extension member in `HttpContextTraceExtensions`) is the

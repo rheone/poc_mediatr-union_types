@@ -19,7 +19,13 @@ public class ProductDtoTests
     {
         // Act
         var ex = Assert.Throws<ArgumentNullException>(() =>
-            new ProductDto(SomeId, null!, SomePrice, ProductVersion.Initial)
+            new ProductDto(
+                SomeId,
+                null!,
+                SomePrice,
+                ProductVersion.Initial,
+                DateTimeOffset.UnixEpoch
+            )
         );
 
         // Assert
@@ -43,7 +49,7 @@ public class ProductDtoTests
     public void FromDomain_UpdatedProduct_ExposesCurrentVersion_Test()
     {
         // Arrange
-        var product = Product.Create("Widget", Money.From(SomePrice));
+        var product = Product.Create("Widget", Money.From(SomePrice), DateTimeOffset.UnixEpoch);
         product.UpdateDetails("Widget Pro", Money.From(SomePrice));
 
         // Act
@@ -51,5 +57,23 @@ public class ProductDtoTests
 
         // Assert
         Assert.Equal(2L, dto.Version.Value);
+    }
+
+    /// <summary>Verifies the projection carries the product's creation instant.</summary>
+    [Fact]
+    public void FromDomain_Product_ExposesCreatedAt_Test()
+    {
+        // Arrange
+        var product = Product.Create(
+            "Widget",
+            Money.From(SomePrice),
+            new DateTimeOffset(2026, 7, 8, 9, 10, 11, TimeSpan.Zero)
+        );
+
+        // Act
+        var dto = ProductDto.FromDomain(product);
+
+        // Assert
+        Assert.Equal(new DateTimeOffset(2026, 7, 8, 9, 10, 11, TimeSpan.Zero), dto.CreatedAt);
     }
 }

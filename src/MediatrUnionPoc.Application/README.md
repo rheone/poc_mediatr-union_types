@@ -17,6 +17,14 @@ instead of throwing for an expected outcome — see the repo root README's
 section for the full rationale, and its [Glossary](../../README.md#glossary) for any term below
 that isn't self-explanatory.
 
+`GetPaged` lists the products matching optional filters in a requested order: the query carries the
+plain filter values and the `sort` text (`name,-price`), `ProductSortParser` turns that text into
+the Domain's allowlisted `ProductSort` keys, and the handler passes criteria and sort to the
+repository without knowing how they are evaluated. `GetPagedProductsResult` declares a
+`ValidationErrors` case, so `GetPagedProductsValidator` reports one failure per problem, each naming
+its field. `AddApplication` registers `TimeProvider.System` (unless the host already registered a
+clock); `CreateProductHandler` stamps `Product.CreatedAt` from it.
+
 ## Dependencies
 
 **Project references:**

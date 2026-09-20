@@ -7,6 +7,7 @@ using MediatrUnionPoc.Application.Features.Products.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace MediatrUnionPoc.Application;
 
@@ -20,7 +21,7 @@ public static class DependencyInjection
     /// Registers MediatR, all FluentValidation validators, the role-based <c>Administrator</c> and
     /// resource-based <c>ProductOwner</c> authorization policies (plus the
     /// <see cref="ResourceAuthorizationService"/> the latter is checked through from inside a
-    /// handler), and the <see cref="LoggingBehavior{TRequest,TResponse}"/> →
+    /// handler), the system <see cref="TimeProvider"/> (unless one is already registered), and the <see cref="LoggingBehavior{TRequest,TResponse}"/> →
     /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> → <see cref="ValidationBehavior{TRequest,TResponse}"/>
     /// → <see cref="TransactionBehavior{TRequest,TResponse}"/> pipeline, in that execution order.
     /// </summary>
@@ -30,6 +31,9 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        // TryAdd: a host or test that registered its own clock first keeps it.
+        services.TryAddSingleton(TimeProvider.System);
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(AssemblyReference));
         services.AddValidatorsFromAssembly(AssemblyReference);

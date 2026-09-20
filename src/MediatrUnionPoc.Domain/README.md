@@ -24,6 +24,16 @@ of when two product names are duplicates; `Product.NormalizedName` carries the k
 same key, so the up-front check and the database cannot disagree. See the repo root README's
 [Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).
 
+The listing vocabulary is database-agnostic: `ProductCriteria` (optional `NameContains`, `MinPrice`,
+`MaxPrice`, `OwnerId`, combined with AND), `ProductSort` (a `ProductSortField` enum allowlist of
+`Name`, `Price`, `CreatedAt` plus a `SortDirection`; `ProductSort.Default` is name ascending) and
+`PagedResult<T>`, which carries the applied sort and is the one place the page arithmetic lives
+(`TotalPages`, `FirstPage`, `LastPage`, `NextPage`, `PreviousPage`). `IProductRepository.GetPagedAsync`
+takes the paging, criteria and an ordered list of sort keys; every listing ends in an implicit `Id`
+tiebreaker so pages are stable. `Product.CreatedAt` is supplied by the caller (Application reads a
+`TimeProvider`); the Domain never reads a clock. `Money` defines the relational operators so
+persistence can compare and order it.
+
 ## Dependencies
 
 **Project references:** none — this is the dependency graph's root.

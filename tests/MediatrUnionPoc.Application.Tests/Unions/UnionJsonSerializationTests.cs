@@ -41,7 +41,8 @@ public class UnionJsonSerializationTests
             SomeProductId,
             ProductName,
             ProductPrice,
-            ProductVersion.Initial
+            ProductVersion.Initial,
+            DateTimeOffset.UnixEpoch
         );
 
         // Act
@@ -73,7 +74,8 @@ public class UnionJsonSerializationTests
             SomeProductId,
             ProductName,
             ProductPrice,
-            ProductVersion.Initial
+            ProductVersion.Initial,
+            DateTimeOffset.UnixEpoch
         );
         CreateProductResult error = new Error(ErrorMessage, ErrorCode);
         DeleteProductResult success = new Success();

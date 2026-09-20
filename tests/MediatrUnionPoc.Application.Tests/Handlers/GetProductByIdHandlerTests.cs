@@ -32,7 +32,11 @@ public class GetProductByIdHandlerTests
     public async Task Handle_ProductExists_ReturnsProductDto_Test()
     {
         // Arrange
-        var product = Product.Create(ProductName, Money.From(ProductPrice));
+        var product = Product.Create(
+            ProductName,
+            Money.From(ProductPrice),
+            DateTimeOffset.UnixEpoch
+        );
         _repository.GetByIdAsync(product.Id, Arg.Any<CancellationToken>()).Returns(product);
 
         // Act

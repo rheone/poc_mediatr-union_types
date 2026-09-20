@@ -13,6 +13,8 @@ public class ProductTests
     private const string UpdatedName = "Widget Pro";
     private const decimal UpdatedPriceValue = 19.99m;
 
+    private static readonly DateTimeOffset CreatedAt = new(2026, 3, 4, 5, 6, 7, TimeSpan.Zero);
+
     /// <summary>Verifies <see cref="Product.Create"/> assigns the given name and price.</summary>
     [Fact]
     public void Create_NameAndPrice_AssignsBoth_Test()
@@ -21,12 +23,30 @@ public class ProductTests
         var price = Money.From(PriceValue);
 
         // Act
-        var product = Product.Create(Name, price);
+        var product = Product.Create(Name, price, CreatedAt);
 
         // Assert
         Assert.Multiple(
             () => Assert.Equal(Name, product.Name),
             () => Assert.Equal(PriceValue, product.Price.Value)
+        );
+    }
+
+    /// <summary>Verifies <see cref="Product.Create"/> records the supplied creation instant and <see cref="Product.UpdateDetails"/> leaves it alone.</summary>
+    [Fact]
+    public void Create_SuppliedTimestamp_ExposesItAsCreatedAtAndSurvivesUpdate_Test()
+    {
+        // Arrange
+        var product = Product.Create(Name, Money.From(PriceValue), CreatedAt);
+
+        // Act
+        var afterCreate = product.CreatedAt;
+        product.UpdateDetails(UpdatedName, Money.From(UpdatedPriceValue));
+
+        // Assert
+        Assert.Multiple(
+            () => Assert.Equal(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero), afterCreate),
+            () => Assert.Equal(afterCreate, product.CreatedAt)
         );
     }
 
@@ -38,8 +58,8 @@ public class ProductTests
         var price = Money.From(PriceValue);
 
         // Act
-        var first = Product.Create(Name, price);
-        var second = Product.Create(Name, price);
+        var first = Product.Create(Name, price, CreatedAt);
+        var second = Product.Create(Name, price, CreatedAt);
 
         // Assert
         Assert.NotEqual(first.Id, second.Id);
@@ -53,7 +73,7 @@ public class ProductTests
         var price = Money.From(PriceValue);
 
         // Act
-        var product = Product.Create(Name, price, OwnerId);
+        var product = Product.Create(Name, price, CreatedAt, OwnerId);
 
         // Assert
         Assert.Equal(OwnerId, product.OwnerId);
@@ -67,7 +87,7 @@ public class ProductTests
         var price = Money.From(PriceValue);
 
         // Act
-        var product = Product.Create(Name, price);
+        var product = Product.Create(Name, price, CreatedAt);
 
         // Assert
         Assert.Equal(string.Empty, product.OwnerId);
@@ -78,7 +98,7 @@ public class ProductTests
     public void UpdateDetails_NewValues_ReplacesNameAndPriceButNotId_Test()
     {
         // Arrange
-        var product = Product.Create(Name, Money.From(PriceValue));
+        var product = Product.Create(Name, Money.From(PriceValue), CreatedAt);
         var originalId = product.Id;
 
         // Act
@@ -98,7 +118,7 @@ public class ProductTests
     public void UpdateDetails_NewValues_LeavesOwnerIdUnchanged_Test()
     {
         // Arrange
-        var product = Product.Create(Name, Money.From(PriceValue), OwnerId);
+        var product = Product.Create(Name, Money.From(PriceValue), CreatedAt, OwnerId);
 
         // Act
         product.UpdateDetails(UpdatedName, Money.From(UpdatedPriceValue));
@@ -116,7 +136,9 @@ public class ProductTests
         var price = Money.From(PriceValue);
 
         // Act
-        var ex = Assert.Throws<ArgumentNullException>(() => Product.Create(null!, price, OwnerId));
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            Product.Create(null!, price, CreatedAt, OwnerId)
+        );
 
         // Assert
         Assert.Equal("name", ex.ParamName);
@@ -131,7 +153,9 @@ public class ProductTests
         var price = Money.From(PriceValue);
 
         // Act
-        var ex = Assert.Throws<ArgumentNullException>(() => Product.Create(Name, price, null!));
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            Product.Create(Name, price, CreatedAt, null!)
+        );
 
         // Assert
         Assert.Equal("ownerId", ex.ParamName);
@@ -143,7 +167,7 @@ public class ProductTests
     public void UpdateDetails_NullName_ThrowsArgumentNullException_Test()
     {
         // Arrange
-        var product = Product.Create(Name, Money.From(PriceValue));
+        var product = Product.Create(Name, Money.From(PriceValue), CreatedAt);
 
         // Act
         var ex = Assert.Throws<ArgumentNullException>(() =>
@@ -164,7 +188,7 @@ public class ProductTests
         // Arrange
 
         // Act
-        var product = Product.Create(Name, Money.From(PriceValue));
+        var product = Product.Create(Name, Money.From(PriceValue), CreatedAt);
 
         // Assert
         Assert.Equal(1L, product.Version.Value);
@@ -175,7 +199,7 @@ public class ProductTests
     public void UpdateDetails_CalledTwice_AdvancesVersionToThree_Test()
     {
         // Arrange
-        var product = Product.Create(Name, Money.From(PriceValue));
+        var product = Product.Create(Name, Money.From(PriceValue), CreatedAt);
 
         // Act
         product.UpdateDetails(UpdatedName, Money.From(UpdatedPriceValue));
@@ -192,7 +216,7 @@ public class ProductTests
         // Arrange
 
         // Act
-        var product = Product.Create("  Blue Widget ", Money.From(PriceValue));
+        var product = Product.Create("  Blue Widget ", Money.From(PriceValue), CreatedAt);
 
         // Assert
         Assert.Equal("BLUE WIDGET", product.NormalizedName);
@@ -203,7 +227,7 @@ public class ProductTests
     public void UpdateDetails_NewName_RefreshesNormalizedName_Test()
     {
         // Arrange
-        var product = Product.Create(Name, Money.From(PriceValue));
+        var product = Product.Create(Name, Money.From(PriceValue), CreatedAt);
 
         // Act
         product.UpdateDetails("  Red gadget", Money.From(PriceValue));

@@ -18,11 +18,14 @@ public class CreateProductHandlerTests
     private const decimal ProductPrice = 9.99m;
     private const string OwnerId = "owner-1";
 
+    private static readonly DateTimeOffset Now = new(2026, 6, 7, 8, 9, 10, TimeSpan.Zero);
+
     private readonly IProductRepository _repository = Substitute.For<IProductRepository>();
     private readonly CreateProductHandler _sut;
 
     /// <summary>Wires up <see cref="_sut"/> against the substituted <see cref="_repository"/>.</summary>
-    public CreateProductHandlerTests() => _sut = new CreateProductHandler(_repository);
+    public CreateProductHandlerTests() =>
+        _sut = new CreateProductHandler(_repository, new FixedTimeProvider(Now));
 
     /// <summary>Verifies the handler adds the product to the repository and returns its DTO.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
@@ -123,10 +126,44 @@ public class CreateProductHandlerTests
     public void Ctor_NullRepository_ThrowsArgumentNullException_Test()
     {
         // Act
-        var ex = Assert.Throws<ArgumentNullException>(() => new CreateProductHandler(null!));
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new CreateProductHandler(null!, new FixedTimeProvider(Now))
+        );
 
         // Assert
         Assert.Equal("repository", ex.ParamName);
+    }
+
+    /// <summary>Verifies the constructor rejects a null clock instead of failing on first use.</summary>
+    [Fact]
+    public void Ctor_NullTimeProvider_ThrowsArgumentNullException_Test()
+    {
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new CreateProductHandler(_repository, null!)
+        );
+
+        // Assert
+        Assert.Equal("timeProvider", ex.ParamName);
+    }
+
+    /// <summary>Verifies the created product, and the DTO returned for it, are stamped with the injected clock's current time.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_ValidCommand_StampsCreatedAtFromTimeProvider_Test()
+    {
+        // Arrange
+        var command = new CreateProductCommand(ProductName, ProductPrice);
+
+        // Act
+        var result = await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        var dto = Assert.IsType<ProductDto>(((IUnion)result).Value);
+        Assert.Equal(new DateTimeOffset(2026, 6, 7, 8, 9, 10, TimeSpan.Zero), dto.CreatedAt);
+        await _repository
+            .Received(1)
+            .AddAsync(Arg.Is<Product>(p => p.CreatedAt == Now), Arg.Any<CancellationToken>());
     }
 
     /// <summary>Verifies a null request is rejected with <see cref="ArgumentNullException"/> before the repository is touched.</summary>

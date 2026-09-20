@@ -103,6 +103,16 @@ calling is checked before whether their input is well-formed. When `CommitAsync`
   same generic short-circuit pattern `IValidatable` uses for validation. See README's
   "Authorization" section for how to configure it and gate a new command behind it.
 
+**Listing** (`GET /api/products`): the Domain defines a database-agnostic vocabulary
+(`ProductCriteria`, `ProductSort` with a `ProductSortField` enum allowlist, `PagedResult<T>` — the
+one place page arithmetic lives) and only `ProductRepository` in Infrastructure turns it into a
+query (every sort ends in an implicit `Id` tiebreaker). `Product.CreatedAt` is stamped by
+`CreateProductHandler` from an injectable `TimeProvider` (registered by `AddApplication`) and stored
+as UTC ticks (`UtcTicksValueConverter`) because SQLite cannot order a `DateTimeOffset`'s text.
+`GetPagedProductsResult` has a real `ValidationErrors` case (per-field 400s); `GetById`/`Delete`
+still fold validation failures into `Error(ValidationFailureCode)`. The 200 carries `X-Total-Count`
+and an RFC 8288 `Link` header (`Api/Http/PagingHttpExtensions`). See README's "Listing products".
+
 Case types (`Success`, `NotFound`, `Error`, `ValidationErrors`, `Failure`, `NotAuthorized`,
 `PreconditionFailed`, `Conflict` — one file each in `Application/Common/Results/`) are deliberately meaning-free and reused across unions;
 a case type's identity never implies what it means for commit/rollback or anything else — only

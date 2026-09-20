@@ -264,6 +264,8 @@ public class ProductRepositoryTests
         var page = await repository.GetPagedAsync(
             FirstPage,
             DefaultPageSize,
+            ProductCriteria.None,
+            [],
             CancellationToken.None
         );
 
@@ -304,7 +306,13 @@ public class ProductRepositoryTests
         var repository = new ProductRepository(dbContext);
 
         // Act
-        var page = await repository.GetPagedAsync(pageNumber, pageSize, CancellationToken.None);
+        var page = await repository.GetPagedAsync(
+            pageNumber,
+            pageSize,
+            ProductCriteria.None,
+            [],
+            CancellationToken.None
+        );
 
         // Assert
         Assert.Multiple(
@@ -332,6 +340,8 @@ public class ProductRepositoryTests
         var page = await repository.GetPagedAsync(
             FirstPage,
             DefaultPageSize,
+            ProductCriteria.None,
+            [],
             CancellationToken.None
         );
 
@@ -356,6 +366,8 @@ public class ProductRepositoryTests
         var page = await repository.GetPagedAsync(
             FirstPage,
             DefaultPageSize,
+            ProductCriteria.None,
+            [],
             CancellationToken.None
         );
 

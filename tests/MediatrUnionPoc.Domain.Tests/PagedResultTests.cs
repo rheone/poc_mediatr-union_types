@@ -37,7 +37,8 @@ public class PagedResultTests
             Items: [],
             PageNumber: 1,
             PageSize: pageSize,
-            TotalCount: totalCount
+            TotalCount: totalCount,
+            Sort: ProductSort.Default
         );
 
         // Act
@@ -47,6 +48,63 @@ public class PagedResultTests
         Assert.Equal(expectedTotalPages, totalPages);
     }
 
+    /// <summary>
+    /// Rows: 25 items at size 10 is 3 pages. Columns: page number, then the expected last, next and previous pages
+    /// (0 stands for "none"). First page has no previous; last page has no next; a page past the end has no next and
+    /// points back at the real last page.
+    /// </summary>
+    public static TheoryData<int, int, int, int> Navigation_TwentyFiveItemsSizeTen_Test_Data =>
+        new()
+        {
+            { 1, 3, 2, 0 },
+            { 2, 3, 3, 1 },
+            { 3, 3, 0, 2 },
+            { 9, 3, 0, 3 },
+        };
+
+    /// <summary>Verifies the page-navigation values for a 25-item result at page size 10 (3 pages).</summary>
+    /// <param name="pageNumber">The current page.</param>
+    /// <param name="expectedLast">The expected last page.</param>
+    /// <param name="expectedNext">The expected next page, 0 when none.</param>
+    /// <param name="expectedPrevious">The expected previous page, 0 when none.</param>
+    [Theory]
+    [MemberData(nameof(Navigation_TwentyFiveItemsSizeTen_Test_Data))]
+    public void Navigation_TwentyFiveItemsSizeTen_ReportsFirstLastNextPrevious_Test(
+        int pageNumber,
+        int expectedLast,
+        int expectedNext,
+        int expectedPrevious
+    )
+    {
+        // Arrange
+        var page = new PagedResult<string>([], pageNumber, 10, 25, ProductSort.Default);
+
+        // Act / Assert
+        Assert.Multiple(
+            () => Assert.Equal(1, page.FirstPage),
+            () => Assert.Equal(expectedLast, page.LastPage),
+            () => Assert.Equal(expectedNext == 0 ? null : expectedNext, page.NextPage),
+            () => Assert.Equal(expectedPrevious == 0 ? null : expectedPrevious, page.PreviousPage)
+        );
+    }
+
+    /// <summary>Verifies an empty result still has one (empty) first-and-last page and no neighbours.</summary>
+    [Fact]
+    public void Navigation_NoRows_HasSingleEmptyPageAndNoNeighbours_Test()
+    {
+        // Arrange
+        var page = new PagedResult<string>([], 1, 10, 0, ProductSort.Default);
+
+        // Act / Assert
+        Assert.Multiple(
+            () => Assert.Equal(0, page.TotalPages),
+            () => Assert.Equal(1, page.FirstPage),
+            () => Assert.Equal(1, page.LastPage),
+            () => Assert.Null(page.NextPage),
+            () => Assert.Null(page.PreviousPage)
+        );
+    }
+
     /// <summary>Verifies <see cref="PagedResult{T}"/> rejects null items.</summary>
     // Auto Generated, verify expected behavior:
     [Fact]
@@ -54,7 +112,13 @@ public class PagedResultTests
     {
         // Arrange / Act
         var ex = Assert.Throws<ArgumentNullException>(() =>
-            new PagedResult<string>(Items: null!, PageNumber: 1, PageSize: 10, TotalCount: 0)
+            new PagedResult<string>(
+                Items: null!,
+                PageNumber: 1,
+                PageSize: 10,
+                TotalCount: 0,
+                Sort: ProductSort.Default
+            )
         );
 
         // Assert
@@ -67,7 +131,13 @@ public class PagedResultTests
     public void With_NullItems_ThrowsArgumentNullException_Test()
     {
         // Arrange
-        var page = new PagedResult<string>(Items: [], PageNumber: 1, PageSize: 10, TotalCount: 0);
+        var page = new PagedResult<string>(
+            Items: [],
+            PageNumber: 1,
+            PageSize: 10,
+            TotalCount: 0,
+            Sort: ProductSort.Default
+        );
 
         // Act
         var ex = Assert.Throws<ArgumentNullException>(() => page with { Items = null! });
@@ -83,7 +153,13 @@ public class PagedResultTests
     {
         // Arrange
         IReadOnlyList<string> items = ["a", "b"];
-        var page = new PagedResult<string>(items, PageNumber: 1, PageSize: 2, TotalCount: 4);
+        var page = new PagedResult<string>(
+            items,
+            PageNumber: 1,
+            PageSize: 2,
+            TotalCount: 4,
+            Sort: ProductSort.Default
+        );
 
         // Act
         var next = page with

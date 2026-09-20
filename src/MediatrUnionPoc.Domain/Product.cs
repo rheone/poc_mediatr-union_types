@@ -54,6 +54,14 @@ public sealed class Product
     public ProductVersion Version { get; private set; }
 
     /// <summary>
+    /// The instant this product was created, supplied by the caller (the Application layer reads it
+    /// from an injectable <see cref="TimeProvider"/>; the Domain never reads a clock itself). Never
+    /// changes after creation.
+    /// </summary>
+    /// <value>The creation instant. Persistence stores it as UTC ticks, so a value read back carries a zero offset.</value>
+    public DateTimeOffset CreatedAt { get; private set; }
+
+    /// <summary>
     /// Private on purpose: EF Core materializes existing rows through this constructor via
     /// constructor-parameter-to-property binding (see <c>AppDbContext.OnModelCreating</c>), while
     /// application code must go through <see cref="Create"/> instead of calling
@@ -64,7 +72,15 @@ public sealed class Product
     /// <param name="price">The product's price.</param>
     /// <param name="ownerId">The identifier of the owning caller — see <see cref="OwnerId"/>.</param>
     /// <param name="version">The concurrency version — see <see cref="Version"/>.</param>
-    private Product(ProductId id, string name, Money price, string ownerId, ProductVersion version)
+    /// <param name="createdAt">The creation instant — see <see cref="CreatedAt"/>.</param>
+    private Product(
+        ProductId id,
+        string name,
+        Money price,
+        string ownerId,
+        ProductVersion version,
+        DateTimeOffset createdAt
+    )
     {
         Id = id;
         Name = name;
@@ -72,11 +88,13 @@ public sealed class Product
         Price = price;
         OwnerId = ownerId;
         Version = version;
+        CreatedAt = createdAt;
     }
 
     /// <summary>Creates a brand-new product with a freshly generated <see cref="ProductId"/>.</summary>
     /// <param name="name">The product's display name.</param>
     /// <param name="price">The product's price.</param>
+    /// <param name="createdAt">The instant of creation — see <see cref="CreatedAt"/>.</param>
     /// <param name="ownerId">
     /// The identifier of the caller who owns this product — see <see cref="OwnerId"/>. Defaults to
     /// an empty string (no asserted owner) so callers that don't care about ownership don't need
@@ -84,11 +102,16 @@ public sealed class Product
     /// </param>
     /// <returns>The newly created <see cref="Product"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="ownerId"/> is <see langword="null"/>.</exception>
-    public static Product Create(string name, Money price, string ownerId = "")
+    public static Product Create(
+        string name,
+        Money price,
+        DateTimeOffset createdAt,
+        string ownerId = ""
+    )
     {
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(ownerId);
-        return new(ProductId.New(), name, price, ownerId, ProductVersion.Initial);
+        return new(ProductId.New(), name, price, ownerId, ProductVersion.Initial, createdAt);
     }
 
     /// <summary>Replaces this product's name and price in place and advances <see cref="Version"/>. There is no partial-update overload.</summary>

@@ -12,6 +12,13 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   action's `switch` performs, end to end through routing and the real MediatR pipeline behaviors.
   A fresh `ProductsApiFactory` per test gives each test its own isolated database.
 
+- `ProductListingTests.cs` — the list endpoint's query-string contract over HTTP: filter and sort
+  binding, per-field `400`s, the paging metadata in the body, `X-Total-Count`, and the `Link`
+  header's exact URLs. It swaps in a manually controlled `TimeProvider` so creation timestamps are
+  deterministic.
+- `ListingOpenApiTests.cs` — the list operation's documented parameters, paging response headers and
+  example in the generated OpenAPI document.
+
 Nothing here substitutes any dependency other than the database name — this is deliberately the
 one seam in the suite that crosses every layer at once. Tests that need a real database but not a
 real HTTP host live in `MediatrUnionPoc.Infrastructure.IntegrationTests` instead; tests that need

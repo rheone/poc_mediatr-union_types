@@ -16,6 +16,7 @@ builder.Services.AddOpenApi(options =>
 {
     options.AddSchemaTransformer<ProductContractExampleTransformer>();
     options.AddOperationTransformer<ETagResponseHeaderTransformer>();
+    options.AddOperationTransformer<PagingResponseHeaderTransformer>();
     options.AddOperationTransformer<PreconditionProblemExampleTransformer>();
 });
 

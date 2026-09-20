@@ -24,7 +24,7 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// <listheader><term>Action</term><description>Cases</description></listheader>
 /// <item><term>CreateAsync</term><description>ProductDto 201 (with <c>ETag</c>); ValidationErrors 400; Conflict 409 (duplicate product name); Error 500.</description></item>
 /// <item><term>GetByIdAsync</term><description>ProductDto 200 (with <c>ETag</c>); NotFound 404; Error 500.</description></item>
-/// <item><term>GetPagedAsync</term><description>PagedResult 200; Error 400 for <see cref="Error.ValidationFailureCode"/> and 500 otherwise (the default of <c>HttpMappingOptions</c>).</description></item>
+/// <item><term>GetPagedAsync</term><description>PagedResult 200 (with <c>X-Total-Count</c> and <c>Link</c>); ValidationErrors 400 (per-field); Error 500.</description></item>
 /// <item><term>UpdateAsync</term><description>ProductDto 204 (with the new <c>ETag</c>); NotFound 404; ValidationErrors 400 (also a malformed <c>If-Match</c>); NotAuthorized 403; Conflict 409 (duplicate product name); PreconditionFailed 412; missing <c>If-Match</c> 428; Error 500.</description></item>
 /// <item><term>DeleteAsync</term><description>Success 204; NotFound 404; NotAuthorized 403; PreconditionFailed 412; malformed <c>If-Match</c> 400; Error 500.</description></item>
 /// </list>
@@ -124,33 +124,45 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         };
     }
 
-    /// <summary>Lists products a page at a time, ordered by name.</summary>
-    /// <param name="pageNumber">1-based page number.</param>
-    /// <param name="pageSize">Items per page (1-100).</param>
+    /// <summary>
+    /// Lists products: filtered, sorted and a page at a time. See <see cref="ListProductsRequest"/>
+    /// for the query-string contract.
+    /// </summary>
+    /// <param name="request">The filters, sort and paging bound from the query string.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
-    /// 200 with a <see cref="PagedResult{T}"/> of <see cref="ProductDto"/>; 400 if paging parameters
-    /// are out of range (the union reports that as an <see cref="Error"/> whose code is
-    /// <see cref="Error.ValidationFailureCode"/>); 500 for any other <see cref="Error"/>.
+    /// 200 with a <see cref="PagedResult{T}"/> of <see cref="ProductDto"/> (an empty page, with correct
+    /// metadata, when the page is past the end), plus <c>X-Total-Count</c> and RFC 8288 <c>Link</c>
+    /// headers; 400 with per-field errors if a query parameter is malformed or out of range; 500 for
+    /// any <see cref="Error"/>.
     /// </returns>
     [HttpGet]
+    [ReturnsPagingHeaders]
     [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetPagedAsync(
-        [FromQuery] int pageNumber = 1,
-        [FromQuery] int pageSize = 10,
+        [FromQuery] ListProductsRequest request,
         CancellationToken cancellationToken = default
     )
     {
         var result = await _sender.Send(
-            new GetPagedProductsQuery(pageNumber, pageSize),
+            new GetPagedProductsQuery(
+                request.PageNumber,
+                request.PageSize,
+                request.NameContains,
+                request.MinPrice,
+                request.MaxPrice,
+                request.OwnerId,
+                request.Sort
+            ),
             cancellationToken
         );
 
         return result switch
         {
-            PagedResult<ProductDto> page => Ok(page),
+            PagedResult<ProductDto> page => WithPagingHeaders(page, Ok(page)),
+            ValidationErrors errors => errors.ToProblemResult(HttpContext),
             Error error => error.ToProblemResult(HttpContext),
         };
     }
@@ -202,6 +214,12 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             MissingIfMatch missing => missing.ToProblemResult(HttpContext),
             ValidationErrors errors => errors.ToProblemResult(HttpContext),
         };
+    }
+
+    private IActionResult WithPagingHeaders(PagedResult<ProductDto> page, IActionResult result)
+    {
+        Response.SetPagingHeaders(page);
+        return result;
     }
 
     private IActionResult WithETag(ProductDto dto, IActionResult result)

@@ -125,7 +125,12 @@ public sealed class DeleteProductHandlerTests
 
     private Product StoredProduct()
     {
-        var product = Product.Create(ProductName, Money.From(ProductPrice), ownerId: OwnerId);
+        var product = Product.Create(
+            ProductName,
+            Money.From(ProductPrice),
+            DateTimeOffset.UnixEpoch,
+            ownerId: OwnerId
+        );
         _repository.GetByIdAsync(product.Id, Arg.Any<CancellationToken>()).Returns(product);
         return product;
     }

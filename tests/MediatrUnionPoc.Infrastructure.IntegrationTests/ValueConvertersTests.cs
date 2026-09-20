@@ -15,6 +15,39 @@ public class ValueConvertersTests
     private const decimal DecimalValue = 9.99m;
     private static readonly Guid GuidValue = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
+    /// <summary>Verifies <see cref="UtcTicksValueConverter"/> stores an instant as the tick count of its UTC time, whatever offset it was expressed in.</summary>
+    [Fact]
+    public void ConvertToProvider_OffsetInstant_ReturnsUtcTicks_Test()
+    {
+        // Arrange
+        var fivePastNoonPlusTwo = new DateTimeOffset(2026, 5, 1, 14, 5, 0, TimeSpan.FromHours(2));
+        var converter = new UtcTicksValueConverter();
+
+        // Act
+        var converted = converter.ConvertToProvider(fivePastNoonPlusTwo);
+
+        // Assert
+        Assert.Equal(new DateTime(2026, 5, 1, 12, 5, 0, DateTimeKind.Utc).Ticks, converted);
+    }
+
+    /// <summary>Verifies <see cref="UtcTicksValueConverter"/> reads a tick count back as the same instant with a zero offset.</summary>
+    [Fact]
+    public void ConvertFromProvider_UtcTicks_ReturnsSameInstantAtZeroOffset_Test()
+    {
+        // Arrange
+        var ticks = new DateTime(2026, 5, 1, 12, 5, 0, DateTimeKind.Utc).Ticks;
+        var converter = new UtcTicksValueConverter();
+
+        // Act
+        var converted = (DateTimeOffset)converter.ConvertFromProvider(ticks)!;
+
+        // Assert
+        Assert.Multiple(
+            () => Assert.Equal(new DateTimeOffset(2026, 5, 1, 12, 5, 0, TimeSpan.Zero), converted),
+            () => Assert.Equal(TimeSpan.Zero, converted.Offset)
+        );
+    }
+
     /// <summary>Verifies <see cref="ProductIdValueConverter"/> converts a <see cref="ProductId"/> to its underlying <see cref="Guid"/>.</summary>
     [Fact]
     public void ConvertToProvider_ProductId_ReturnsUnderlyingGuid_Test()

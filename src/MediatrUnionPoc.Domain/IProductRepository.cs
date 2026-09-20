@@ -14,14 +14,23 @@ public interface IProductRepository
     /// <returns>The matching <see cref="Product"/>, or <see langword="null"/> if none exists.</returns>
     Task<Product?> GetByIdAsync(ProductId id, CancellationToken cancellationToken = default);
 
-    /// <summary>Retrieves one page of products, ordered by name, along with the total row count.</summary>
+    /// <summary>
+    /// Retrieves one page of the products matching <paramref name="criteria"/>, in the requested order,
+    /// along with how many products match in total. Ordering always ends in an implicit
+    /// <see cref="Product.Id"/> tiebreaker, so rows that tie on every requested key still page in a
+    /// stable order and no row is skipped or repeated between pages.
+    /// </summary>
     /// <param name="pageNumber">1-based page number.</param>
     /// <param name="pageSize">Maximum number of items per page.</param>
+    /// <param name="criteria">Which products to include; <see cref="ProductCriteria.None"/> keeps all of them.</param>
+    /// <param name="sort">The sort keys in priority order; empty means <see cref="ProductSort.Default"/>.</param>
     /// <param name="cancellationToken">Token to cancel the query; defaults to <see cref="CancellationToken.None"/>.</param>
-    /// <returns>The requested page of products alongside the total row count.</returns>
+    /// <returns>The requested page alongside the number of matching products (not the size of the table) and the sort that was applied.</returns>
     Task<PagedResult<Product>> GetPagedAsync(
         int pageNumber,
         int pageSize,
+        ProductCriteria criteria,
+        IReadOnlyList<ProductSort> sort,
         CancellationToken cancellationToken = default
     );
 

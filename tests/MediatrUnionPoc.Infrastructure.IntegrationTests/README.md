@@ -13,11 +13,14 @@ handler tests do).
   the pipeline-level tests in `MediatrUnionPoc.Application.Tests` (which substitute `IUnitOfWork`)
   would never catch it.
 - `ProductRepositoryTests.cs` — covers the query logic `EfCoreUnitOfWorkTests` doesn't:
-  `GetPagedAsync`'s ordering (by name) and its skip/take math across multiple pages, plus a plain
+  `GetPagedAsync`'s skip/take math across multiple pages, plus a plain
   `GetByIdAsync` miss/hit and a `Remove` round trip. Nothing here substitutes `IProductRepository`
   or `AppDbContext` — that's the point of an integration test for a repository, and the paging math
   in particular is never exercised anywhere else with more than one row.
 
+- `ProductRepositoryListingTests.cs` — `GetPagedAsync`'s filters (each criterion, combined), every
+  sort field in both directions (including creation time ordering by instant across offsets),
+  multi-key sorts, the implicit `Id` tiebreaker, and paging within a filtered set, all on real SQLite.
 - `ValueConvertersTests.cs` — the converters' delegates in isolation, including rejection of
   invalid stored values.
 - `AppDbContextTests.cs` — the EF model metadata (key, length limits, value converters).
