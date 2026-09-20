@@ -2,6 +2,7 @@ using System.Security.Claims;
 using MediatR;
 using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.Http;
+using MediatrUnionPoc.Api.OpenApi;
 using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
@@ -21,11 +22,11 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// via <c>ProducesResponseType</c> on each action):
 /// <list type="table">
 /// <listheader><term>Action</term><description>Cases</description></listheader>
-/// <item><term>CreateAsync</term><description>ProductDto 201; ValidationErrors 400; Error 500.</description></item>
-/// <item><term>GetByIdAsync</term><description>ProductDto 200; NotFound 404; Error 500.</description></item>
+/// <item><term>CreateAsync</term><description>ProductDto 201 (with <c>ETag</c>); ValidationErrors 400; Error 500.</description></item>
+/// <item><term>GetByIdAsync</term><description>ProductDto 200 (with <c>ETag</c>); NotFound 404; Error 500.</description></item>
 /// <item><term>GetPagedAsync</term><description>PagedResult 200; Error 400 for <see cref="Error.ValidationFailureCode"/> and 500 otherwise (the default of <c>HttpMappingOptions</c>).</description></item>
-/// <item><term>UpdateAsync</term><description>Success 204; NotFound 404; ValidationErrors 400; NotAuthorized 403; Error 500.</description></item>
-/// <item><term>DeleteAsync</term><description>Success 204; NotFound 404; NotAuthorized 403; Error 500.</description></item>
+/// <item><term>UpdateAsync</term><description>ProductDto 204 (with the new <c>ETag</c>); NotFound 404; ValidationErrors 400 (also a malformed <c>If-Match</c>); NotAuthorized 403; PreconditionFailed 412; missing <c>If-Match</c> 428; Error 500.</description></item>
+/// <item><term>DeleteAsync</term><description>Success 204; NotFound 404; NotAuthorized 403; PreconditionFailed 412; malformed <c>If-Match</c> 400; Error 500.</description></item>
 /// </list>
 /// </summary>
 /// <param name="sender">The MediatR sender every action dispatches its request through.</param>
@@ -62,10 +63,11 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
-    /// 201 with the created <see cref="ProductDto"/>; 400 with per-field errors if <paramref name="request"/>
+    /// 201 with the created <see cref="ProductDto"/> and its <c>ETag</c>; 400 with per-field errors if <paramref name="request"/>
     /// fails validation; 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpPost]
+    [ReturnsETag]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -86,7 +88,10 @@ public sealed class ProductsController(ISender sender) : ControllerBase
 
         return result switch
         {
-            ProductDto dto => CreatedAtAction(nameof(GetByIdAsync), new { id = dto.Id.Value }, dto),
+            ProductDto dto => WithETag(
+                dto,
+                CreatedAtAction(nameof(GetByIdAsync), new { id = dto.Id.Value }, dto)
+            ),
             ValidationErrors errors => errors.ToProblemResult(HttpContext),
             Error error => error.ToProblemResult(HttpContext),
         };
@@ -95,8 +100,9 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// <summary>Looks up a single product by id.</summary>
     /// <param name="id">The product's identity.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
-    /// <returns>200 with the <see cref="ProductDto"/>; 400 if the id fails validation (an <see cref="Error"/> coded <see cref="Error.ValidationFailureCode"/>); 404 if it doesn't exist; 500 for any other <see cref="Error"/> case.</returns>
+    /// <returns>200 with the <see cref="ProductDto"/> and its <c>ETag</c>; 400 if the id fails validation (an <see cref="Error"/> coded <see cref="Error.ValidationFailureCode"/>); 404 if it doesn't exist; 500 for any other <see cref="Error"/> case.</returns>
     [HttpGet("{id:guid}")]
+    [ReturnsETag]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -110,7 +116,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
 
         return result switch
         {
-            ProductDto dto => Ok(dto),
+            ProductDto dto => WithETag(dto, Ok(dto)),
             NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product"),
             Error error => error.ToProblemResult(HttpContext),
         };
@@ -156,22 +162,57 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// <param name="id">The product's identity.</param>
     /// <param name="request">The new name and price.</param>
     /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
+    /// <param name="ifMatchHeader">The <c>If-Match</c> request header: the ETag of the version being replaced. Required.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
-    /// 204 on success; 404 if the product doesn't exist; 400 on validation failure; 403 if the
-    /// caller doesn't own the product; 500 for any other <see cref="Error"/> case.
+    /// 204 on success, with the product's new <c>ETag</c>; 404 if the product doesn't exist; 400 on
+    /// validation failure or a malformed <c>If-Match</c>; 403 if the caller doesn't own the product;
+    /// 412 if <c>If-Match</c> no longer names the product's version; 428 if <c>If-Match</c> is
+    /// absent; 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpPut("{id:guid}")]
+    [ReturnsETag]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdateAsync(
         Guid id,
         UpdateProductRequest request,
         [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
+        [FromHeader(Name = IfMatchHeader.HeaderName)] string? ifMatchHeader,
         CancellationToken cancellationToken = default
+    )
+    {
+        return IfMatchHeader.Parse(ifMatchHeader) switch
+        {
+            ProductVersion expectedVersion => await SendUpdateAsync(
+                id,
+                request,
+                callerIdHeader,
+                expectedVersion,
+                cancellationToken
+            ),
+            MissingIfMatch missing => missing.ToProblemResult(HttpContext),
+            ValidationErrors errors => errors.ToProblemResult(HttpContext),
+        };
+    }
+
+    private IActionResult WithETag(ProductDto dto, IActionResult result)
+    {
+        Response.SetETag(dto.Version);
+        return result;
+    }
+
+    private async Task<IActionResult> SendUpdateAsync(
+        Guid id,
+        UpdateProductRequest request,
+        string? callerIdHeader,
+        ProductVersion expectedVersion,
+        CancellationToken cancellationToken
     )
     {
         var result = await _sender.Send(
@@ -179,17 +220,19 @@ public sealed class ProductsController(ISender sender) : ControllerBase
                 id,
                 request.Name,
                 request.Price,
-                ClaimsPrincipal.FromCallerHeaders(adminHeader: null, callerIdHeader)
+                ClaimsPrincipal.FromCallerHeaders(adminHeader: null, callerIdHeader),
+                expectedVersion
             ),
             cancellationToken
         );
 
         return result switch
         {
-            Success => NoContent(),
+            ProductDto updated => WithETag(updated, NoContent()),
             NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product"),
             ValidationErrors errors => errors.ToProblemResult(HttpContext),
             NotAuthorized notAuthorized => notAuthorized.ToProblemResult(HttpContext),
+            PreconditionFailed stale => stale.ToProblemResult(HttpContext),
             Error error => error.ToProblemResult(HttpContext),
         };
     }
@@ -201,28 +244,55 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// </summary>
     /// <param name="id">The product's identity.</param>
     /// <param name="adminHeader">The <see cref="AdminHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
+    /// <param name="ifMatchHeader">The optional <c>If-Match</c> request header; when present the delete only proceeds if it names the product's current version.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
     /// 204 on success; 400 if the id fails validation (an <see cref="Error"/> coded
-    /// <see cref="Error.ValidationFailureCode"/>); 403 if the caller isn't an administrator; 404 if
-    /// the product doesn't exist; 500 for any other <see cref="Error"/> case.
+    /// <see cref="Error.ValidationFailureCode"/>) or <c>If-Match</c> is malformed; 403 if the caller
+    /// isn't an administrator; 404 if the product doesn't exist; 412 if <c>If-Match</c> is stale;
+    /// 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteAsync(
         Guid id,
         [FromHeader(Name = AdminHeaderName)] string? adminHeader,
+        [FromHeader(Name = IfMatchHeader.HeaderName)] string? ifMatchHeader,
         CancellationToken cancellationToken = default
+    )
+    {
+        return IfMatchHeader.Parse(ifMatchHeader) switch
+        {
+            ProductVersion expectedVersion => await SendDeleteAsync(
+                id,
+                adminHeader,
+                expectedVersion,
+                cancellationToken
+            ),
+
+            // Optional on delete: no header means "delete whatever version is stored".
+            MissingIfMatch => await SendDeleteAsync(id, adminHeader, null, cancellationToken),
+            ValidationErrors errors => errors.ToProblemResult(HttpContext),
+        };
+    }
+
+    private async Task<IActionResult> SendDeleteAsync(
+        Guid id,
+        string? adminHeader,
+        ProductVersion? expectedVersion,
+        CancellationToken cancellationToken
     )
     {
         var result = await _sender.Send(
             new DeleteProductCommand(
                 id,
-                ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader: null)
+                ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader: null),
+                expectedVersion
             ),
             cancellationToken
         );
@@ -232,6 +302,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             Success => NoContent(),
             NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product"),
             NotAuthorized notAuthorized => notAuthorized.ToProblemResult(HttpContext),
+            PreconditionFailed stale => stale.ToProblemResult(HttpContext),
             Error error => error.ToProblemResult(HttpContext),
         };
     }

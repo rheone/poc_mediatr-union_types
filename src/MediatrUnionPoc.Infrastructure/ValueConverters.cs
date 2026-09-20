@@ -19,3 +19,10 @@ public sealed class ProductIdValueConverter()
 /// <summary>Converts <see cref="Money"/> to and from the raw <see cref="decimal"/> column EF Core stores. See <see cref="ProductIdValueConverter"/> for why this is hand-written rather than Vogen-generated.</summary>
 public sealed class MoneyValueConverter()
     : ValueConverter<Money, decimal>(money => money.Value, value => Money.From(value));
+
+/// <summary>Converts <see cref="ProductVersion"/> to and from the raw <see cref="long"/> column EF Core stores. See <see cref="ProductIdValueConverter"/> for why this is hand-written rather than Vogen-generated.</summary>
+public sealed class ProductVersionValueConverter()
+    : ValueConverter<ProductVersion, long>(
+        version => version.Value,
+        value => ProductVersion.From(value)
+    );

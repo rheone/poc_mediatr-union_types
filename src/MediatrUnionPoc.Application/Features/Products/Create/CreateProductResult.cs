@@ -5,6 +5,7 @@ using System.Diagnostics;
 using MediatrUnionPoc.Application.Common.Abstractions;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
+using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Features.Products.Create;
 
@@ -15,7 +16,9 @@ namespace MediatrUnionPoc.Application.Features.Products.Create;
 /// </summary>
 [DebuggerDisplay("{Value}")]
 public union CreateProductResult(ProductDto, ValidationErrors, Error)
-    : IValidatable<CreateProductResult>, ITransactionOutcome<CreateProductResult>
+    : IValidatable<CreateProductResult>,
+        ITransactionOutcome<CreateProductResult>,
+        ICommitFailable<CreateProductResult>
 {
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="errors"/> is <see langword="null"/>.</exception>
@@ -38,4 +41,25 @@ public union CreateProductResult(ProductDto, ValidationErrors, Error)
         ValidationErrors => false,
         Error => false,
     };
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A brand-new row cannot be stale, so a <see cref="ConcurrencyConflict"/> here means something
+    /// is wrong with the persistence setup rather than with the caller's request: it maps to
+    /// <see cref="Error"/>. A <see cref="UniqueViolation"/> maps to <see cref="Error"/> as well.
+    /// </remarks>
+    public static CreateProductResult FromCommitFailure(CommitFailure failure)
+    {
+        return failure switch
+        {
+            ConcurrencyConflict => new Error(
+                "A newly created product cannot conflict with a concurrent change.",
+                "COMMIT_CONCURRENCY_CONFLICT"
+            ),
+            UniqueViolation => new Error(
+                "The product violates a uniqueness constraint.",
+                "COMMIT_UNIQUE_VIOLATION"
+            ),
+        };
+    }
 }

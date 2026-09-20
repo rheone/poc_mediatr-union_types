@@ -13,3 +13,6 @@ tests/MediatrUnionPoc.Application.Tests/Behaviors/TransactionBehaviorTests.cs
 tests/MediatrUnionPoc.Application.Tests/Behaviors/NonTransactionalCommandTests.cs
 tests/MediatrUnionPoc.Application.Tests/Unions/FailureAndNotAuthorizedCaseTypeTests.cs
 tests/MediatrUnionPoc.Application.Tests/Behaviors/AuthorizationBehaviorTests.cs
+tests/MediatrUnionPoc.Application.Tests/Behaviors/TransactionBehaviorCommitFailureTests.cs
+src/MediatrUnionPoc.Domain/CommitResult.cs
+src/MediatrUnionPoc.Api/Http/IfMatchHeader.cs

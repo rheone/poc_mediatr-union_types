@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Abstractions;
 using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Features.Products.Update;
 
@@ -16,6 +17,11 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 /// command deliberately does not implement <see cref="IRequiresAuthorization"/> — that pipeline
 /// path runs before any resource is loaded, too early for an ownership check.
 /// </param>
+/// <param name="ExpectedVersion">
+/// The <see cref="Domain.ProductVersion"/> the caller last saw (its <c>If-Match</c> ETag). The
+/// update only proceeds if the stored product is still at this version; otherwise the result is
+/// <see cref="MediatrUnionPoc.Application.Common.Results.PreconditionFailed"/> and nothing changes.
+/// </param>
 /// <remarks>
 /// <see cref="Name"/> is deliberately not null-guarded in the constructor (unlike
 /// <see cref="Principal"/>): <see cref="UpdateProductValidator"/> owns that rule, so a
@@ -29,7 +35,8 @@ public sealed record UpdateProductCommand(
     Guid Id,
     string Name,
     decimal Price,
-    ClaimsPrincipal Principal
+    ClaimsPrincipal Principal,
+    ProductVersion ExpectedVersion
 ) : ITransactionalCommand<UpdateProductResult>
 {
     /// <summary>The caller's identity, checked by <see cref="UpdateProductHandler"/> after loading the product; never <see langword="null"/>.</summary>

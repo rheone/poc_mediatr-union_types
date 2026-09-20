@@ -4,23 +4,24 @@
 using System.Diagnostics;
 using MediatrUnionPoc.Application.Common.Abstractions;
 using MediatrUnionPoc.Application.Common.Results;
+using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Features.Products.Update;
 
 /// <summary>
-/// Everything an "update" command can come back as: no payload on success, a missing entity,
-/// invalid input, a caller who doesn't own the product, or an unexpected error. Unlike
-/// <see cref="Create.CreateProductResult"/>, this union has no DTO case at all — a successful
-/// update returns <see cref="Success"/>, not the updated <see cref="Common.ProductDto"/>.
+/// Everything an "update" command can come back as: the updated product, a missing entity,
+/// invalid input, a caller who doesn't own the product, a stale expected version, or an
+/// unexpected error. The updated <see cref="ProductDto"/> is returned (rather than a bare
+/// <see cref="Success"/>) so the caller learns the product's new
+/// <see cref="ProductDto.Version"/> — the API turns it into the new <c>ETag</c>.
 /// </summary>
 /// <remarks>
 /// <para>What each case means for this specific operation, as distinct from the generic meaning
-/// documented on the case type itself in <c>Common/Results/</c> (e.g. <see cref="Success"/>,
-/// <see cref="NotFound{TId}"/>):</para>
+/// documented on the case type itself in <c>Common/Results/</c> (e.g. <see cref="NotFound{TId}"/>):</para>
 /// <list type="bullet">
-/// <item><description><see cref="Success"/> — the product existed, the caller owns it, and its
-/// name/price were overwritten. <see cref="UpdateProductHandler"/> only ever reaches this after
+/// <item><description><see cref="ProductDto"/> — the product existed, the caller owns it, and its
+/// name/price were overwritten; the DTO is the product as now stored, at its advanced version. <see cref="UpdateProductHandler"/> only ever reaches this after
 /// <see cref="Product.UpdateDetails"/> has already been called, so this is also the sole case
 /// that must be committed (see <see cref="ShouldCommit"/>).</description></item>
 /// <item><description><see cref="NotFound{TId}"/> of <see cref="ProductId"/> — no product exists
@@ -36,13 +37,25 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 /// <see cref="MediatrUnionPoc.Application.Common.Authorization.ResourceAuthorizationService"/> — see
 /// <see cref="UpdateProductCommand.Principal"/> for why this check can't run earlier in the
 /// pipeline.</description></item>
+/// <item><description><see cref="PreconditionFailed"/> — the caller's
+/// <see cref="UpdateProductCommand.ExpectedVersion"/> is stale. Produced by
+/// <see cref="UpdateProductHandler"/> up front, before mutating anything, or (when a concurrent
+/// write slips in between load and commit) by <see cref="FromCommitFailure"/>.</description></item>
 /// </list>
 /// </remarks>
 [DebuggerDisplay("{Value}")]
-public union UpdateProductResult(Success, NotFound<ProductId>, ValidationErrors, Error, NotAuthorized)
+public union UpdateProductResult(
+    ProductDto,
+    NotFound<ProductId>,
+    ValidationErrors,
+    Error,
+    NotAuthorized,
+    PreconditionFailed
+)
     : IValidatable<UpdateProductResult>,
         ITransactionOutcome<UpdateProductResult>,
-        IAuthorizable<UpdateProductResult>
+        IAuthorizable<UpdateProductResult>,
+        ICommitFailable<UpdateProductResult>
 {
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="errors"/> is <see langword="null"/>.</exception>
@@ -64,7 +77,7 @@ public union UpdateProductResult(Success, NotFound<ProductId>, ValidationErrors,
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <para>Only <see cref="Success"/> commits; every other case rolls back. This mirrors when
+    /// <para>Only <see cref="ProductDto"/> commits; every other case rolls back. This mirrors when
     /// <see cref="UpdateProductHandler"/> calls <see cref="Product.UpdateDetails"/>: all four
     /// rollback cases (<see cref="NotFound{TId}"/>, <see cref="ValidationErrors"/>,
     /// <see cref="Error"/>, <see cref="NotAuthorized"/>) are returned before that call happens, so
@@ -78,10 +91,32 @@ public union UpdateProductResult(Success, NotFound<ProductId>, ValidationErrors,
     /// </remarks>
     public static bool ShouldCommit(UpdateProductResult response) => response switch
     {
-        Success => true,
+        ProductDto => true,
         NotFound<ProductId> => false,
         ValidationErrors => false,
         Error => false,
         NotAuthorized => false,
+        PreconditionFailed => false,
     };
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A <see cref="ConcurrencyConflict"/> means another writer changed the product between this
+    /// request loading it and committing — the caller's version is stale, exactly what the handler's
+    /// up-front check reports, so it is a <see cref="PreconditionFailed"/> too. Nothing about an
+    /// update can violate a uniqueness constraint yet, so that failure is an <see cref="Error"/>.
+    /// </remarks>
+    public static UpdateProductResult FromCommitFailure(CommitFailure failure)
+    {
+        return failure switch
+        {
+            ConcurrencyConflict => new PreconditionFailed(
+                "The product was changed by another request; reload it and retry."
+            ),
+            UniqueViolation => new Error(
+                "The update violates a uniqueness constraint.",
+                "COMMIT_UNIQUE_VIOLATION"
+            ),
+        };
+    }
 }

@@ -14,7 +14,9 @@ for why, and its [Authorization](../../README.md#authorization) section for how 
 The controller keeps its own exhaustive `switch`; the repeated failure arms are one-line calls to
 C# 14 extension members in `MediatrUnionPoc.Api.Http` (`ResultHttpExtensions`):
 `error.ToProblemResult(HttpContext)`, `notFound.ToProblemResult(HttpContext, resource: "Product")`,
-`notAuthorized.ToProblemResult(HttpContext)`, `errors.ToProblemResult(HttpContext)`, plus the static
+`notAuthorized.ToProblemResult(HttpContext)`, `errors.ToProblemResult(HttpContext)`,
+`preconditionFailed.ToProblemResult(HttpContext)` (412), `conflict.ToProblemResult(HttpContext)`
+(409), `missingIfMatch.ToProblemResult(HttpContext)` (428), plus the static
 `ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader)`. Every failure body is
 `application/problem+json`; the 404 carries a `code` member (`"NOT_FOUND"`).
 
@@ -25,6 +27,19 @@ C# 14 extension members in `MediatrUnionPoc.Api.Http` (`ResultHttpExtensions`):
 - Each extension takes optional per-call overrides (`statusCode`, `title`, `detail`) to treat one
   case differently, and everything is public: write a hand-rolled arm or your own extension members
   whenever the built-ins do not fit.
+
+## ETag and If-Match (`Http/`)
+
+Products carry an optimistic-concurrency version, exposed as a weak ETag `W/"n"`. `GET` by id and
+`POST` return it in the `ETag` header (and `ProductDto` has a `version` member); a successful `PUT`
+returns the new one with `204`. `PUT` requires `If-Match`: missing is `428`, malformed is a `400`
+validation problem naming the header, stale is `412`. On `DELETE` it is optional, and enforced when
+present. `IfMatchHeader.Parse` classifies the header (`ProductVersion`, `MissingIfMatch` or
+`ValidationErrors`) so both actions share one parser, and `Response.SetETag(version)`
+(`ETagHttpExtensions`) writes the header. The OpenAPI document declares the `412`/`428` responses
+with example bodies (`PreconditionProblemExampleTransformer`) and the `ETag` response header on
+actions marked `[ReturnsETag]` (`ETagResponseHeaderTransformer`). See the repo root README's
+[Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).
 
 ## Trace id and unhandled exceptions (`Http/`)
 

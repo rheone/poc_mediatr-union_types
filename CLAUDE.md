@@ -27,8 +27,9 @@ machine and fail with `NETSDK1045`.
 
 **Solution layout** (`MediatrUnionPoc.slnx`, 4 `src/` projects + 5 `tests/` projects):
 
-- `src/MediatrUnionPoc.Domain` — `Product` entity, Vogen value objects (`ProductId`, `Money`),
-  `IProductRepository`/`IUnitOfWork` interfaces. Has no dependency on any other project here.
+- `src/MediatrUnionPoc.Domain` — `Product` entity, Vogen value objects (`ProductId`, `Money`,
+  `ProductVersion`), `IProductRepository`/`IUnitOfWork` interfaces. `IUnitOfWork.CommitAsync` returns
+  a `CommitResult` union (`Committed | ConcurrencyConflict | UniqueViolation`). Has no dependency on any other project here.
 - `src/MediatrUnionPoc.Application` — commands, queries, handlers, validators, organized as
   **vertical slices** under `Features/Products/<Operation>/` (Create, Update, Delete, GetById,
   GetPaged) rather than by technical layer. `Common/` holds the shared pipeline machinery (below).
@@ -76,14 +77,20 @@ matters" and "Shared case types are meaning-free" sections for the full rational
 
 **MediatR pipeline** (registered in `Application/DependencyInjection.cs`, in this exact order):
 `LoggingBehavior` → `AuthorizationBehavior` → `ValidationBehavior` → `TransactionBehavior` — who's
-calling is checked before whether their input is well-formed. Marker interfaces in
+calling is checked before whether their input is well-formed. When `CommitAsync` reports a failure,
+`TransactionBehavior` rolls back and returns `TResponse.FromCommitFailure(failure)`. Marker interfaces in
 `Application/Common/Abstractions/` control which behaviors apply to which requests:
 
 - `ICommand<TResponse>` — mutates state, no transaction assumption.
 - `ITransactionalCommand<TResponse> : ICommand<TResponse>` — opts into `TransactionBehavior`;
   requires the response union to implement `ITransactionOutcome<TResponse>` (a `static abstract
   bool ShouldCommit(TResponse)`, implemented per-union as an exhaustive `switch` over that union's
-  own cases).
+  own cases) and `ICommitFailable<TResponse>`.
+- `ICommitFailable<TSelf>` — a union implements `static abstract TSelf
+  FromCommitFailure(CommitFailure)` as an exhaustive `switch` over `ConcurrencyConflict` /
+  `UniqueViolation`, deciding what a refused commit means for that operation (e.g. Update:
+  `ConcurrencyConflict` → `PreconditionFailed`); the compiler forces every transactional union to
+  classify every commit failure.
 - `IQuery<TResponse>` — read-only, never wrapped in a transaction.
 - `IValidatable<TSelf>` — a union implements this (`static abstract TSelf
   FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can short-circuit generically
@@ -96,8 +103,8 @@ calling is checked before whether their input is well-formed. Marker interfaces 
   same generic short-circuit pattern `IValidatable` uses for validation. See README's
   "Authorization" section for how to configure it and gate a new command behind it.
 
-Case types (`Success`, `NotFound`, `Error`, `ValidationErrors`, `Failure`, `NotAuthorized` — in
-`Application/Common/Results/CaseTypes.cs`) are deliberately meaning-free and reused across unions;
+Case types (`Success`, `NotFound`, `Error`, `ValidationErrors`, `Failure`, `NotAuthorized`,
+`PreconditionFailed`, `Conflict` — one file each in `Application/Common/Results/`) are deliberately meaning-free and reused across unions;
 a case type's identity never implies what it means for commit/rollback or anything else — only
 the union that declares it decides that. That's why `ITransactionOutcome.ShouldCommit` exists
 instead of `TransactionBehavior` pattern-matching a fixed list of known case types.

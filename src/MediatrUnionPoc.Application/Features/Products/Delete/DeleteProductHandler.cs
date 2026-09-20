@@ -37,6 +37,13 @@ public sealed class DeleteProductHandler(IProductRepository repository)
             return new NotFound<ProductId>(productId);
         }
 
+        if (request.ExpectedVersion is { } expected && product.Version != expected)
+        {
+            return new PreconditionFailed(
+                $"Product '{productId}' is at version {product.Version.Value}, not the expected {expected.Value}."
+            );
+        }
+
         _repository.Remove(product);
         return new Success();
     }

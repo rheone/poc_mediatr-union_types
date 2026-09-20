@@ -45,9 +45,23 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
     }
 
     /// <inheritdoc/>
-    public async Task CommitAsync(CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// A <see cref="DbUpdateConcurrencyException"/> — a row's concurrency token no longer matched
+    /// the stored one, or the row was deleted meanwhile — is reported as
+    /// <see cref="ConcurrencyConflict"/> instead of propagating. The transaction is left open; the
+    /// caller rolls it back, which also detaches the stale entities. Every other exception is
+    /// unexpected and propagates.
+    /// </remarks>
+    public async Task<CommitResult> CommitAsync(CancellationToken cancellationToken = default)
     {
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return new ConcurrencyConflict();
+        }
 
         if (_transaction is not null)
         {
@@ -55,6 +69,8 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
             await _transaction.DisposeAsync();
             _transaction = null;
         }
+
+        return new Committed();
     }
 
     /// <inheritdoc/>

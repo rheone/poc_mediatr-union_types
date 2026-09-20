@@ -26,6 +26,9 @@ public static class ResultHttpExtensions
 
     private const string ProblemJson = "application/problem+json";
 
+    private const string MissingIfMatchDetail =
+        "This request must be conditional: send an If-Match header carrying the ETag of the version you are changing.";
+
     extension(Error error)
     {
         /// <summary>
@@ -111,6 +114,88 @@ public static class ResultHttpExtensions
                 statusCode ?? StatusCodes.Status403Forbidden,
                 title ?? "Forbidden",
                 detail ?? string.Join("; ", notAuthorized.Reasons)
+            );
+        }
+    }
+
+    extension(PreconditionFailed preconditionFailed)
+    {
+        /// <summary>Builds a 412 problem response whose detail is the case's message.</summary>
+        /// <param name="http">The current request context.</param>
+        /// <param name="statusCode">Overrides the 412 status for this call.</param>
+        /// <param name="title">Overrides the title (default: <c>"Precondition Failed"</c>).</param>
+        /// <param name="detail">Overrides the detail (default: the case's message).</param>
+        /// <returns>An <see cref="IActionResult"/> whose body is <c>application/problem+json</c>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="http"/> is <see langword="null"/>.</exception>
+        public IActionResult ToProblemResult(
+            HttpContext http,
+            int? statusCode = null,
+            string? title = null,
+            string? detail = null
+        )
+        {
+            ArgumentNullException.ThrowIfNull(http);
+
+            return BuildProblem(
+                http,
+                statusCode ?? StatusCodes.Status412PreconditionFailed,
+                title ?? "Precondition Failed",
+                detail ?? preconditionFailed.Message
+            );
+        }
+    }
+
+    extension(Conflict conflict)
+    {
+        /// <summary>Builds a 409 problem response whose detail is the case's message.</summary>
+        /// <param name="http">The current request context.</param>
+        /// <param name="statusCode">Overrides the 409 status for this call.</param>
+        /// <param name="title">Overrides the title (default: <c>"Conflict"</c>).</param>
+        /// <param name="detail">Overrides the detail (default: the case's message).</param>
+        /// <returns>An <see cref="IActionResult"/> whose body is <c>application/problem+json</c>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="http"/> is <see langword="null"/>.</exception>
+        public IActionResult ToProblemResult(
+            HttpContext http,
+            int? statusCode = null,
+            string? title = null,
+            string? detail = null
+        )
+        {
+            ArgumentNullException.ThrowIfNull(http);
+
+            return BuildProblem(
+                http,
+                statusCode ?? StatusCodes.Status409Conflict,
+                title ?? "Conflict",
+                detail ?? conflict.Message
+            );
+        }
+    }
+
+    extension(MissingIfMatch missingIfMatch)
+    {
+        /// <summary>Builds a 428 problem response telling the client the request must be conditional.</summary>
+        /// <param name="http">The current request context.</param>
+        /// <param name="statusCode">Overrides the 428 status for this call.</param>
+        /// <param name="title">Overrides the title (default: <c>"Precondition Required"</c>).</param>
+        /// <param name="detail">Overrides the detail (default: asks for an <c>If-Match</c> header carrying the ETag from a prior GET).</param>
+        /// <returns>An <see cref="IActionResult"/> whose body is <c>application/problem+json</c>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="http"/> is <see langword="null"/>.</exception>
+        public IActionResult ToProblemResult(
+            HttpContext http,
+            int? statusCode = null,
+            string? title = null,
+            string? detail = null
+        )
+        {
+            ArgumentNullException.ThrowIfNull(missingIfMatch);
+            ArgumentNullException.ThrowIfNull(http);
+
+            return BuildProblem(
+                http,
+                statusCode ?? StatusCodes.Status428PreconditionRequired,
+                title ?? "Precondition Required",
+                detail ?? MissingIfMatchDetail
             );
         }
     }

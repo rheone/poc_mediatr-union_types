@@ -35,7 +35,7 @@ public class UnionTypeTests
     public void ImplicitConversion_EachDeclaredCaseType_ExposesCaseThroughUnionValue_Test()
     {
         // Arrange
-        var dto = new ProductDto(SomeProductId, ProductName, ProductPrice);
+        var dto = new ProductDto(SomeProductId, ProductName, ProductPrice, ProductVersion.Initial);
         var validationErrors = new ValidationErrors([new ValidationError("Name", "required")]);
         var error = new Error(ErrorMessage, ErrorCode);
 
@@ -60,7 +60,12 @@ public class UnionTypeTests
     public void Switch_PatternMatchingOnUnion_UnwrapsToContainedCaseType_Test()
     {
         // Arrange
-        CreateProductResult result = new ProductDto(SomeProductId, ProductName, ProductPrice);
+        CreateProductResult result = new ProductDto(
+            SomeProductId,
+            ProductName,
+            ProductPrice,
+            ProductVersion.Initial
+        );
 
         // Act
         var description = result switch
@@ -101,35 +106,41 @@ public class UnionTypeTests
     }
 
     /// <summary>
-    /// Verifies <c>UpdateProductResult</c>'s different case set (<see cref="Success"/>,
+    /// Verifies <c>UpdateProductResult</c>'s different case set (<see cref="ProductDto"/>,
     /// <see cref="NotFound{TId}"/>, <see cref="ValidationErrors"/>, <see cref="Error"/>,
-    /// <see cref="NotAuthorized"/>) works the same way as <c>CreateProductResult</c>'s, proving
+    /// <see cref="NotAuthorized"/>, <see cref="PreconditionFailed"/>) works the same way as <c>CreateProductResult</c>'s, proving
     /// unions can be mixed-and-matched per endpoint rather than sharing one fixed "Result" shape.
     /// </summary>
     [Fact]
     public void ImplicitConversion_DifferentCaseMixOnAnotherUnion_ExposesCaseThroughUnionValue_Test()
     {
         // Arrange
-        // UpdateProductResult mixes Success/NotFound/ValidationErrors/Error/NotAuthorized — a
+        // UpdateProductResult mixes ProductDto/NotFound/ValidationErrors/Error/NotAuthorized/PreconditionFailed — a
         // different case set from CreateProductResult's ProductDto/ValidationErrors/Error,
         // proving unions can be mixed-and-matched per endpoint rather than sharing one fixed
         // "Result" shape.
-        UpdateProductResult success = new Success();
+        UpdateProductResult success = new ProductDto(
+            SomeProductId,
+            ProductName,
+            ProductPrice,
+            ProductVersion.Initial
+        );
         UpdateProductResult notFound = new NotFound<ProductId>(SomeProductId);
 
         // Act
         var successDescription = success switch
         {
-            Success => "ok",
+            ProductDto => "ok",
             NotFound<ProductId> => "missing",
             ValidationErrors => "invalid",
             Error => "error",
             NotAuthorized => "unauthorized",
+            PreconditionFailed => "stale",
         };
 
         // Assert
         Assert.Multiple(
-            () => Assert.IsType<Success>(((IUnion)success).Value),
+            () => Assert.IsType<ProductDto>(((IUnion)success).Value),
             () => Assert.IsType<NotFound<ProductId>>(((IUnion)notFound).Value),
             () => Assert.Equal("ok", successDescription)
         );

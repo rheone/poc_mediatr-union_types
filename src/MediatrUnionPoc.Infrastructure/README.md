@@ -4,7 +4,7 @@ Implements the persistence-facing interfaces `MediatrUnionPoc.Domain` declares:
 `EfCoreUnitOfWork` (see the repo root README's
 [Unit of Work: one session, every repository](../../README.md#unit-of-work-one-session-every-repository)
 for what that interface is for), `ProductRepository`, and hand-written EF Core `ValueConverter`s for
-the Vogen value objects (`ProductId`, `Money`). The converters are written by hand rather than using
+the Vogen value objects (`ProductId`, `Money`, `ProductVersion`). The converters are written by hand rather than using
 Vogen's own generated EF Core converter support specifically so `MediatrUnionPoc.Domain` never
 needs an EF Core package reference.
 
@@ -15,6 +15,12 @@ exercising `IUnitOfWork`/`IProductRepository` through a real `DbContext` with re
 private in-memory database kept alive by one open connection (`ProductsDatabase`). The schema is
 created with `EnsureCreated` (no migrations) by `EnsureInfrastructureCreatedAsync`, which
 `MediatrUnionPoc.Api`'s `Program.cs` calls at startup.
+
+`ProductVersion` is configured as an EF Core concurrency token, so every `UPDATE`/`DELETE` is
+conditioned on the version that was loaded. `EfCoreUnitOfWork.CommitAsync` translates the resulting
+`DbUpdateConcurrencyException` into a `ConcurrencyConflict` in the `CommitResult` it returns
+(nothing persisted; the caller rolls back). `UniqueViolation` is part of the same result union for
+uniqueness-constraint failures.
 
 ## Dependencies
 

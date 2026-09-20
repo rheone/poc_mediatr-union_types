@@ -14,15 +14,23 @@ namespace MediatrUnionPoc.Application.Features.Products.Delete;
 /// same id, since removal isn't remembered (<see cref="NotFound{TId}"/>), the id was malformed
 /// (<see cref="Error"/>, folded in below), or the caller is neither the product's owner nor an
 /// administrator (<see cref="NotAuthorized"/> — see <see cref="DeleteProductCommand"/> for how that
-/// check runs). Deliberately has no <see cref="ValidationErrors"/> case of its own —
+/// check runs), or the caller supplied an expected version that no longer matches the stored one
+/// (<see cref="PreconditionFailed"/>). Deliberately has no <see cref="ValidationErrors"/> case of its own —
 /// <see cref="DeleteProductCommand"/> has only one field to validate (a non-empty id), so a
 /// failure there is folded into <see cref="Error"/> instead of adding a rarely-used fourth case.
 /// </summary>
 [DebuggerDisplay("{Value}")]
-public union DeleteProductResult(Success, NotFound<ProductId>, Error, NotAuthorized)
+public union DeleteProductResult(
+    Success,
+    NotFound<ProductId>,
+    Error,
+    NotAuthorized,
+    PreconditionFailed
+)
     : IValidatable<DeleteProductResult>,
         ITransactionOutcome<DeleteProductResult>,
-        IAuthorizable<DeleteProductResult>
+        IAuthorizable<DeleteProductResult>,
+        ICommitFailable<DeleteProductResult>
 {
     /// <inheritdoc/>
     /// <remarks>Maps validation failures onto <see cref="Error"/> since this union has no <see cref="ValidationErrors"/> case of its own.</remarks>
@@ -54,5 +62,26 @@ public union DeleteProductResult(Success, NotFound<ProductId>, Error, NotAuthori
         NotFound<ProductId> => false,
         Error => false,
         NotAuthorized => false,
+        PreconditionFailed => false,
     };
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A <see cref="ConcurrencyConflict"/> means the product was changed after this request loaded
+    /// it, so the delete no longer acts on what the caller saw: <see cref="PreconditionFailed"/>.
+    /// Deleting cannot violate a uniqueness constraint, so that failure is an <see cref="Error"/>.
+    /// </remarks>
+    public static DeleteProductResult FromCommitFailure(CommitFailure failure)
+    {
+        return failure switch
+        {
+            ConcurrencyConflict => new PreconditionFailed(
+                "The product was changed by another request; reload it and retry."
+            ),
+            UniqueViolation => new Error(
+                "The delete violates a uniqueness constraint.",
+                "COMMIT_UNIQUE_VIOLATION"
+            ),
+        };
+    }
 }

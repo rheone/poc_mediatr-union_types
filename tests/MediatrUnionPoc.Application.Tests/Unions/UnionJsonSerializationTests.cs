@@ -3,6 +3,7 @@ using System.Text.Json;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.Create;
+using MediatrUnionPoc.Application.Features.Products.Delete;
 using MediatrUnionPoc.Application.Features.Products.Update;
 using MediatrUnionPoc.Domain;
 
@@ -36,7 +37,12 @@ public class UnionJsonSerializationTests
     public void Serialize_RawUnion_FlattensToBoxedCaseShapeWithNoWrapper_Test()
     {
         // Arrange
-        CreateProductResult result = new ProductDto(SomeProductId, ProductName, ProductPrice);
+        CreateProductResult result = new ProductDto(
+            SomeProductId,
+            ProductName,
+            ProductPrice,
+            ProductVersion.Initial
+        );
 
         // Act
         var unionJson = JsonSerializer.Serialize(result);
@@ -63,9 +69,14 @@ public class UnionJsonSerializationTests
     public void Serialize_DifferentCasesOfSameUnion_CarriesNoSharedCaseDiscriminator_Test()
     {
         // Arrange
-        CreateProductResult productDto = new ProductDto(SomeProductId, ProductName, ProductPrice);
+        CreateProductResult productDto = new ProductDto(
+            SomeProductId,
+            ProductName,
+            ProductPrice,
+            ProductVersion.Initial
+        );
         CreateProductResult error = new Error(ErrorMessage, ErrorCode);
-        UpdateProductResult success = new Success();
+        DeleteProductResult success = new Success();
 
         // Act
         var productJson = JsonSerializer.Serialize(productDto);

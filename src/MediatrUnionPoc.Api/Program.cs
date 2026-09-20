@@ -13,8 +13,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers(options => options.SuppressAsyncSuffixInActionNames = false);
 
 builder.Services.AddOpenApi(options =>
-    options.AddSchemaTransformer<ProductContractExampleTransformer>()
-);
+{
+    options.AddSchemaTransformer<ProductContractExampleTransformer>();
+    options.AddOperationTransformer<ETagResponseHeaderTransformer>();
+    options.AddOperationTransformer<PreconditionProblemExampleTransformer>();
+});
 
 builder.Services.AddApiProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();

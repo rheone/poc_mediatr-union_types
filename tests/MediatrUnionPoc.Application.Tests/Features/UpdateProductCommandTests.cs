@@ -1,4 +1,5 @@
 using MediatrUnionPoc.Application.Features.Products.Update;
+using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Tests.Features;
 
@@ -17,7 +18,7 @@ public class UpdateProductCommandTests
     {
         // Act
         var ex = Assert.Throws<ArgumentNullException>(() =>
-            new UpdateProductCommand(SomeId, SomeName, SomePrice, null!)
+            new UpdateProductCommand(SomeId, SomeName, SomePrice, null!, ProductVersion.Initial)
         );
 
         // Assert

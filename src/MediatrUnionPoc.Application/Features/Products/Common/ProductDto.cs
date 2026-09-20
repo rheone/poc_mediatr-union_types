@@ -6,8 +6,9 @@ namespace MediatrUnionPoc.Application.Features.Products.Common;
 /// <param name="Id">The product's identity.</param>
 /// <param name="Name">The product's display name.</param>
 /// <param name="Price">The product's price.</param>
+/// <param name="Version">The product's concurrency version; the API renders it as the <c>ETag</c> a client echoes back in <c>If-Match</c>.</param>
 /// <exception cref="ArgumentNullException"><paramref name="Name"/> is <see langword="null"/>.</exception>
-public sealed record ProductDto(ProductId Id, string Name, decimal Price)
+public sealed record ProductDto(ProductId Id, string Name, decimal Price, ProductVersion Version)
 {
     /// <summary>The product's display name; never <see langword="null"/>.</summary>
     public string Name { get; init; } = Name ?? throw new ArgumentNullException(nameof(Name));
@@ -20,6 +21,6 @@ public sealed record ProductDto(ProductId Id, string Name, decimal Price)
     {
         ArgumentNullException.ThrowIfNull(product);
 
-        return new(product.Id, product.Name, product.Price.Value);
+        return new(product.Id, product.Name, product.Price.Value, product.Version);
     }
 }

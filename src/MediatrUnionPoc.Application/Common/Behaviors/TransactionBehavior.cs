@@ -33,6 +33,14 @@ namespace MediatrUnionPoc.Application.Common.Behaviors;
 /// back) an unrecognized case, because this behavior never sees case types at all.
 /// </para>
 /// <para>
+/// A commit can itself be refused for an expected reason (a stale write, a uniqueness
+/// violation): <see cref="IUnitOfWork.CommitAsync"/> reports that as a
+/// <see cref="CommitFailure"/> rather than throwing. This behavior then rolls back and returns
+/// <see cref="ICommitFailable{TSelf}.FromCommitFailure"/> of the union instead of the handler's
+/// success response — the union, not this behavior, decides what the failure means for its own
+/// operation.
+/// </para>
+/// <para>
 /// No exceptions are used for this branching: a domain-level failure (validation, not-found,
 /// unauthorized, business-rule failure) is an ordinary, expected outcome, not an exceptional one.
 /// A thrown exception still triggers a rollback, but is reserved for genuinely unexpected
@@ -50,7 +58,7 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
     ILogger<TransactionBehavior<TRequest, TResponse>> logger
 ) : IPipelineBehavior<TRequest, TResponse>
     where TRequest : ITransactionalCommand<TResponse>
-    where TResponse : IUnion, ITransactionOutcome<TResponse>
+    where TResponse : IUnion, ITransactionOutcome<TResponse>, ICommitFailable<TResponse>
 {
     private readonly IUnitOfWork _unitOfWork =
         unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
@@ -78,7 +86,18 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
 
             if (TResponse.ShouldCommit(response))
             {
-                await _unitOfWork.CommitAsync(cancellationToken);
+                var commit = await _unitOfWork.CommitAsync(cancellationToken);
+
+                if (commit.Failure is { } failure)
+                {
+                    _logger.LogInformation(
+                        "{RequestName} failed to commit ({CommitFailure}); rolling back transaction",
+                        typeof(TRequest).Name,
+                        failure.Value?.GetType().Name ?? "null"
+                    );
+                    await _unitOfWork.RollbackAsync(cancellationToken);
+                    return TResponse.FromCommitFailure(failure);
+                }
             }
             else
             {

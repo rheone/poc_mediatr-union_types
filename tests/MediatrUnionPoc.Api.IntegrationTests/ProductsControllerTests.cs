@@ -127,6 +127,47 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, located.StatusCode);
     }
 
+    /// <summary>Verifies a create returns the new product's weak ETag, and the body carries the same version.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task CreateAsync_ValidBody_ReturnsETagOfVersionOne_Test()
+    {
+        // Arrange
+        var request = ProductRequestMother.Widget();
+
+        // Act
+        using var response = await _client.PostAsJsonAsync(
+            ProductsUri,
+            request,
+            CancellationToken.None
+        );
+
+        // Assert
+        var dto = await response.Content.ReadFromJsonAsync<ProductDto>(CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal("W/\"1\"", response.Headers.ETag?.ToString()),
+            () => Assert.Equal(1L, dto?.Version.Value)
+        );
+    }
+
+    /// <summary>Verifies a GET returns the product's current weak ETag.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task GetByIdAsync_ExistingProduct_ReturnsItsETag_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(ProductRequestMother.Widget());
+
+        // Act
+        using var response = await _client.GetAsync(
+            $"{ProductsUri}/{created.Id.Value}",
+            CancellationToken.None
+        );
+
+        // Assert
+        Assert.Equal("W/\"1\"", response.Headers.ETag?.ToString());
+    }
+
     /// <summary>Verifies an invalid create request returns 400 with per-field validation errors.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
@@ -423,10 +464,12 @@ public sealed class ProductsControllerTests : IDisposable
         var uri = $"{ProductsUri}/{ProductRequestMother.UnknownId}";
 
         // Act
-        using var response = await _client.PutAsJsonAsync(
+        using var response = await SendAsync(
+            HttpMethod.Put,
             uri,
             ProductRequestMother.WidgetPro(),
-            CancellationToken.None
+            ProductRequestMother.OwnerId,
+            ifMatch: ProductVersion.Initial.ToETag()
         );
 
         // Assert
@@ -449,7 +492,8 @@ public sealed class ProductsControllerTests : IDisposable
             HttpMethod.Put,
             $"{ProductsUri}/{created.Id.Value}",
             ProductRequestMother.InvalidUpdate(),
-            ProductRequestMother.OwnerId
+            ProductRequestMother.OwnerId,
+            ifMatch: created.Version.ToETag()
         );
 
         // Assert
@@ -478,7 +522,8 @@ public sealed class ProductsControllerTests : IDisposable
             HttpMethod.Put,
             uri,
             ProductRequestMother.WidgetPro(),
-            ProductRequestMother.OwnerId
+            ProductRequestMother.OwnerId,
+            ifMatch: created.Version.ToETag()
         );
 
         // Assert
@@ -489,6 +534,168 @@ public sealed class ProductsControllerTests : IDisposable
             () => Assert.Equal(ProductRequestMother.WidgetProName, fetched.Name),
             () => Assert.Equal(ProductRequestMother.WidgetProPrice, fetched.Price)
         );
+    }
+
+    /// <summary>Verifies an update without an If-Match header is refused with 428 Precondition Required.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task UpdateAsync_NoIfMatchHeader_Returns428_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
+        );
+
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            $"{ProductsUri}/{created.Id.Value}",
+            ProductRequestMother.WidgetPro(),
+            ProductRequestMother.OwnerId
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.PreconditionRequired, response.StatusCode);
+    }
+
+    /// <summary>Verifies a malformed If-Match header is a 400 validation problem naming the header.</summary>
+    /// <param name="malformed">The malformed If-Match value.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Theory]
+    [InlineData("not-an-etag")]
+    [InlineData("\"1\"")]
+    [InlineData("W/\"abc\"")]
+    [InlineData("*")]
+    public async Task UpdateAsync_MalformedIfMatch_Returns400NamingTheHeader_Test(string malformed)
+    {
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
+        );
+
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            $"{ProductsUri}/{created.Id.Value}",
+            ProductRequestMother.WidgetPro(),
+            ProductRequestMother.OwnerId,
+            ifMatch: malformed
+        );
+
+        // Assert
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode),
+            () => Assert.Contains("If-Match", body, StringComparison.Ordinal)
+        );
+    }
+
+    /// <summary>Verifies an update carrying a stale ETag is refused with 412 and changes nothing.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task UpdateAsync_StaleIfMatch_Returns412AndLeavesProductUntouched_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
+        );
+        var uri = $"{ProductsUri}/{created.Id.Value}";
+        using var firstUpdate = await SendAsync(
+            HttpMethod.Put,
+            uri,
+            ProductRequestMother.WidgetPro(),
+            ProductRequestMother.OwnerId,
+            ifMatch: "W/\"1\""
+        );
+
+        // Act
+        using var staleUpdate = await SendAsync(
+            HttpMethod.Put,
+            uri,
+            new UpdateProductRequest("Stale writer", 1m),
+            ProductRequestMother.OwnerId,
+            ifMatch: "W/\"1\""
+        );
+
+        // Assert
+        var fetched = await _client.GetFromJsonAsync<ProductDto>(uri, CancellationToken.None);
+        Assert.NotNull(fetched);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.NoContent, firstUpdate.StatusCode),
+            () => Assert.Equal(HttpStatusCode.PreconditionFailed, staleUpdate.StatusCode),
+            () => Assert.Equal(ProductRequestMother.WidgetProName, fetched.Name)
+        );
+    }
+
+    /// <summary>Verifies a matching If-Match yields 204 with the new ETag, and a subsequent GET reports that same ETag.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task UpdateAsync_MatchingIfMatch_Returns204WithNewETagThatGetAlsoReports_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
+        );
+        var uri = $"{ProductsUri}/{created.Id.Value}";
+
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            uri,
+            ProductRequestMother.WidgetPro(),
+            ProductRequestMother.OwnerId,
+            ifMatch: "W/\"1\""
+        );
+
+        // Assert
+        using var afterUpdate = await _client.GetAsync(uri, CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode),
+            () => Assert.Equal("W/\"2\"", response.Headers.ETag?.ToString()),
+            () => Assert.Equal("W/\"2\"", afterUpdate.Headers.ETag?.ToString())
+        );
+    }
+
+    /// <summary>Verifies two concurrent updates carrying the same ETag resolve to exactly one 204 and one 412 — never two winners, never a 500.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task UpdateAsync_TwoRacingUpdatesWithSameETag_ExactlyOneSucceedsAndOneGets412_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
+        );
+        var uri = $"{ProductsUri}/{created.Id.Value}";
+        var etag = created.Version.ToETag();
+
+        // Act
+        var responses = await Task.WhenAll(
+            Enumerable
+                .Range(0, 2)
+                .Select(index =>
+                    SendAsync(
+                        HttpMethod.Put,
+                        uri,
+                        new UpdateProductRequest($"Writer {index}", 1m),
+                        ProductRequestMother.OwnerId,
+                        ifMatch: etag
+                    )
+                )
+        );
+
+        // Assert
+        var statuses = responses.Select(r => r.StatusCode).OrderBy(s => (int)s).ToList();
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+
+        Assert.Equal([HttpStatusCode.NoContent, HttpStatusCode.PreconditionFailed], statuses);
     }
 
     /// <summary>Verifies a non-owner's update returns 403 and leaves the product untouched.</summary>
@@ -508,7 +715,8 @@ public sealed class ProductsControllerTests : IDisposable
             HttpMethod.Put,
             uri,
             ProductRequestMother.WidgetPro(),
-            ProductRequestMother.OtherCallerId
+            ProductRequestMother.OtherCallerId,
+            ifMatch: created.Version.ToETag()
         );
 
         // Assert
@@ -533,10 +741,11 @@ public sealed class ProductsControllerTests : IDisposable
         );
 
         // Act
-        using var response = await _client.PutAsJsonAsync(
+        using var response = await SendAsync(
+            HttpMethod.Put,
             $"{ProductsUri}/{created.Id.Value}",
             ProductRequestMother.WidgetPro(),
-            CancellationToken.None
+            ifMatch: created.Version.ToETag()
         );
 
         // Assert
@@ -557,10 +766,11 @@ public sealed class ProductsControllerTests : IDisposable
         var created = await CreateProductAsync(ProductRequestMother.Widget());
 
         // Act
-        using var response = await _client.PutAsJsonAsync(
+        using var response = await SendAsync(
+            HttpMethod.Put,
             $"{ProductsUri}/{created.Id.Value}",
             ProductRequestMother.WidgetPro(),
-            CancellationToken.None
+            ifMatch: created.Version.ToETag()
         );
 
         // Assert
@@ -585,6 +795,81 @@ public sealed class ProductsControllerTests : IDisposable
             () => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode),
             () => Assert.Equal(HttpStatusCode.NotFound, afterDelete.StatusCode)
         );
+    }
+
+    /// <summary>Verifies a delete carrying a stale ETag is refused with 412 and the product survives.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task DeleteAsync_StaleIfMatch_Returns412AndProductSurvives_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
+        );
+        var uri = $"{ProductsUri}/{created.Id.Value}";
+        using var update = await SendAsync(
+            HttpMethod.Put,
+            uri,
+            ProductRequestMother.WidgetPro(),
+            ProductRequestMother.OwnerId,
+            ifMatch: created.Version.ToETag()
+        );
+
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            uri,
+            adminHeader: "true",
+            ifMatch: created.Version.ToETag()
+        );
+
+        // Assert
+        using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode),
+            () => Assert.Equal(HttpStatusCode.OK, afterDelete.StatusCode)
+        );
+    }
+
+    /// <summary>Verifies a delete carrying the current ETag proceeds.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task DeleteAsync_MatchingIfMatch_Returns204_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(ProductRequestMother.Widget());
+
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            $"{ProductsUri}/{created.Id.Value}",
+            adminHeader: "true",
+            ifMatch: created.Version.ToETag()
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    /// <summary>Verifies a malformed If-Match on a delete is a 400 rather than being silently ignored.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task DeleteAsync_MalformedIfMatch_Returns400_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(ProductRequestMother.Widget());
+
+        // Act
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            $"{ProductsUri}/{created.Id.Value}",
+            adminHeader: "true",
+            ifMatch: "garbage"
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     /// <summary>Verifies an administrator deleting a missing product returns 404.</summary>
@@ -694,13 +979,15 @@ public sealed class ProductsControllerTests : IDisposable
     /// <param name="body">The JSON body, or <see langword="null"/> for none.</param>
     /// <param name="callerId">The <c>X-Caller-Id</c> header value, or <see langword="null"/> to omit it.</param>
     /// <param name="adminHeader">The <c>X-Admin</c> header value, or <see langword="null"/> to omit it.</param>
+    /// <param name="ifMatch">The raw <c>If-Match</c> header value, or <see langword="null"/> to omit it.</param>
     /// <returns>The response to the request.</returns>
     private async Task<HttpResponseMessage> SendAsync(
         HttpMethod method,
         string requestUri,
         object? body = null,
         string? callerId = null,
-        string? adminHeader = null
+        string? adminHeader = null,
+        string? ifMatch = null
     )
     {
         using var request = new HttpRequestMessage(method, requestUri);
@@ -717,6 +1004,11 @@ public sealed class ProductsControllerTests : IDisposable
         if (adminHeader is not null)
         {
             request.Headers.Add(ProductsController.AdminHeaderName, adminHeader);
+        }
+
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         }
 
         return await _client.SendAsync(request, CancellationToken.None);

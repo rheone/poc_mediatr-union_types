@@ -76,6 +76,53 @@ public sealed class DeleteProductHandlerTests
             .GetByIdAsync(ProductId.From(MissingProductGuid), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>Verifies a supplied expected version that no longer matches is refused as PreconditionFailed and nothing is removed.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_ExpectedVersionIsStale_ReturnsPreconditionFailedAndRemovesNothing_Test()
+    {
+        // Arrange
+        var product = StoredProduct();
+        product.UpdateDetails(ProductName, Money.From(ProductPrice)); // now version 2
+
+        // Act
+        var result = await _sut.Handle(
+            new DeleteProductCommand(
+                product.Id.Value,
+                PrincipalMother.WithId(OwnerId),
+                ProductVersion.From(1)
+            ),
+            CancellationToken.None
+        );
+
+        // Assert
+        Assert.IsType<PreconditionFailed>(((IUnion)result).Value);
+        _repository.DidNotReceive().Remove(Arg.Any<Product>());
+    }
+
+    /// <summary>Verifies a supplied expected version that matches lets the delete proceed.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_ExpectedVersionMatches_RemovesProductAndReturnsSuccess_Test()
+    {
+        // Arrange
+        var product = StoredProduct();
+
+        // Act
+        var result = await _sut.Handle(
+            new DeleteProductCommand(
+                product.Id.Value,
+                PrincipalMother.WithId(OwnerId),
+                ProductVersion.From(1)
+            ),
+            CancellationToken.None
+        );
+
+        // Assert
+        Assert.IsType<Success>(((IUnion)result).Value);
+        _repository.Received(1).Remove(product);
+    }
+
     private Product StoredProduct()
     {
         var product = Product.Create(ProductName, Money.From(ProductPrice), ownerId: OwnerId);

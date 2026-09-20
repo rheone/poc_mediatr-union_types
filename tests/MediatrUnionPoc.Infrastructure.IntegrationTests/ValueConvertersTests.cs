@@ -104,4 +104,19 @@ public class ValueConvertersTests
         var exception = Assert.Throws<ValueObjectValidationException>(act);
         Assert.Contains("Money", exception.Message);
     }
+
+    /// <summary>Verifies <see cref="ProductVersionValueConverter"/> converts a <see cref="ProductVersion"/> to its underlying <see cref="long"/>.</summary>
+    [Fact]
+    public void ConvertToProvider_ProductVersion_ReturnsUnderlyingLong_Test()
+    {
+        // Arrange
+        var version = ProductVersion.From(7);
+        var converter = new ProductVersionValueConverter();
+
+        // Act
+        var converted = converter.ConvertToProvider(version);
+
+        // Assert
+        Assert.Equal(7L, converted);
+    }
 }

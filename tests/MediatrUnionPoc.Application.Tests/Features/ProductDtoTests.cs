@@ -19,7 +19,7 @@ public class ProductDtoTests
     {
         // Act
         var ex = Assert.Throws<ArgumentNullException>(() =>
-            new ProductDto(SomeId, null!, SomePrice)
+            new ProductDto(SomeId, null!, SomePrice, ProductVersion.Initial)
         );
 
         // Assert
@@ -36,5 +36,20 @@ public class ProductDtoTests
 
         // Assert
         Assert.Equal("product", ex.ParamName);
+    }
+
+    /// <summary>Verifies the projection carries the product's current version, so the wire representation can round-trip it.</summary>
+    [Fact]
+    public void FromDomain_UpdatedProduct_ExposesCurrentVersion_Test()
+    {
+        // Arrange
+        var product = Product.Create("Widget", Money.From(SomePrice));
+        product.UpdateDetails("Widget Pro", Money.From(SomePrice));
+
+        // Act
+        var dto = ProductDto.FromDomain(product);
+
+        // Assert
+        Assert.Equal(2L, dto.Version.Value);
     }
 }

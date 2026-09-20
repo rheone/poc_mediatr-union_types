@@ -60,7 +60,14 @@ public sealed class UpdateProductHandler(
             return UpdateProductResult.FromNotAuthorized(notAuthorized);
         }
 
+        if (product.Version != request.ExpectedVersion)
+        {
+            return new PreconditionFailed(
+                $"Product '{productId}' is at version {product.Version.Value}, not the expected {request.ExpectedVersion.Value}."
+            );
+        }
+
         product.UpdateDetails(request.Name, Money.From(request.Price));
-        return new Success();
+        return ProductDto.FromDomain(product);
     }
 }

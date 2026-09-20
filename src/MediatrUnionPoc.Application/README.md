@@ -4,10 +4,10 @@ The core of the proof of concept. Commands, queries, handlers, and validators, o
 **[vertical slices](../../README.md#architectural-patterns)** under `Features/Products/<Operation>/` (Create, Update, Delete, GetById,
 GetPaged) rather than by technical layer — everything one operation needs lives in one folder.
 `Common/` holds the shared pipeline machinery: marker interfaces (`ICommand<TResponse>`,
-`ITransactionalCommand<TResponse>`, `IQuery<TResponse>`, `IValidatable<TSelf>`), the MediatR
-pipeline behaviors (`LoggingBehavior`, `ValidationBehavior`, `TransactionBehavior`), and the
-meaning-free *shared* case types (`Success`, `NotFound`, `Error`, `ValidationErrors`, `Failure`,
-`NotAuthorized`) that the per-feature result unions compose from alongside their own *bespoke*
+`ITransactionalCommand<TResponse>`, `IQuery<TResponse>`, `IValidatable<TSelf>`,
+`ICommitFailable<TSelf>`), the MediatR pipeline behaviors (`LoggingBehavior`, `ValidationBehavior`,
+`TransactionBehavior`), and the meaning-free *shared* case types (`Success`, `NotFound`, `Error`,
+`ValidationErrors`, `Failure`, `NotAuthorized`, `PreconditionFailed`, `Conflict`) that the per-feature result unions compose from alongside their own *bespoke*
 case types (e.g. `ProductDto`).
 
 Every command/query returns a [`union`](../../README.md#the-c-union-type) of exactly the outcomes
@@ -92,6 +92,10 @@ interface based on what it does:
 - Mutates state, no transaction needed → `ICommand<TResponse>`.
 - Mutates state, needs `TransactionBehavior` → `ITransactionalCommand<TResponse>`, and the
   response union must implement `ITransactionOutcome<TResponse>` (a `static abstract bool
-  ShouldCommit(TResponse)`, exhaustively switching over that union's own cases).
+  ShouldCommit(TResponse)`, exhaustively switching over that union's own cases) and
+  `ICommitFailable<TResponse>` (a `static abstract TSelf FromCommitFailure(CommitFailure)`,
+  exhaustively switching over the ways a commit can be refused — a stale write, a uniqueness
+  violation — and deciding what each means for this operation). `TransactionBehavior` rolls back and
+  returns `FromCommitFailure(...)` when `IUnitOfWork.CommitAsync` reports a failure.
 - Needs `ValidationBehavior` to short-circuit before the handler runs → the response union also
   implements `IValidatable<TSelf>` (`static abstract TSelf FromValidationErrors(ValidationErrors)`).

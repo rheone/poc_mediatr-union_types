@@ -1,6 +1,7 @@
 using FluentValidation.TestHelper;
 using MediatrUnionPoc.Application.Features.Products.Update;
 using MediatrUnionPoc.Application.Tests.TestData;
+using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Tests.Validators;
 
@@ -131,7 +132,7 @@ public class UpdateProductValidatorTests
         Guid? id = null,
         string name = ValidName,
         decimal price = ValidPrice
-    ) => new(id ?? SomeId, name, price, PrincipalMother.Anonymous());
+    ) => new(id ?? SomeId, name, price, PrincipalMother.Anonymous(), ProductVersion.Initial);
 
     /// <summary>Verifies validating a null <see cref="UpdateProductCommand"/> throws FluentValidation's own <see cref="InvalidOperationException"/> ("Cannot pass null model to Validate"); this validator deliberately does not override that with an <see cref="ArgumentNullException"/>.</summary>
     // Auto Generated, verify expected behavior:

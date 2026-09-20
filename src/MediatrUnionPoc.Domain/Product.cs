@@ -38,6 +38,14 @@ public sealed class Product
     public string OwnerId { get; private set; }
 
     /// <summary>
+    /// The optimistic-concurrency version. Starts at <see cref="ProductVersion.Initial"/> and is
+    /// advanced by this entity on every mutation (never by the database); persistence treats it as
+    /// a concurrency token, and the API exposes it as the product's ETag.
+    /// </summary>
+    /// <value>The current version; every successful mutation leaves it exactly one higher.</value>
+    public ProductVersion Version { get; private set; }
+
+    /// <summary>
     /// Private on purpose: EF Core materializes existing rows through this constructor via
     /// constructor-parameter-to-property binding (see <c>AppDbContext.OnModelCreating</c>), while
     /// application code must go through <see cref="Create"/> instead of calling
@@ -47,12 +55,14 @@ public sealed class Product
     /// <param name="name">The product's display name.</param>
     /// <param name="price">The product's price.</param>
     /// <param name="ownerId">The identifier of the owning caller — see <see cref="OwnerId"/>.</param>
-    private Product(ProductId id, string name, Money price, string ownerId)
+    /// <param name="version">The concurrency version — see <see cref="Version"/>.</param>
+    private Product(ProductId id, string name, Money price, string ownerId, ProductVersion version)
     {
         Id = id;
         Name = name;
         Price = price;
         OwnerId = ownerId;
+        Version = version;
     }
 
     /// <summary>Creates a brand-new product with a freshly generated <see cref="ProductId"/>.</summary>
@@ -69,10 +79,10 @@ public sealed class Product
     {
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(ownerId);
-        return new(ProductId.New(), name, price, ownerId);
+        return new(ProductId.New(), name, price, ownerId, ProductVersion.Initial);
     }
 
-    /// <summary>Replaces this product's name and price in place. There is no partial-update overload.</summary>
+    /// <summary>Replaces this product's name and price in place and advances <see cref="Version"/>. There is no partial-update overload.</summary>
     /// <param name="name">The product's new display name.</param>
     /// <param name="price">The product's new price.</param>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
@@ -81,5 +91,6 @@ public sealed class Product
         ArgumentNullException.ThrowIfNull(name);
         Name = name;
         Price = price;
+        Version = Version.Next();
     }
 }

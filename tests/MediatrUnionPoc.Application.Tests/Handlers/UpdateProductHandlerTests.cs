@@ -68,10 +68,10 @@ public sealed class UpdateProductHandlerTests : IDisposable
     /// <inheritdoc/>
     public void Dispose() => _provider.Dispose();
 
-    /// <summary>Verifies an existing product owned by the caller is updated and the handler returns Success.</summary>
+    /// <summary>Verifies an existing product owned by the caller is updated and the handler returns the updated product, carrying its advanced version.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Handle_CallerOwnsProduct_UpdatesProductAndReturnsSuccess_Test()
+    public async Task Handle_CallerOwnsProduct_UpdatesProductAndReturnsUpdatedProduct_Test()
     {
         // Arrange
         var product = StoredProduct();
@@ -82,16 +82,19 @@ public sealed class UpdateProductHandlerTests : IDisposable
                 product.Id.Value,
                 NewName,
                 NewPrice,
-                PrincipalMother.WithId(OwnerId)
+                PrincipalMother.WithId(OwnerId),
+                product.Version
             ),
             CancellationToken.None
         );
 
         // Assert
-        Assert.IsType<Success>(((IUnion)result).Value);
+        var updated = Assert.IsType<ProductDto>(((IUnion)result).Value);
         Assert.Multiple(
             () => Assert.Equal(NewName, product.Name),
-            () => Assert.Equal(NewPrice, product.Price.Value)
+            () => Assert.Equal(NewPrice, product.Price.Value),
+            () => Assert.Equal(NewName, updated.Name),
+            () => Assert.Equal(2L, updated.Version.Value)
         );
         await _repository.Received(1).GetByIdAsync(product.Id, Arg.Any<CancellationToken>());
     }
@@ -110,7 +113,8 @@ public sealed class UpdateProductHandlerTests : IDisposable
                 product.Id.Value,
                 NewName,
                 NewPrice,
-                PrincipalMother.WithId(OtherUserId)
+                PrincipalMother.WithId(OtherUserId),
+                product.Version
             ),
             CancellationToken.None
         );
@@ -130,7 +134,7 @@ public sealed class UpdateProductHandlerTests : IDisposable
     public async Task Handle_NotAuthorizedThroughTransactionBehavior_RollsBackAndDoesNotCommit_Test()
     {
         // Arrange
-        var unitOfWork = Substitute.For<IUnitOfWork>();
+        var unitOfWork = UnitOfWorkMother.Committing();
         var behavior = new TransactionBehavior<UpdateProductCommand, UpdateProductResult>(
             unitOfWork,
             NullLogger<TransactionBehavior<UpdateProductCommand, UpdateProductResult>>.Instance
@@ -140,7 +144,8 @@ public sealed class UpdateProductHandlerTests : IDisposable
             product.Id.Value,
             NewName,
             NewPrice,
-            PrincipalMother.WithId(OtherUserId)
+            PrincipalMother.WithId(OtherUserId),
+            product.Version
         );
 
         // Act
@@ -174,7 +179,8 @@ public sealed class UpdateProductHandlerTests : IDisposable
                 MissingProductGuid,
                 MissingProductName,
                 MissingProductPrice,
-                PrincipalMother.WithId(OwnerId)
+                PrincipalMother.WithId(OwnerId),
+                ProductVersion.Initial
             ),
             CancellationToken.None
         );
@@ -185,6 +191,35 @@ public sealed class UpdateProductHandlerTests : IDisposable
         await _repository
             .Received(1)
             .GetByIdAsync(ProductId.From(MissingProductGuid), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Verifies an expected version that no longer matches the stored product's is refused up front as PreconditionFailed, and nothing is changed.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_ExpectedVersionIsStale_ReturnsPreconditionFailedAndLeavesProductUnchanged_Test()
+    {
+        // Arrange
+        var product = StoredProduct();
+        product.UpdateDetails(OriginalName, Money.From(OriginalPrice)); // someone else's write: now version 2
+
+        // Act
+        var result = await _sut.Handle(
+            new UpdateProductCommand(
+                product.Id.Value,
+                NewName,
+                NewPrice,
+                PrincipalMother.WithId(OwnerId),
+                ProductVersion.From(1)
+            ),
+            CancellationToken.None
+        );
+
+        // Assert
+        Assert.IsType<PreconditionFailed>(((IUnion)result).Value);
+        Assert.Multiple(
+            () => Assert.Equal(OriginalName, product.Name),
+            () => Assert.Equal(2L, product.Version.Value)
+        );
     }
 
     private Product StoredProduct()

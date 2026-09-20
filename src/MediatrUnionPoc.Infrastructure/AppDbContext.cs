@@ -12,7 +12,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <see cref="Product"/>'s Vogen value objects (<see cref="ProductId"/>, <see cref="Money"/>)
+    /// <see cref="Product"/>'s Vogen value objects (<see cref="ProductId"/>, <see cref="Money"/>, <see cref="ProductVersion"/>)
     /// need explicit <see cref="ValueConverter{TModel,TProvider}"/> registration — EF Core has no
     /// built-in awareness of them, and Vogen's own generated converter isn't used here (see
     /// <see cref="ProductIdValueConverter"/>'s remarks on why).
@@ -25,6 +25,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.Property(p => p.Id).HasConversion(new ProductIdValueConverter());
             builder.Property(p => p.Name).IsRequired().HasMaxLength(200);
             builder.Property(p => p.Price).HasConversion(new MoneyValueConverter());
+            builder
+                .Property(p => p.Version)
+                .HasConversion(new ProductVersionValueConverter())
+                .IsConcurrencyToken();
             builder.Property(p => p.OwnerId).IsRequired().HasMaxLength(200);
         });
     }

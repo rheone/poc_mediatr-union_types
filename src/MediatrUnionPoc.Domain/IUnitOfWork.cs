@@ -23,10 +23,15 @@ public interface IUnitOfWork
     /// <returns>A task that completes once the transaction has started (or the no-op has been recorded).</returns>
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Persists every change staged since <see cref="BeginTransactionAsync"/> and commits.</summary>
+    /// <summary>
+    /// Persists every change staged since <see cref="BeginTransactionAsync"/> and commits. An
+    /// expected refusal (a stale write, a uniqueness violation) is reported in the returned
+    /// <see cref="CommitResult"/> rather than thrown; nothing is persisted in that case, and the
+    /// caller is expected to roll back.
+    /// </summary>
     /// <param name="cancellationToken">Token to cancel the operation; defaults to <see cref="CancellationToken.None"/>.</param>
-    /// <returns>A task that completes once the changes are committed.</returns>
-    Task CommitAsync(CancellationToken cancellationToken = default);
+    /// <returns>A task yielding <see cref="Committed"/>, or the failure that stopped the commit.</returns>
+    Task<CommitResult> CommitAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Discards every change staged since <see cref="BeginTransactionAsync"/> without persisting any of it.</summary>
     /// <param name="cancellationToken">Token to cancel the operation; defaults to <see cref="CancellationToken.None"/>.</param>

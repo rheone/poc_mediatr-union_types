@@ -35,6 +35,7 @@ Details below.
   - [Static abstract interface members: why generic code can build a union it's never seen](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen)
   - [Case types used here](#case-types-used-here)
   - [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means)
+    - [A commit can fail too: `ICommitFailable`](#a-commit-can-fail-too-icommitfailable)
   - [No exceptions for expected outcomes](#no-exceptions-for-expected-outcomes)
   - [Transactions: what rollback undoes, and why it matters](#transactions-what-rollback-undoes-and-why-it-matters)
   - [Unit of Work: one session, every repository](#unit-of-work-one-session-every-repository)
@@ -42,6 +43,7 @@ Details below.
 - [Adding a new command or query](#adding-a-new-command-or-query)
 - [Request lifecycle](#request-lifecycle)
 - [Trace id and unhandled exceptions](#trace-id-and-unhandled-exceptions)
+- [Optimistic concurrency: `ProductVersion`, `ETag` and `If-Match`](#optimistic-concurrency-productversion-etag-and-if-match)
 - [Authorization](#authorization)
   - [Why two different points in the request lifetime](#why-two-different-points-in-the-request-lifetime)
   - [How the two flows fit together](#how-the-two-flows-fit-together)
@@ -311,6 +313,8 @@ performance as a resolved instance-method call — no reflection, no registry, n
 | `Error`            | Shared  | An unexpected/domain error, with a stable machine-readable code |
 | `Failure`          | Shared  | Business-rule failure(s) that aren't input validation           |
 | `NotAuthorized`    | Shared  | The caller isn't allowed to perform this operation              |
+| `PreconditionFailed` | Shared | A precondition the caller attached (a stale `If-Match`) no longer holds |
+| `Conflict`         | Shared  | The request collides with the current state (e.g. a value that must be unique is taken) |
 
 Every row but `<Dto>` is a **[shared case type](#this-repos-own-types)** — the same meaning-free
 record reused across unions (see
@@ -364,17 +368,19 @@ public interface ITransactionOutcome<TSelf> where TSelf : ITransactionOutcome<TS
 Each command's union implements it with a `switch` over **its own** cases:
 
 ```csharp
-public union UpdateProductResult(Success, NotFound, ValidationErrors, Error, NotAuthorized)
+public union UpdateProductResult(
+    ProductDto, NotFound<ProductId>, ValidationErrors, Error, NotAuthorized, PreconditionFailed)
     : IValidatable<UpdateProductResult>, ITransactionOutcome<UpdateProductResult>,
-        IAuthorizable<UpdateProductResult>
+        IAuthorizable<UpdateProductResult>, ICommitFailable<UpdateProductResult>
 {
     public static bool ShouldCommit(UpdateProductResult response) => response switch
     {
-        Success => true,
-        NotFound => false,
+        ProductDto => true,
+        NotFound<ProductId> => false,
         ValidationErrors => false,
         Error => false,
         NotAuthorized => false,
+        PreconditionFailed => false,
     };
 }
 ```
@@ -407,6 +413,47 @@ name. Two compiler-enforced guarantees back this, not just convention:
 proves the general case with an `ArbitraryOutcome` union whose case type (`SomeDevsOwnCaseType`)
 shares no name, shape, or relationship with any case type used anywhere else in the codebase — the
 behavior rolls back correctly purely by asking the union, never by recognizing the type.
+
+#### A commit can fail too: `ICommitFailable`
+
+`ShouldCommit` decides whether to *attempt* a commit. The commit itself can still be refused for an
+ordinary, expected reason: another request changed the row first (an optimistic-concurrency
+failure), or the write would break a uniqueness constraint. Those are outcomes, not faults, so
+[`IUnitOfWork.CommitAsync`](src/MediatrUnionPoc.Domain/IUnitOfWork.cs) reports them as a small
+closed union instead of throwing:
+
+```csharp
+public union CommitResult(Committed, ConcurrencyConflict, UniqueViolation);
+public union CommitFailure(ConcurrencyConflict, UniqueViolation);   // the two failing cases
+```
+
+What a failure *means* is operation-specific — a stale write on an update is a precondition
+failure; the same failure on a brand-new row is impossible, so for a create it can only be an
+unexpected error; a uniqueness violation on a create is a conflict. So, exactly as with
+`ShouldCommit`, the union answers, through
+[`ICommitFailable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/ICommitFailable.cs):
+
+```csharp
+public interface ICommitFailable<TSelf> where TSelf : ICommitFailable<TSelf>
+{
+    static abstract TSelf FromCommitFailure(CommitFailure failure);
+}
+
+// UpdateProductResult
+public static UpdateProductResult FromCommitFailure(CommitFailure failure) => failure switch
+{
+    ConcurrencyConflict => new PreconditionFailed("The product was changed by another request; reload it and retry."),
+    UniqueViolation => new Error("The update violates a uniqueness constraint.", "COMMIT_UNIQUE_VIOLATION"),
+};
+```
+
+`TransactionBehavior<TRequest, TResponse>` requires `TResponse : ICommitFailable<TResponse>` in
+addition to `ITransactionOutcome<TResponse>`. When `CommitAsync` reports a failure it rolls back
+and returns `TResponse.FromCommitFailure(failure)` in place of the handler's success response; the
+behavior never sees which case types the union has. Because the `switch` is exhaustive over
+`CommitFailure`, every transactional union is forced by the compiler to classify every commit
+failure — including one added later. A genuinely unexpected exception (a dropped connection, say)
+is still not a `CommitFailure`: it rolls back and is rethrown unchanged.
 
 ### No exceptions for expected outcomes
 
@@ -675,7 +722,8 @@ public union PingResult(PongDto, Error) : IValidatable<PingResult>
 **2. Declare the request.** Implement `IQuery<TResponse>` for a read-only request (this example),
 `ICommand<TResponse>` for one that mutates state but needs no transaction, or
 `ITransactionalCommand<TResponse>` for one `TransactionBehavior` should commit or roll back —
-the latter requires the response union to implement `ITransactionOutcome<TResponse>`:
+the latter requires the response union to implement `ITransactionOutcome<TResponse>` and
+`ICommitFailable<TResponse>` (see [A commit can fail too](#a-commit-can-fail-too-icommitfailable)):
 
 ```csharp
 public sealed record PingQuery(string Message) : IQuery<PingResult>;
@@ -744,16 +792,20 @@ flowchart TD
     Repo --> Handler
     Handler --> Outcome{Union case returned}
     Outcome -->|Success or DTO| Commit[TransactionBehavior: commit]
+    Commit -->|CommitAsync refused: stale write, unique violation| CommitFailed["Rollback, then TResponse.FromCommitFailure(...)"]
+    CommitFailed --> ReturnUp
     Outcome -->|NotFound, Error, Failure, NotAuthorized, or ValidationErrors| Rollback[TransactionBehavior: rollback]
     Commit --> ReturnUp
     Rollback --> ReturnUp
     ReturnUp --> Map{Controller switches on the union}
     Map -->|Dto| Ok200[200 OK / 201 Created]
     Map -->|NotFound| NF404[404 Not Found]
+    Map -->|PreconditionFailed| PF412[412 Precondition Failed]
     Map -->|ValidationErrors| BadRequest400[400 Bad Request]
     Map -->|Error| ServerError500[500 Internal Server Error]
     Ok200 --> Done([HTTP response])
     NF404 --> Done
+    PF412 --> Done
     BadRequest400 --> Done
     ServerError500 --> Done
 ```
@@ -791,7 +843,9 @@ sequenceDiagram
 ```
 
 No `catch` block appears anywhere in this flow — the branch is decided entirely by which case type
-the handler returned.
+the handler returned. A commit that is itself refused (`CommitAsync` returns `ConcurrencyConflict`
+instead of `Committed`) takes the rollback branch too, and the response becomes
+`DeleteProductResult.FromCommitFailure(...)`.
 
 ## Trace id and unhandled exceptions
 
@@ -817,6 +871,57 @@ is swallowed with no body and no error-level log.
 No exception-tracking library is bundled; the trace id is the join key for whichever is added:
 OpenTelemetry (vendor-neutral exception events on spans), Serilog with Seq (`TraceId` becomes a
 searchable property), or Sentry.
+
+## Optimistic concurrency: `ProductVersion`, `ETag` and `If-Match`
+
+Two clients that load the same product, edit it, and save would otherwise silently overwrite each
+other (a lost update). This POC prevents that with **optimistic concurrency**: no locks are held
+while a client thinks; instead each write says which version it was based on, and a write based on
+a version that is no longer current is refused.
+
+- **The version is a domain value.**
+  [`ProductVersion`](src/MediatrUnionPoc.Domain/ProductVersion.cs) is a Vogen value object over a
+  `long`. A new product starts at `ProductVersion.Initial` (1) and `Product.UpdateDetails` advances
+  it with `Version.Next()` on every mutation; the database does not generate it. Infrastructure
+  maps it with a hand-written `ProductVersionValueConverter` (the same convention as `ProductId`
+  and `Money`, keeping Domain free of EF Core) and marks it `IsConcurrencyToken()`, so every
+  `UPDATE`/`DELETE` EF issues is conditioned on the version that was loaded. If no row matches, EF
+  raises `DbUpdateConcurrencyException` and `EfCoreUnitOfWork.CommitAsync` reports it as
+  `ConcurrencyConflict` (see [A commit can fail too](#a-commit-can-fail-too-icommitfailable)).
+- **On the wire it is a weak ETag.** `ProductVersion.ToETag()` renders `W/"3"` and
+  `ProductVersion.ParseETag` reads it back (anything else, including a strong tag or `*`, is not
+  a version). `GET /api/products/{id}` and `POST /api/products` return it in the `ETag` header and
+  `ProductDto` carries the same number in its `version` member; a successful `PUT` answers `204` with
+  the *new* `ETag`.
+- **`If-Match` carries it back.** `PUT` requires it: absent is `428 Precondition Required`, present
+  but not a well-formed tag is a `400` validation problem naming the header. `DELETE` treats it as
+  optional — absent deletes whatever is stored, present is enforced. Parsing lives in one place,
+  [`IfMatchHeader.Parse`](src/MediatrUnionPoc.Api/Http/IfMatchHeader.cs), a small union of
+  `ProductVersion`, `MissingIfMatch` and `ValidationErrors`.
+- **A stale version is a `412`.** `UpdateProductCommand.ExpectedVersion` (required) and
+  `DeleteProductCommand.ExpectedVersion` (optional) travel with the command; the handler compares
+  it to the loaded product first and returns `PreconditionFailed`, so most stale writes never reach
+  the database. A request that passes that check and then loses a race to another writer is
+  caught by the concurrency token at commit, and each union's `FromCommitFailure` turns it into the
+  same `PreconditionFailed`. Two racing `PUT`s with the same `ETag` therefore yield exactly one `204`
+  and one `412`.
+
+`PreconditionFailed` (412) and `Conflict` (409, for a collision with existing state such as a
+duplicate name) are shared case types in the same sense as `NotFound`: meaning-free records whose
+HTTP mapping lives in
+[`ResultHttpExtensions`](src/MediatrUnionPoc.Api/Http/ResultHttpExtensions.cs) as extension members,
+with RFC 7807 bodies and the trace id like every other problem response. The OpenAPI document
+declares the `412`/`428` responses (with example bodies) and the `ETag` response header.
+
+```bash
+# Create: 201 with ETag: W/"1"
+curl -i -X POST localhost:5000/api/products -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
+  -d '{"name":"Widget","price":9.99}'
+
+# No If-Match: 428.  Stale If-Match: 412.  Current If-Match: 204 with ETag: W/"2"
+curl -i -X PUT localhost:5000/api/products/$ID -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' \
+  -H "Content-Type: application/json" -d '{"name":"Widget Pro","price":19.99}'
+```
 
 ## Authorization
 
@@ -1112,12 +1217,12 @@ endpoint-attribute-discovery step in this repo's authorization path for that fea
 The diagrams above show the pipeline shape in the abstract. This one traces a single, concrete
 request — `PUT /api/products/{id}` — all the way through, branching at every point where a
 different case of [`UpdateProductResult`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductResult.cs)
-(`union(Success, NotFound, ValidationErrors, Error, NotAuthorized)`) could come back. Each terminal
-branch is tagged with the case type it produces («Success», «NotFound», «ValidationErrors»,
-«Error», «NotAuthorized») and color-coded so the same case is easy to follow from where it's
+(`union(ProductDto, NotFound, ValidationErrors, Error, NotAuthorized, PreconditionFailed)`) could
+come back. Each terminal branch is tagged with the case type it produces («ProductDto», «NotFound»,
+«ValidationErrors», «Error», «NotAuthorized», «PreconditionFailed») and color-coded so the same case is easy to follow from where it's
 created to the HTTP status it becomes.
 
-Four of the five cases are actually reachable from
+Five of the six cases are actually reachable from
 [`UpdateProductHandler`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductHandler.cs)
 as written today, including the resource-based `ProductOwner` check described in
 [Authorization](#authorization) above. `«Error»` is included because the union *declares* it as a
@@ -1131,9 +1236,10 @@ flowchart TD
     classDef validation fill:#ffe3e3,stroke:#c92a2a,stroke-width:2px;
     classDef error fill:#f1f3f5,stroke:#495057,stroke-width:2px,stroke-dasharray: 4 3;
     classDef notauthorized fill:#e5dbff,stroke:#7048e8,stroke-width:2px;
+    classDef precondition fill:#d0ebff,stroke:#1971c2,stroke-width:2px;
 
-    Client(["PUT /api/products/{id}<br/>body: name, price"]) --> Ctrl["ProductsController.Update"]
-    Ctrl --> Build["new UpdateProductCommand(id, name, price)"]
+    Client(["PUT /api/products/{id}<br/>If-Match: W/&quot;n&quot;<br/>body: name, price"]) --> Ctrl["ProductsController.Update"]
+    Ctrl --> Build["new UpdateProductCommand(id, name, price, principal, expectedVersion)"]
     Build --> Send["sender.Send(command)"]
 
     Send --> Log1["LoggingBehavior<br/>log: handling UpdateProductCommand"]
@@ -1163,12 +1269,22 @@ flowchart TD
     Log2e --> Map5["controller switch"]:::notauthorized
     Map5 --> R403["403 Forbidden"]:::notauthorized
 
-    Own -->|"yes"| Update["product.UpdateDetails(name, price)"]
-    Update --> Ok["«Success»<br/>new Success()"]:::success
+    Own -->|"yes"| Ver{"product.Version == expectedVersion?"}
+
+    Ver -->|"no"| Stale["«PreconditionFailed»<br/>new PreconditionFailed(message)"]:::precondition
+    Stale --> Roll4["TransactionBehavior<br/>RollbackAsync()"]:::precondition
+    Roll4 --> Log2f["LoggingBehavior<br/>log: result = PreconditionFailed"]:::precondition
+    Log2f --> Map6["controller switch"]:::precondition
+    Map6 --> R412["412 Precondition Failed"]:::precondition
+
+    Ver -->|"yes"| Update["product.UpdateDetails(name, price)<br/>Version = Version.Next()"]
+    Update --> Ok["«ProductDto»<br/>ProductDto.FromDomain(product)"]:::success
     Ok --> Commit["TransactionBehavior<br/>CommitAsync() then SaveChangesAsync()"]:::success
-    Commit --> Log2c["LoggingBehavior<br/>log: result = Success"]:::success
+    Commit -->|"a concurrent write won the race:<br/>CommitAsync returns ConcurrencyConflict"| Stale2["Rollback, then<br/>FromCommitFailure(ConcurrencyConflict)<br/>= «PreconditionFailed»"]:::precondition
+    Stale2 --> Map6
+    Commit --> Log2c["LoggingBehavior<br/>log: result = ProductDto"]:::success
     Log2c --> Map3["controller switch"]:::success
-    Map3 --> R204["204 No Content"]:::success
+    Map3 --> R204["204 No Content + new ETag"]:::success
 
     Handle -.->|"declared, not exercised today"| Err["«Error»<br/>new Error(message, code)"]:::error
     Err -.-> Roll2["TransactionBehavior<br/>RollbackAsync()"]:::error
@@ -1179,8 +1295,13 @@ flowchart TD
 
 Reading the diagram:
 
-- **Green («Success»)** is the only path where `TransactionBehavior` commits — everything else
+- **Green («ProductDto»)** is the only path where `TransactionBehavior` commits — everything else
   rolls back or never opens a transaction at all.
+- **Blue («PreconditionFailed»)** has two sources that end in the same case: the handler's
+  up-front version check (most stale writes never reach the database), and the commit-time
+  `ConcurrencyConflict` when two requests both passed that check and one lost the race — the union's
+  `FromCommitFailure` maps both to the one outcome the caller can act on. See
+  [Optimistic concurrency](#optimistic-concurrency-productversion-etag-and-if-match).
 - **Red («ValidationErrors»)** short-circuits *before* `TransactionBehavior` even runs — no
   transaction is opened for input that never should have reached the handler.
 - **Yellow («NotFound»)**, **purple («NotAuthorized»)**, and **dashed grey («Error»)** all reach
@@ -1297,7 +1418,9 @@ in their own boundary code.
   app uses a private in-memory database kept alive by one open connection, with the schema created
   at startup (`EnsureCreated`, no migrations). The class is named for the persistence technology it
   adapts (EF Core), not for a provider: a future NHibernate adapter would be a separate
-  `IUnitOfWork` implementation.
+  `IUnitOfWork` implementation. `CommitAsync` returns a `CommitResult` union rather than `Task`: a
+  concurrency-token failure comes back as `ConcurrencyConflict` (nothing persisted; the caller
+  rolls back), and `UniqueViolation` is declared for the same purpose.
 - **NSubstitute + Vogen structs:** two `Arg.Any<T>()` matchers in the same mocked call, where one
   `T` is a Vogen value object (custom equality), can throw `AmbiguousArgumentsException`. Use a
   concrete value object instance instead of `Arg.Any<T>()` for at least one of the arguments.
@@ -1368,7 +1491,7 @@ something specific to this repo, its entry links to the official documentation.
 | **`IRequest<TResponse>`** | MediatR's marker interface for "this message expects a `TResponse` back." Every command and query here implements it indirectly through this repo's own `ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>` (below). |
 | **`IRequestHandler<TRequest, TResponse>`** | MediatR's interface for "the one place that knows how to handle a `TRequest` and produce a `TResponse`." MediatR resolves and calls exactly one registered handler per request type. |
 | **`IPipelineBehavior<TRequest, TResponse>`** | MediatR's interface for a pipeline step wrapping every request's handling: it receives the request plus a delegate to call the *next* step (another behavior, or the handler itself). `LoggingBehavior`, `ValidationBehavior`, `AuthorizationBehavior`, and `TransactionBehavior` all implement this, and run in the order they're registered. |
-| **`ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>`** *(this repo's own marker interfaces — not part of MediatR)* | Sit between `IRequest<TResponse>` and a concrete request to say which pipeline behaviors apply: `IQuery<TResponse>` never runs `TransactionBehavior`; `ICommand<TResponse>` may mutate state with no transaction assumption; `ITransactionalCommand<TResponse>` additionally requires its `TResponse` implement `ITransactionOutcome<TResponse>`. See [`Messages.cs`](src/MediatrUnionPoc.Application/Common/Abstractions/Messages.cs). |
+| **`ICommand<TResponse>` / `IQuery<TResponse>` / `ITransactionalCommand<TResponse>`** *(this repo's own marker interfaces — not part of MediatR)* | Sit between `IRequest<TResponse>` and a concrete request to say which pipeline behaviors apply: `IQuery<TResponse>` never runs `TransactionBehavior`; `ICommand<TResponse>` may mutate state with no transaction assumption; `ITransactionalCommand<TResponse>` additionally requires its `TResponse` implement `ITransactionOutcome<TResponse>` and `ICommitFailable<TResponse>`. See [`Messages.cs`](src/MediatrUnionPoc.Application/Common/Abstractions/Messages.cs). |
 | **`INotification` / `INotificationHandler<TNotification>` / `IPublisher`** | MediatR's *other* messaging shape, distinct from request/response: `IPublisher.Publish(notification)` fans a message out to zero-or-many `INotificationHandler<TNotification>` subscribers, none of which can return a value back or affect one another. Not used by this repo's Products feature today, but the mechanism [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index) sketches. |
 
 ### Vogen vocabulary
@@ -1384,6 +1507,8 @@ something specific to this repo, its entry links to the official documentation.
 | Term | Meaning |
 | --- | --- |
 | **`IValidatable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromValidationErrors(ValidationErrors)`) so `ValidationBehavior` can build that union's own validation-failure case generically, without ever naming the concrete union type. See [Static abstract interface members](#static-abstract-interface-members-why-generic-code-can-build-a-union-its-never-seen). |
+| **`ICommitFailable<TSelf>`** *(project-specific)* | An interface a transactional union implements (`static abstract TSelf FromCommitFailure(CommitFailure)`) so `TransactionBehavior` can report a refused commit (stale write, uniqueness violation) in the union's own terms. See [A commit can fail too](#a-commit-can-fail-too-icommitfailable). |
+| **`ProductVersion`** *(project-specific)* | The optimistic-concurrency version of a `Product`: a Vogen `long` that starts at 1 and is advanced by the domain on every mutation, exposed on the wire as the weak `ETag` `W/"n"`. See [Optimistic concurrency](#optimistic-concurrency-productversion-etag-and-if-match). |
 | **`ITransactionOutcome<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract bool ShouldCommit(TSelf)`) so `TransactionBehavior` can ask the union itself whether to commit or roll back, without inspecting which case type came back by name. See [Shared case types are meaning-free](#shared-case-types-are-meaning-free-transactionbehavior-cant-assume-what-a-case-means). |
 | **`IAuthorizable<TSelf>`** *(project-specific)* | An interface a union implements (`static abstract TSelf FromNotAuthorized(NotAuthorized)`) so either authorization pattern can build that union's own `NotAuthorized` case generically. See [Authorization](#authorization). |
 | **Case type** *(C# spec term)* | Any one of the types listed in a union's declaration (`union Name(CaseA, CaseB, CaseC)` — `CaseA`, `CaseB`, and `CaseC` are all case types of `Name`). This repo further splits case types into two roles it names itself — **shared** and **bespoke**, below — because the spec term alone doesn't distinguish them. |

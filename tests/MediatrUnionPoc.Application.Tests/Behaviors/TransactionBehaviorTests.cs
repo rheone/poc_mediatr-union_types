@@ -31,8 +31,19 @@ public sealed record ArbitraryCommand : ITransactionalCommand<ArbitraryOutcome>;
 /// The response union for <see cref="ArbitraryCommand"/>, deciding commit/rollback via
 /// <see cref="ShouldCommit(ArbitraryOutcome)"/> rather than by any inherent meaning of its case types.
 /// </summary>
-public union ArbitraryOutcome(Success, SomeDevsOwnCaseType) : ITransactionOutcome<ArbitraryOutcome>
+public union ArbitraryOutcome(Success, SomeDevsOwnCaseType)
+    : ITransactionOutcome<ArbitraryOutcome>,
+        ICommitFailable<ArbitraryOutcome>
 {
+    /// <summary>Reports every commit failure as <see cref="SomeDevsOwnCaseType"/> — this union has no finer classification.</summary>
+    /// <param name="failure">How the commit failed.</param>
+    /// <returns>A <see cref="SomeDevsOwnCaseType"/>.</returns>
+    public static ArbitraryOutcome FromCommitFailure(CommitFailure failure) => failure switch
+    {
+        ConcurrencyConflict => new SomeDevsOwnCaseType(),
+        UniqueViolation => new SomeDevsOwnCaseType(),
+    };
+
     /// <summary>Maps <see cref="Success"/> to commit and <see cref="SomeDevsOwnCaseType"/> to rollback.</summary>
     /// <param name="response">The union instance returned by the handler.</param>
     /// <returns><see langword="true"/> when <paramref name="response"/> is <see cref="Success"/>; otherwise <see langword="false"/>.</returns>
@@ -52,7 +63,7 @@ public class TransactionBehaviorTests
 
     private static readonly Guid ProductGuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
-    private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly IUnitOfWork _unitOfWork = UnitOfWorkMother.Committing();
     private readonly TransactionBehavior<DeleteProductCommand, DeleteProductResult> _sut;
 
     /// <summary>Wires up <see cref="_sut"/> against the substituted <see cref="_unitOfWork"/>.</summary>
@@ -275,7 +286,7 @@ public class TransactionBehaviorLoggingTests
 
     private static readonly Guid ProductGuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
-    private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly IUnitOfWork _unitOfWork = UnitOfWorkMother.Committing();
     private readonly CapturingLogger<TransactionBehavior<DeleteProductCommand, DeleteProductResult>> _logger = new();
     private readonly TransactionBehavior<DeleteProductCommand, DeleteProductResult> _sut;
 

@@ -1,8 +1,8 @@
 # MediatrUnionPoc.Domain
 
-The innermost layer: the `Product` entity, Vogen-generated value objects (`ProductId`, `Money`),
-and the repository/unit-of-work abstractions (`IProductRepository`, `IUnitOfWork`) that outer
-layers implement. Holds no MediatR, ASP.NET Core, or EF Core reference — nothing here knows it's
+The innermost layer: the `Product` entity, Vogen-generated value objects (`ProductId`, `Money`,
+`ProductVersion`), and the repository/unit-of-work abstractions (`IProductRepository`,
+`IUnitOfWork`) that outer layers implement. Holds no MediatR, ASP.NET Core, or EF Core reference — nothing here knows it's
 part of a web API or which database persists it.
 
 Value objects are declared with [Vogen](https://github.com/SteveDunn/Vogen) rather than hand-rolled
@@ -11,6 +11,13 @@ generator instead of boilerplate — see the repo root README's
 [Vogen: avoiding primitive obsession](../../README.md#vogen-avoiding-primitive-obsession) for the
 full rationale and its [Glossary](../../README.md#glossary) for any term below that isn't
 self-explanatory.
+
+`ProductVersion` is the optimistic-concurrency version: it starts at 1 (`ProductVersion.Initial`),
+`Product` advances it with `Version.Next()` on every mutation, and it renders as the weak ETag
+`W/"n"` (`ToETag` / `ParseETag`). `IUnitOfWork.CommitAsync` returns a `CommitResult` union
+(`Committed`, `ConcurrencyConflict`, `UniqueViolation`; `CommitFailure` is the two failing cases) so
+an expected commit refusal is a value, not an exception. See the repo root README's
+[Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).
 
 ## Dependencies
 

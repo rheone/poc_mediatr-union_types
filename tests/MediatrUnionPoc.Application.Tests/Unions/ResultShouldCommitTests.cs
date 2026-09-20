@@ -32,7 +32,11 @@ public class ResultShouldCommitTests
         bool
     > ShouldCommit_CreateProductResultCases_CommitsOnlyForProductDto_Test_Data =>
         new(
-            CreateRow("ProductDto", new ProductDto(SomeProductId, ProductName, ProductPrice), true),
+            CreateRow(
+                "ProductDto",
+                new ProductDto(SomeProductId, ProductName, ProductPrice, ProductVersion.Initial),
+                true
+            ),
             CreateRow(
                 "ValidationErrors",
                 new ValidationErrors([new ValidationError("Name", "required")]),
@@ -41,13 +45,17 @@ public class ResultShouldCommitTests
             CreateRow("Error", new Error(ErrorMessage, ErrorCode), false)
         );
 
-    /// <summary>Rows: one per <see cref="UpdateProductResult"/> case, with whether it should commit — only <see cref="Success"/> does.</summary>
+    /// <summary>Rows: one per <see cref="UpdateProductResult"/> case, with whether it should commit — only <see cref="ProductDto"/> does.</summary>
     public static TheoryData<
         UpdateProductResult,
         bool
     > ShouldCommit_UpdateProductResultCases_CommitsOnlyForSuccess_Test_Data =>
         new(
-            UpdateRow("Success", new Success(), true),
+            UpdateRow(
+                "ProductDto",
+                new ProductDto(SomeProductId, ProductName, ProductPrice, ProductVersion.Initial),
+                true
+            ),
             UpdateRow("NotFound", new NotFound<ProductId>(SomeProductId), false),
             UpdateRow(
                 "ValidationErrors",

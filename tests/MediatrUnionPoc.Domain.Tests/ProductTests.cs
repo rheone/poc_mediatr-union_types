@@ -156,4 +156,32 @@ public class ProductTests
             () => Assert.Equal(Name, product.Name)
         );
     }
+
+    /// <summary>Verifies a new product starts at <see cref="ProductVersion.Initial"/>.</summary>
+    [Fact]
+    public void Create_NewProduct_StartsAtVersionOne_Test()
+    {
+        // Arrange
+
+        // Act
+        var product = Product.Create(Name, Money.From(PriceValue));
+
+        // Assert
+        Assert.Equal(1L, product.Version.Value);
+    }
+
+    /// <summary>Verifies each <see cref="Product.UpdateDetails"/> call advances the version by one.</summary>
+    [Fact]
+    public void UpdateDetails_CalledTwice_AdvancesVersionToThree_Test()
+    {
+        // Arrange
+        var product = Product.Create(Name, Money.From(PriceValue));
+
+        // Act
+        product.UpdateDetails(UpdatedName, Money.From(UpdatedPriceValue));
+        product.UpdateDetails(Name, Money.From(PriceValue));
+
+        // Assert
+        Assert.Equal(3L, product.Version.Value);
+    }
 }

@@ -516,4 +516,57 @@ public class EfCoreUnitOfWorkTests
         var exception = Assert.Throws<ArgumentNullException>(act);
         Assert.Equal("dbContext", exception.ParamName);
     }
+
+    /// <summary>Verifies a write based on a stale version is refused as a <see cref="ConcurrencyConflict"/> and persists nothing.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task CommitAsync_StaleVersion_ReturnsConcurrencyConflictAndPersistsNothing_Test()
+    {
+        // Arrange
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        var product = ProductMother.Widget();
+        await database.SeedAsync([product], TestContext.Current.CancellationToken);
+
+        // Two writers load the same version; the first commits an update.
+        await using var firstContext = database.CreateContext();
+        await using var secondContext = database.CreateContext();
+        var firstProduct = await new ProductRepository(firstContext).GetByIdAsync(
+            product.Id,
+            TestContext.Current.CancellationToken
+        );
+        var secondProduct = await new ProductRepository(secondContext).GetByIdAsync(
+            product.Id,
+            TestContext.Current.CancellationToken
+        );
+        await using var firstUnitOfWork = new EfCoreUnitOfWork(firstContext);
+        await using var secondUnitOfWork = new EfCoreUnitOfWork(secondContext);
+
+        await firstUnitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        firstProduct!.UpdateDetails("First writer", Money.From(UpdatedPrice));
+        var firstResult = await firstUnitOfWork.CommitAsync(TestContext.Current.CancellationToken);
+
+        // Act
+        await secondUnitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        secondProduct!.UpdateDetails("Second writer", Money.From(UpdatedPrice));
+        var secondResult = await secondUnitOfWork.CommitAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        Assert.IsType<Committed>(((System.Runtime.CompilerServices.IUnion)firstResult).Value);
+        Assert.IsType<ConcurrencyConflict>(
+            ((System.Runtime.CompilerServices.IUnion)secondResult).Value
+        );
+        await using var verifyContext = database.CreateContext();
+        var stored = await verifyContext.Products.SingleAsync(
+            p => p.Id == product.Id,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Multiple(
+            () => Assert.Equal("First writer", stored.Name),
+            () => Assert.Equal(2L, stored.Version.Value)
+        );
+    }
 }

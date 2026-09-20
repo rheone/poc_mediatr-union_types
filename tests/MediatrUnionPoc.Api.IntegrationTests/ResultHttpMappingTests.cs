@@ -146,6 +146,51 @@ public sealed class ResultHttpMappingTests
         );
     }
 
+    /// <summary>Verifies a failed precondition answers 412 with the case's message as detail and the RFC 7232 type URI.</summary>
+    [Fact]
+    public void ToProblemResult_PreconditionFailed_Returns412WithMessageAndTypeUri_Test()
+    {
+        // Arrange
+        using var provider = BuildProvider();
+        var http = new DefaultHttpContext { RequestServices = provider };
+
+        // Act
+        var result = new PreconditionFailed("stale version").ToProblemResult(http);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        var problem = Assert.IsType<ProblemDetails>(objectResult.Value);
+        Assert.Multiple(
+            () => Assert.Equal(412, objectResult.StatusCode),
+            () => Assert.Equal(412, problem.Status),
+            () => Assert.Equal("Precondition Failed", problem.Title),
+            () => Assert.Equal("stale version", problem.Detail),
+            () => Assert.Equal("https://tools.ietf.org/html/rfc7232#section-4.2", problem.Type)
+        );
+    }
+
+    /// <summary>Verifies a conflict answers 409 with the case's message as detail and the RFC 7231 type URI.</summary>
+    [Fact]
+    public void ToProblemResult_Conflict_Returns409WithMessageAndTypeUri_Test()
+    {
+        // Arrange
+        using var provider = BuildProvider();
+        var http = new DefaultHttpContext { RequestServices = provider };
+
+        // Act
+        var result = new Conflict("name taken").ToProblemResult(http);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        var problem = Assert.IsType<ProblemDetails>(objectResult.Value);
+        Assert.Multiple(
+            () => Assert.Equal(409, objectResult.StatusCode),
+            () => Assert.Equal("Conflict", problem.Title),
+            () => Assert.Equal("name taken", problem.Detail),
+            () => Assert.Equal("https://tools.ietf.org/html/rfc7231#section-6.5.8", problem.Type)
+        );
+    }
+
     /// <summary>Verifies the not-found extension honours a status override yet keeps the NOT_FOUND code.</summary>
     [Fact]
     public void ToProblemResult_NotFoundWithStatusOverride_KeepsCodeAndUsesStatus_Test()
