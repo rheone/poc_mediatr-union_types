@@ -4,12 +4,16 @@ using Microsoft.Extensions.Logging;
 
 namespace MediatrUnionPoc.Application.Common.Behaviors;
 
-/// <summary>Logs every request and, for union responses, which case type came back.</summary>
+/// <summary>
+/// Logs every request and, for union responses, which case type came back. The two lines are
+/// source-generated <c>[LoggerMessage]</c> methods (event ids 1000 and 1001) with the structured
+/// properties <c>RequestName</c> and <c>ResultCase</c>.
+/// </summary>
 /// <typeparam name="TRequest">The MediatR request type.</typeparam>
 /// <typeparam name="TResponse">The request's response type.</typeparam>
 /// <param name="logger">The logger request/response lines are written to.</param>
 /// <exception cref="ArgumentNullException"><paramref name="logger"/> is <see langword="null"/>.</exception>
-public sealed class LoggingBehavior<TRequest, TResponse>(
+public sealed partial class LoggingBehavior<TRequest, TResponse>(
     ILogger<LoggingBehavior<TRequest, TResponse>> logger
 ) : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
@@ -29,7 +33,7 @@ public sealed class LoggingBehavior<TRequest, TResponse>(
         ArgumentNullException.ThrowIfNull(next);
 
         var requestName = typeof(TRequest).Name;
-        _logger.LogInformation("Handling {RequestName}", requestName);
+        LogHandling(requestName);
 
         var response = await next(cancellationToken);
 
@@ -44,8 +48,26 @@ public sealed class LoggingBehavior<TRequest, TResponse>(
             _ => response.GetType().Name,
         };
 
-        _logger.LogInformation("Handled {RequestName} -> {ResultCase}", requestName, caseName);
+        LogHandled(requestName, caseName);
 
         return response;
     }
+
+    // Event ids are stable identifiers for filtering and alerting: 1000 to 1099 belong to this
+    // behavior. Never renumber one; retire it and take the next free number.
+    [LoggerMessage(
+        EventId = 1000,
+        EventName = "RequestHandling",
+        Level = LogLevel.Information,
+        Message = "Handling {RequestName}"
+    )]
+    private partial void LogHandling(string requestName);
+
+    [LoggerMessage(
+        EventId = 1001,
+        EventName = "RequestHandled",
+        Level = LogLevel.Information,
+        Message = "Handled {RequestName} -> {ResultCase}"
+    )]
+    private partial void LogHandled(string requestName, string resultCase);
 }

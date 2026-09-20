@@ -46,10 +46,25 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
 - `ResultHttpMappingTests.cs` — the `ToProblemResult` extension members and `HttpMappingOptions`
   (custom error-code statuses, per-call overrides, RFC 7807 shape).
 - `TraceIdTests.cs`, `TraceIdMiddlewareTests.cs` — the trace id in problem bodies, the `X-Trace-Id`
-  header and the log scope.
+  header, and the log scope (surfacing as a `TraceId` property on real Serilog events).
+- `LoggingTests.cs`, `RequestLogPropertiesTests.cs` — the Serilog setup: enriched properties on an
+  ordinary `ILogger` event (trace id, user, application, environment, machine, process, thread, event
+  id), `IsImpersonated`/`ImpersonatedBy` under a minted impersonation token, the request line
+  (status, elapsed, trace id, user), health probes silent at the default level and `Debug` when it is
+  lowered, a configuration level override honoured, an invalid level failing host start, and no
+  bearer token, impersonation token or `Authorization` header in any captured event.
 - `GlobalExceptionHandlerTests.cs`, `UnhandledExceptionTests.cs` — the `500` problem for an
-  unexpected exception, Development-only `detail`, and client aborts (using `ThrowingSender` and
+  unexpected exception, Development-only `detail`, exactly one `Error` log entry carrying the trace
+  id (the request line for the 500 is a `Warning`), and client aborts (using `ThrowingSender` and
   `BlockingSender`).
+
+**Capturing logs.** `ProductsApiFactory` runs the real Serilog setup and registers a
+`CapturingLogEventSink` (`factory.LogSink.Events`, shared with derived hosts), which sees every
+enriched property. It also restricts the file and console sinks to `Fatal` by configuration, so no
+`logs/` file is written (the rolling file sink opens its file on the first write) and test output
+stays quiet. Override levels per test with `UseSetting("Serilog:MinimumLevel:...", ...)`.
+`CapturingLoggerProvider` remains for the two tests that build a bare `LoggerFactory` without a host.
+
 - `HealthEndpointTests.cs` — `/health/live` and `/health/ready`: `200` plain-text `Healthy`,
   readiness `503` when a `DbConnectionInterceptor` makes the database connection fail, liveness
   unaffected, no credentials needed, no JSON check details, configurable paths, and a

@@ -6,7 +6,8 @@ namespace MediatrUnionPoc.Api.Http;
 /// The last-resort handler for exceptions nothing else caught. Expected outcomes are unions and
 /// never reach here, so there is deliberately no per-exception-type status mapping: everything is
 /// a 500. The exception is logged with its structured properties (the trace id comes from the
-/// ambient logging scope opened by <see cref="TraceIdMiddleware"/>); the response never exposes
+/// ambient logging scope opened by <see cref="TraceIdMiddleware"/>, which Serilog surfaces as the
+/// <c>TraceId</c> property; event ids 2000 and 2001); the response never exposes
 /// exception details outside the Development environment.
 /// </summary>
 /// <param name="problemDetails">Writes the RFC 7807 body (and applies the shared <c>traceId</c> customisation).</param>
@@ -58,7 +59,11 @@ public sealed partial class GlobalExceptionHandler(
         );
     }
 
+    // Event ids are stable identifiers for filtering and alerting: 2000 to 2099 belong to this
+    // handler. Never renumber one; retire it and take the next free number.
     [LoggerMessage(
+        EventId = 2000,
+        EventName = "UnhandledException",
         Level = LogLevel.Error,
         Message = "Unhandled exception processing {RequestMethod} {RequestPath}"
     )]
@@ -69,6 +74,8 @@ public sealed partial class GlobalExceptionHandler(
     );
 
     [LoggerMessage(
+        EventId = 2001,
+        EventName = "ClientAborted",
         Level = LogLevel.Debug,
         Message = "Client aborted {RequestMethod} {RequestPath}; request cancelled"
     )]

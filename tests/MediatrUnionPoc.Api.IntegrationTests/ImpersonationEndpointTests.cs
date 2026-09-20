@@ -6,7 +6,7 @@ using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Serilog.Events;
 using static MediatrUnionPoc.Api.IntegrationTests.TestData.ImpersonationTestSupport;
 
 namespace MediatrUnionPoc.Api.IntegrationTests;
@@ -351,45 +351,30 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_IssuedAndDenied_AreLoggedWithoutTheToken_Test()
     {
         // Arrange
-        using var logs = new CapturingLoggerProvider();
-        using var factory = _factory.WithWebHostBuilder(builder =>
-            builder.ConfigureLogging(logging =>
-                logging.SetMinimumLevel(LogLevel.Trace).AddProvider(logs)
-            )
-        );
         using var support = ClientWithToken(
-            factory,
+            _factory,
             JwtTestTokens.Create(_factory, SupportId, ["Support"])
         );
         var token = await MintAsync(support, Body(roles: ["Support"], ticket: "SUP-9"));
 
         // Act
         using var denied = await PostAsync(support, Body(roles: ["Administrator"]));
-        using var withToken = ClientWithToken(factory, token);
+        using var withToken = ClientWithToken(_factory, token);
         using var listing = await withToken.GetAsync("/api/products", CancellationToken.None);
 
         // Assert
-        var everything = logs.Entries.Select(entry => entry.Message + entry.Exception).ToList();
-        var issued = Assert.Single(
-            logs.Entries,
-            entry => entry.Message.StartsWith("Impersonation Issued", StringComparison.Ordinal)
-        );
-        var refused = Assert.Single(
-            logs.Entries,
-            entry => entry.Message.StartsWith("Impersonation Denied", StringComparison.Ordinal)
-        );
+        var events = _factory.LogSink.Events;
+        var everything = events.Select(entry => entry.RenderEverything()).ToList();
+        var issued = Assert.Single(events, entry => (string?)entry.Scalar("Outcome") == "Issued");
+        var refused = Assert.Single(events, entry => (string?)entry.Scalar("Outcome") == "Denied");
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, listing.StatusCode),
-            () => Assert.Equal(LogLevel.Information, issued.Level),
-            () =>
-                Assert.Contains(
-                    $"actor {SupportId} as {UserId}",
-                    issued.Message,
-                    StringComparison.Ordinal
-                ),
-            () => Assert.Contains(ValidReason, issued.Message, StringComparison.Ordinal),
-            () => Assert.Contains("SUP-9", issued.Message, StringComparison.Ordinal),
-            () => Assert.Equal(LogLevel.Warning, refused.Level),
+            () => Assert.Equal(LogEventLevel.Information, issued.Level),
+            () => Assert.Equal(SupportId, issued.Scalar("ActorId")),
+            () => Assert.Equal(UserId, issued.Scalar("TargetUserId")),
+            () => Assert.Equal(ValidReason, issued.Scalar("Reason")),
+            () => Assert.Equal("SUP-9", issued.Scalar("Ticket")),
+            () => Assert.Equal(LogEventLevel.Warning, refused.Level),
             () =>
                 Assert.DoesNotContain(
                     everything,

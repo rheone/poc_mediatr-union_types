@@ -206,10 +206,22 @@ including that the key differs from `Authentication:Jwt:SigningKey`; the disable
 is stamped as the `traceId` member on every ProblemDetails body (`AddApiProblemDetails()` +
 `UseStatusCodePages()`, so framework 400/404/415/500 too), as an `X-Trace-Id` header on every
 response, and as a `TraceId` logging scope from `TraceIdMiddleware` (registered outermost, before
-`UseExceptionHandler`, so the handler's log line is still inside the scope).
-`GlobalExceptionHandler` maps any unhandled exception to a 500 problem (exception text in `detail`
-only in Development), logs it at Error, and swallows client aborts. No exception-tracking library is
-bundled; the docs name OpenTelemetry, Serilog + Seq and Sentry as plug-ins joined by the trace id.
+`UseExceptionHandler`, so the handler's log line is still inside the scope; Serilog surfaces the
+scope as a `TraceId` property). `GlobalExceptionHandler` maps any unhandled exception to a 500
+problem (exception text in `detail` only in Development), logs it once at Error, and swallows client
+aborts. No exception-tracking service is bundled (OpenTelemetry and Sentry are the named options).
+
+**Logging** (`Api/Logging/`): `ILogger` is the only logging API; Serilog is wired behind it in the Api
+host only (`builder.Host.UseApiLogging()`, non-static, `preserveStaticLogger`), configured by the
+`Serilog` section of `appsettings*.json` (console plus a rolling JSON file under `logs/`;
+`Logging:LogLevel` is not used). Enrichers add application, version, environment, machine, process,
+thread, `TraceId` and, after `UseAuthentication`, `UserId`/`IsImpersonated`/`ImpersonatedBy`
+(`UseUserLogContext`). One request line per request (`UseApiRequestLogging`, outside the exception
+handler, health probes at Debug, a handled 500 at Warning so the exception stays a single Error).
+Hot-path messages are `[LoggerMessage]` methods with stable event ids (1000/1001 `LoggingBehavior`,
+2000/2001 `GlobalExceptionHandler`). Never log tokens, `Authorization` headers or bodies. Api
+integration tests read events from `ProductsApiFactory.LogSink` (a DI-registered `ILogEventSink`); the
+factory silences the file and console sinks by configuration.
 
 ## Conventions specific to this repo
 

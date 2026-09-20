@@ -2,12 +2,15 @@ using MediatrUnionPoc.Api.Authentication;
 using MediatrUnionPoc.Api.Health;
 using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Api.Impersonation;
+using MediatrUnionPoc.Api.Logging;
 using MediatrUnionPoc.Api.OpenApi;
 using MediatrUnionPoc.Application;
 using MediatrUnionPoc.Infrastructure;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseApiLogging();
 
 // This project's async methods keep their "Async" suffix by convention; ASP.NET Core's default
 // (SuppressAsyncSuffixInActionNames = true) would otherwise register CreateAsync/GetByIdAsync/etc.
@@ -53,6 +56,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseMiddleware<TraceIdMiddleware>();
 
+// Outside the exception handler: the one request line reports the final status, and a handled
+// exception is logged once, at Error, by the handler itself.
+app.UseApiRequestLogging();
+
 app.UseExceptionHandler();
 
 app.UseStatusCodePages();
@@ -60,6 +67,8 @@ app.UseStatusCodePages();
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
+
+app.UseUserLogContext();
 
 app.UseAuthorization();
 

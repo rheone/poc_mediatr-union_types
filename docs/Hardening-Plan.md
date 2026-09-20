@@ -99,6 +99,8 @@ minted token is accepted by the API; expiry cap enforced; disabled switch return
 
 ## Step 4: Serilog with enrichment
 
+Status: implemented.
+
 Packages: `Serilog.AspNetCore` (includes the console sink), `Serilog.Settings.Configuration`,
 `Serilog.Sinks.File`, `Serilog.Enrichers.Environment`, `Serilog.Enrichers.Process`,
 `Serilog.Enrichers.Thread`.
@@ -117,6 +119,16 @@ Packages: `Serilog.AspNetCore` (includes the console sink), `Serilog.Settings.Co
 
 **Tests:** extend the existing `CapturingLoggerProvider` tests to assert the enriched properties;
 unhandled-exception log still emitted once at Error with the trace id.
+
+**As built.** The `TraceId` scope surfaces as a Serilog property without any change to
+`TraceIdMiddleware` (confirmed by tests). The request line is written by Serilog's own logger, so it
+takes `TraceId` and the user properties from the diagnostic context rather than the scope.
+`UseSerilogRequestLogging` sits outside the exception handler and logs a handled 500 at `Warning`, so
+`GlobalExceptionHandler` remains the only `Error`. The logger is non-static (`preserveStaticLogger`),
+the `Logging:LogLevel` section is replaced by `Serilog`, and `[LoggerMessage]` works on the generic
+`LoggingBehavior` directly. Tests capture events through an `ILogEventSink` registered in DI and
+silence the file and console sinks by configuration. Only `Serilog.Formatting.Compact` was added to
+the listed packages (explicit reference for the JSON formatters).
 
 ## Step 5: Audit stream
 

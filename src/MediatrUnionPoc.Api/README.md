@@ -131,6 +131,28 @@ assignable roles, no escalation, mandatory reason) live in the Application layer
 See the repo root README's [Impersonation](../../README.md#impersonation-acting-as-another-identity)
 for the rules, the claims, the options table and the operational warning.
 
+## Logging (`Logging/`)
+
+- `UseApiLogging()` (called first in `Program.cs`) makes Serilog the implementation behind `ILogger`
+  (`UseSerilog` with the non-static pattern and `preserveStaticLogger: true`, so several hosts in one
+  process never fight over `Log.Logger`). Sinks, levels and the machine, process and thread enrichers
+  come from the `Serilog` section of `appsettings*.json`; the application name, version and
+  environment come from the host, and any `ILogEventSink` registered in DI is added (the integration
+  tests use this to capture events). Sinks: console (readable in Development, compact JSON elsewhere)
+  and a daily rolling JSON file at `logs/log-.jsonl`, 14 files kept. Seq is not included; a new sink
+  is configuration only.
+- `UseApiRequestLogging()` (after `TraceIdMiddleware`, before `UseExceptionHandler`) writes one
+  `HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed} ms` line per request with
+  `TraceId` and the caller's properties. Health probes log at `Debug`; a 500 the exception handler
+  already logged is a `Warning`, so an unhandled exception stays a single `Error`.
+- `UseUserLogContext()` (after `UseAuthentication`) pushes `UserId`, `IsImpersonated` and
+  `ImpersonatedBy` (from `RequestLogProperties`, using `ImpersonationClaims`) onto the log context for
+  the rest of the request. Nothing else is read from the request: no tokens, headers or bodies.
+- The `TraceId` scope opened by `TraceIdMiddleware` surfaces as a real `TraceId` property on every
+  event (verified by tests), so `TraceIdMiddleware` is unchanged.
+- `GlobalExceptionHandler` and `LoggingBehavior` use `[LoggerMessage]` methods with stable event ids
+  (2000 and 2001; 1000 and 1001).
+
 ## Trace id and unhandled exceptions (`Http/`)
 
 - **Trace id.** `HttpContext.TraceId` (extension member in `HttpContextTraceExtensions`) is the
@@ -140,7 +162,8 @@ for the rules, the claims, the options table and the operational warning.
   body (including framework-generated ones: model-binding 400, routing 404, 415, unhandled 500,
   via `AddApiProblemDetails()` + `UseStatusCodePages()`), an `X-Trace-Id` header on **every**
   response (success included; success bodies are unchanged), and a `TraceId` logging scope opened
-  by `TraceIdMiddleware` so every log line written during the request carries it.
+  by `TraceIdMiddleware` so every log line written during the request carries it (as the `TraceId`
+  property under Serilog).
 - **Global exception handler.** `GlobalExceptionHandler` (`IExceptionHandler`, wired with
   `AddExceptionHandler` + `UseExceptionHandler`) turns any exception nothing else caught into a 500
   problem body. There is no per-exception-type status mapping: expected outcomes are unions and
@@ -149,9 +172,9 @@ for the rules, the claims, the options table and the operational warning.
   exception is logged at Error with structured properties (the trace id comes from the scope).
   A client abort (`OperationCanceledException` while `RequestAborted` is cancelled) is swallowed:
   no body, Debug log only.
-- **Exception-tracking plug-in points.** No tracker is bundled. The trace id is the join key to
-  whichever you add: OpenTelemetry (vendor-neutral exception events on spans), Serilog with Seq
-  (the `TraceId` scope property becomes a searchable field), or Sentry.
+- **Exception-tracking plug-in points.** No tracker is bundled; exceptions are in the Serilog console
+  and file output. The trace id is the join key to whichever you add: OpenTelemetry (vendor-neutral
+  exception events on spans) or Sentry.
 
 Uses the `Microsoft.NET.Sdk.Web` SDK (not the plain `Microsoft.NET.Sdk` the other projects use),
 since it's the one project that's actually a runnable web application.
@@ -184,6 +207,10 @@ since it's the one project that's actually a runnable web application.
   framework). Same `11.0.0-rc.1` build as the other ASP.NET Core packages.
 - `Microsoft.AspNetCore.OpenApi` — generates the OpenAPI document (`/openapi/v1.json`), including
   the request examples described in the repo root `README.md`.
+- `Serilog.AspNetCore` (console sink, request logging), `Serilog.Settings.Configuration`,
+  `Serilog.Sinks.File`, `Serilog.Formatting.Compact`, `Serilog.Enrichers.Environment`,
+  `Serilog.Enrichers.Process`, `Serilog.Enrichers.Thread` — logging behind `ILogger`, this project
+  only.
 - `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` — the readiness database
   check. Pinned to `10.0.12` to match EF Core (the 11.x line requires EF Core 11).
 

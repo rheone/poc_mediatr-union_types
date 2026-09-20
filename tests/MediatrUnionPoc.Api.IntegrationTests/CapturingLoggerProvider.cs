@@ -45,7 +45,10 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider, ISupportExterna
     public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopes = scopeProvider;
 
     /// <inheritdoc/>
-    public void Dispose() { }
+    public void Dispose()
+    {
+        // Nothing to release: entries are in-memory only.
+    }
 
     private sealed class CapturingLogger(string category, CapturingLoggerProvider owner) : ILogger
     {

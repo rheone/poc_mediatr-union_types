@@ -2,7 +2,6 @@ using System.Net;
 using System.Text.Json;
 using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace MediatrUnionPoc.Api.IntegrationTests;
 
@@ -119,14 +118,10 @@ public sealed class TraceIdTests
     /// <summary>Verifies the pipeline's own log lines carry the same TraceId as the response header.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Get_SuccessfulRequest_LoggingBehaviorLinesCarryTraceIdScope_Test()
+    public async Task Get_SuccessfulRequest_LoggingBehaviorLinesCarryTraceIdProperty_Test()
     {
         // Arrange
-        using var logs = new CapturingLoggerProvider();
-        using var baseFactory = new ProductsApiFactory();
-        using var factory = baseFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureLogging(logging => logging.AddProvider(logs))
-        );
+        using var factory = new ProductsApiFactory();
         using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
@@ -134,13 +129,13 @@ public sealed class TraceIdTests
 
         // Assert
         var header = Assert.Single(response.Headers.GetValues(TraceHeader));
-        var pipelineLines = logs
-            .Entries.Where(log =>
-                log.Category.Contains("LoggingBehavior", StringComparison.Ordinal)
+        var pipelineLines = factory
+            .LogSink.Events.Where(log =>
+                log.From("MediatrUnionPoc.Application.Common.Behaviors.LoggingBehavior")
             )
             .ToList();
         Assert.NotEmpty(pipelineLines);
-        Assert.All(pipelineLines, line => Assert.Equal(header, line.ScopeValue("TraceId")));
+        Assert.All(pipelineLines, line => Assert.Equal(header, line.Scalar("TraceId")));
     }
 
     private static async Task AssertBodyTraceIdMatchesHeaderAsync(HttpResponseMessage response)

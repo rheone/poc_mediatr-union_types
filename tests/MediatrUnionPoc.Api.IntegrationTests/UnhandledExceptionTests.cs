@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
+using Serilog.Events;
 
 namespace MediatrUnionPoc.Api.IntegrationTests;
 
@@ -19,8 +19,7 @@ public sealed class UnhandledExceptionTests
     private static WebApplicationFactory<Program> ThrowingFactory(
         ProductsApiFactory baseFactory,
         string environment,
-        Exception exception,
-        CapturingLoggerProvider? logs = null
+        Exception exception
     ) =>
         baseFactory.WithWebHostBuilder(builder =>
         {
@@ -33,13 +32,6 @@ public sealed class UnhandledExceptionTests
                 "Impersonation:SigningKey",
                 JwtTestTokens.NonDevelopmentImpersonationKey
             );
-            if (logs is not null)
-            {
-                builder.ConfigureLogging(logging =>
-                    logging.SetMinimumLevel(LogLevel.Debug).AddProvider(logs)
-                );
-            }
-
             builder.ConfigureServices(services =>
                 services.Replace(
                     ServiceDescriptor.Singleton<ISender>(new ThrowingSender(exception))
@@ -111,16 +103,15 @@ public sealed class UnhandledExceptionTests
         );
     }
 
-    /// <summary>Verifies the exception is logged at Error with the exception attached and the request's trace id in scope.</summary>
+    /// <summary>Verifies the exception is logged exactly once at Error, with the exception attached and the request's trace id as a property, and that the request line for the 500 is not a second Error.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Get_HandlerThrows_LogsErrorWithExceptionAndTraceIdScope_Test()
+    public async Task Get_HandlerThrows_LogsExactlyOneErrorWithExceptionAndTraceId_Test()
     {
         // Arrange
-        using var logs = new CapturingLoggerProvider();
         var thrown = new InvalidOperationException(Secret);
         using var baseFactory = new ProductsApiFactory();
-        using var factory = ThrowingFactory(baseFactory, "Production", thrown, logs);
+        using var factory = ThrowingFactory(baseFactory, "Production", thrown);
         using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
@@ -128,11 +119,20 @@ public sealed class UnhandledExceptionTests
 
         // Assert
         var header = Assert.Single(response.Headers.GetValues("X-Trace-Id"));
-        var entry = Assert.Single(
-            logs.Entries,
-            log => log.Level == LogLevel.Error && ReferenceEquals(log.Exception, thrown)
+        var events = baseFactory.LogSink.Events;
+        var entry = Assert.Single(events, log => log.Level == LogEventLevel.Error);
+        var requestLine = Assert.Single(
+            events,
+            log => log.From("Serilog.AspNetCore.RequestLoggingMiddleware")
         );
-        Assert.Equal(header, entry.ScopeValue("TraceId"));
+        Assert.Multiple(
+            () => Assert.Same(thrown, entry.Exception),
+            () => Assert.Equal(2000, entry.EventIdNumber()),
+            () => Assert.Equal(header, entry.Scalar("TraceId")),
+            () => Assert.Equal(500, requestLine.Scalar("StatusCode")),
+            () => Assert.Equal(LogEventLevel.Warning, requestLine.Level),
+            () => Assert.Equal(header, requestLine.Scalar("TraceId"))
+        );
     }
 
     /// <summary>Verifies a client abort mid-request produces no error-level log and is recorded as a client abort.</summary>
@@ -141,14 +141,11 @@ public sealed class UnhandledExceptionTests
     public async Task Get_ClientAbortsMidRequest_LogsNoErrors_Test()
     {
         // Arrange
-        using var logs = new CapturingLoggerProvider();
         var sender = new BlockingSender();
         using var baseFactory = new ProductsApiFactory();
         using var factory = baseFactory.WithWebHostBuilder(builder =>
         {
-            builder.ConfigureLogging(logging =>
-                logging.SetMinimumLevel(LogLevel.Debug).AddProvider(logs)
-            );
+            builder.UseSetting("Serilog:MinimumLevel:Default", "Debug");
             builder.ConfigureServices(services =>
                 services.Replace(ServiceDescriptor.Singleton<ISender>(sender))
             );
@@ -175,6 +172,6 @@ public sealed class UnhandledExceptionTests
         await Task.Delay(500, CancellationToken.None);
 
         // Assert
-        Assert.DoesNotContain(logs.Entries, log => log.Level >= LogLevel.Error);
+        Assert.DoesNotContain(baseFactory.LogSink.Events, log => log.Level >= LogEventLevel.Error);
     }
 }

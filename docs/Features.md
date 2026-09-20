@@ -56,6 +56,7 @@ null.
 | **Trace id everywhere** | One id on every problem body, an `X-Trace-Id` header on every response, and a logging scope | `TraceIdMiddleware`, `HttpContext.TraceId` | `Api/Http/TraceIdMiddleware.cs`, `HttpContextTraceExtensions.cs` | A client-reported id finds the matching log lines and trace |
 | **Global exception handling** | Unexpected exceptions become a `500` problem body; details shown only in Development; client aborts are swallowed | `IExceptionHandler` | `Api/Http/GlobalExceptionHandler.cs` | No stack traces leak, no noisy logs for cancelled requests |
 | **Health checks** | Anonymous `/health/live` (no checks) and `/health/ready` (database round trip), plain-text status only | `AddHealthChecks`, `AddDbContextCheck` tagged `ready`, `MapHealthChecks(...).AllowAnonymous()` | `Api/Health/` | Orchestrators and load balancers can tell alive from ready |
+| **Structured, enriched logging** | One structured line per request plus enriched events (trace id, user id, impersonation flag and actor, application, version, environment, machine, process, thread) to the console and a rolling daily JSON file; never tokens, `Authorization` headers or bodies. Seq is not included | Serilog behind `ILogger` (`UseSerilog`, `UseSerilogRequestLogging`), configured by the `Serilog` section of `appsettings*.json`; `[LoggerMessage]` methods with stable event ids | `Api/Logging/`, `Application/Common/Behaviors/LoggingBehavior.cs`, `Api/Http/GlobalExceptionHandler.cs` | Logs are searchable by `traceId` and user, sinks and levels change by configuration, and an unhandled exception is one Error entry |
 | **Validated options convention** | Settings bind from configuration and are validated when the host starts | `AddOptions<T>().BindConfiguration().ValidateOnStart()` with an `[OptionsValidator]` source-generated validator (plus a hand-written `IValidateOptions` for cross-field rules where needed) | `Api/Health/HealthEndpointsOptions.cs`, `Api/Impersonation/ImpersonationOptions.cs` | A bad setting stops startup instead of failing at runtime; one pattern for every future setting |
 | **OpenAPI and Scalar UI** | Generated OpenAPI with `ETag`, paging and precondition headers and example bodies; Scalar reference UI in Development | `Microsoft.AspNetCore.OpenApi` transformers, Scalar | `Api/OpenApi/` | The documented contract includes the conditional-request behaviour |
 
@@ -84,7 +85,6 @@ See [Hardening-Plan.md](Hardening-Plan.md) for scope, order and tests.
 | Feature | Intended mechanism | Why |
 | --- | --- | --- |
 | Separate audit stream | `IAuditLog` writing to its own Serilog JSON file | Who did what, and why, kept apart from diagnostic logs |
-| Serilog with enrichment | `Serilog.AspNetCore` with configured sinks and enrichers | Structured, searchable logs joined by `traceId` (Seq is deferred) |
 | URL-segment API versioning | `Asp.Versioning.Mvc` | `/api/v1/…` lets the contract evolve without breaking clients |
 | CORS stub | Named policy from options, exposing the headers a browser needs | Ready for a browser client |
 | Rate limiting | Built-in rate limiter, per-user partitions | Protects the API and the impersonation endpoint |
