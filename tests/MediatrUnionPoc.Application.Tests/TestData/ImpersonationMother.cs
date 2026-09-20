@@ -36,12 +36,14 @@ public static class ImpersonationMother
     /// <param name="roles">The roles held.</param>
     /// <param name="marker">Adds the <c>impersonated</c> marker claim.</param>
     /// <param name="actor">Adds an <c>act</c> claim naming this real caller.</param>
+    /// <param name="tokenId">Adds a <c>jti</c> claim, as an impersonation token carries.</param>
     /// <returns>An authenticated principal.</returns>
     public static ClaimsPrincipal Caller(
         string? id,
         string[]? roles = null,
         bool marker = false,
-        string? actor = null
+        string? actor = null,
+        string? tokenId = null
     )
     {
         List<Claim> claims = [];
@@ -59,6 +61,11 @@ public static class ImpersonationMother
         if (actor is not null)
         {
             claims.Add(new Claim(ImpersonationClaims.Actor, $$"""{"sub":"{{actor}}"}"""));
+        }
+
+        if (tokenId is not null)
+        {
+            claims.Add(new Claim(ImpersonationClaims.TokenId, tokenId));
         }
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));

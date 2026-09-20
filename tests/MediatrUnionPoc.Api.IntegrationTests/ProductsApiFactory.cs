@@ -1,4 +1,6 @@
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -30,12 +32,30 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 /// <see cref="CapturingLogEventSink"/> is registered so tests read what was logged from
 /// <see cref="LogSink"/>. The sink is shared with hosts derived through <c>WithWebHostBuilder</c>.
 /// </para>
+/// <para>
+/// Every host writes its audit stream to its own directory under the system temp path
+/// (<see cref="AuditDirectory"/>), never under the repository; <see cref="ReadAuditEvents()"/> reads it
+/// back, and the directory is removed when the factory is disposed (and, for a factory a test forgot
+/// to dispose, when the test process exits).
+/// </para>
 /// </remarks>
 /// <param name="authentication">Which scheme answers requests.</param>
 public sealed class ProductsApiFactory(
     ApiAuthentication authentication = ApiAuthentication.TestScheme
 ) : WebApplicationFactory<Program>
 {
+    private static readonly string AuditRoot = Path.Combine(
+        Path.GetTempPath(),
+        "mediatr-union-poc-audit-tests",
+        Guid.NewGuid().ToString("N")
+    );
+
+    static ProductsApiFactory() =>
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => DeleteQuietly(AuditRoot);
+
+    /// <summary>Gets the directory this host's audit files are written to (created by the first write).</summary>
+    public string AuditDirectory { get; } = Path.Combine(AuditRoot, Guid.NewGuid().ToString("N"));
+
     /// <summary>Gets everything the host (and any host derived from it) logged.</summary>
     internal CapturingLogEventSink LogSink { get; } = new();
 
@@ -45,9 +65,14 @@ public sealed class ProductsApiFactory(
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        builder.UseSetting("Audit:Directory", AuditDirectory);
         builder.UseSetting("Serilog:WriteTo:File:Args:restrictedToMinimumLevel", "Fatal");
         builder.UseSetting("Serilog:WriteTo:Console:Args:restrictedToMinimumLevel", "Fatal");
-        builder.ConfigureTestServices(services => services.AddSingleton<ILogEventSink>(LogSink));
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<ILogEventSink>(LogSink);
+            services.AddSingleton<IStartupFilter, RemoteAddressStartupFilter>();
+        });
 
         if (authentication == ApiAuthentication.TestScheme)
         {
@@ -62,5 +87,80 @@ public sealed class ProductsApiFactory(
                     )
             );
         }
+    }
+
+    /// <summary>The source address every request appears to come from (the in-memory test server has none of its own), documentation range TEST-NET-3.</summary>
+    public const string TestRemoteAddress = "203.0.113.7";
+
+    /// <summary>Reads every audit event this host wrote, oldest file first and in line order within a file.</summary>
+    /// <returns>The events as JSON objects, in the camelCase shape they were written in.</returns>
+    public IReadOnlyList<JsonObject> ReadAuditEvents() => ReadAuditEvents(AuditDirectory);
+
+    /// <summary>Reads every audit event written to <paramref name="directory"/>.</summary>
+    /// <param name="directory">The audit directory.</param>
+    /// <returns>The events as JSON objects.</returns>
+    public static IReadOnlyList<JsonObject> ReadAuditEvents(string directory) =>
+        [.. ReadAuditLines(directory).Select(line => JsonNode.Parse(line)!.AsObject())];
+
+    /// <summary>Reads the raw text of every line written to <paramref name="directory"/>'s audit files.</summary>
+    /// <param name="directory">The audit directory.</param>
+    /// <returns>The lines, exactly as stored.</returns>
+    public static IReadOnlyList<string> ReadAuditLines(string directory) =>
+        !Directory.Exists(directory)
+            ? []
+            :
+            [
+                .. Directory
+                    .EnumerateFiles(directory, "audit-*.jsonl")
+                    .Order(StringComparer.Ordinal)
+                    .SelectMany(File.ReadAllLines),
+            ];
+
+    /// <inheritdoc/>
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+
+        if (disposing)
+        {
+            DeleteQuietly(AuditDirectory);
+        }
+    }
+
+    private static void DeleteQuietly(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+            // Best-effort temp cleanup; a locked file is left for the OS temp sweep.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Same: never fail a test over cleanup.
+        }
+    }
+
+    private sealed class RemoteAddressStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
+            {
+                app.Use(
+                    (context, nextMiddleware) =>
+                    {
+                        context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(
+                            TestRemoteAddress
+                        );
+                        return nextMiddleware(context);
+                    }
+                );
+                next(app);
+            };
     }
 }

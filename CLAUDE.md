@@ -100,8 +100,8 @@ NotAuthorized, PreconditionFailed, Conflict); `DeleteProductResult` (Success, No
 NotAuthorized, PreconditionFailed). `Failure` is defined but no Products union declares it.
 
 **MediatR pipeline** (registered in `Application/DependencyInjection.cs`, in this exact order):
-`LoggingBehavior` → `AuthorizationBehavior` → `ValidationBehavior` → `TransactionBehavior` — who's
-calling is checked before whether their input is well-formed. When `CommitAsync` reports a failure,
+`LoggingBehavior` → `AuditBehavior` → `AuthorizationBehavior` → `ValidationBehavior` → `TransactionBehavior` — who's
+calling is checked before whether their input is well-formed, and the audit behavior sits outside both so a refused request is still recorded. When `CommitAsync` reports a failure,
 `TransactionBehavior` rolls back and returns `TResponse.FromCommitFailure(failure)`. Marker interfaces in
 `Application/Common/Abstractions/` control which behaviors apply to which requests:
 
@@ -131,7 +131,13 @@ calling is checked before whether their input is well-formed. When `CommitAsync`
   `ResourceAuthorizationService`), since that needs the loaded product. See README's
   "Authorization" section for how to configure it and gate a new command behind it.
 
-`LoggingBehavior` applies to every request, `ValidationBehavior` to any request whose response
+- `IAuditableRequest<TResponse>` — a request opts into the audit stream (`AuditAction`, `AuditFailurePolicy`,
+  `AuditPrincipal`, `DescribeAudit(TResponse)`); `AuditBehavior` then records one `AuditEvent` per request
+  whatever came back (outcome = the union case's runtime name, target and reason from the request's own
+  `DescribeAudit`, so a create reads its target id from its `ProductDto` case). Used by the four product
+  mutations (`BestEffort`) and `IssueImpersonationTokenCommand` (`FailClosed`). See "Audit" below.
+
+`LoggingBehavior` applies to every request, `AuditBehavior` to `IAuditableRequest` requests, `ValidationBehavior` to any request whose response
 union is `IValidatable` (all six operations), `AuthorizationBehavior` to `IRequiresAuthorization`
 requests, `TransactionBehavior` to `ITransactionalCommand` requests (Create, Update, Patch, Delete).
 
@@ -191,8 +197,8 @@ plus an `[OptionsValidator]` source-generated `IValidateOptions<T>` (DataAnnotat
 authentication bypass available in every environment. The command slice
 (`Application/Features/Impersonation/IssueToken/`) is a non-transactional `ICommand` gated by the
 `Impersonator` policy; its handler refuses chained impersonation, roles outside
-`Impersonation:AssignableRoles` and (for non-administrators) roles the caller lacks, and logs each
-attempt in one `Audit` method (never the token). Application has no JWT dependency (architecture test):
+`Impersonation:AssignableRoles` and (for non-administrators) roles the caller lacks, and the attempt is
+recorded by the audit behavior (never the token). Application has no JWT dependency (architecture test):
 it calls `IImpersonationTokenIssuer`, implemented by `JwtImpersonationTokenIssuer` in
 `Api/Impersonation/`, signing with the separate `Impersonation:SigningKey` that
 `ConfigureJwtBearerOptions` also trusts (only while `Impersonation:Enabled`). Tokens carry `act`
@@ -200,6 +206,20 @@ it calls `IImpersonationTokenIssuer`, implemented by `JwtImpersonationTokenIssue
 (`IsImpersonated()`, `GetActorId()`). `ImpersonationOptions` (`Impersonation`) is validated on start,
 including that the key differs from `Authentication:Jwt:SigningKey`; the disabled outcome is an
 `Error` coded `IMPERSONATION_DISABLED` mapped to 404.
+
+**Audit** (`Application/Common/Auditing/`, `Api/Audit/`): a separate append-only stream, never Serilog, never
+sampled or level-filtered. `IAuditLog.RecordAsync(AuditEvent, ...)` is the seam (Application);
+`FileAuditLog` (Api) writes JSON Lines to `audit-yyyyMMdd.jsonl` under `Audit:Directory` (`AuditOptions`,
+default `logs/audit`, no off switch, never auto-deleted), lock-serialized, flushed per event, throwing on IO
+failure. `AddApplication` registers `AuditBehavior` right after `LoggingBehavior` but no `IAuditLog`; the
+host registers it (`AddAudit()`, after `AddApplication()`). `FailClosed` throws `AuditWriteFailedException`
+(a 500; the token is not delivered); `BestEffort` logs Error (event ids 1100/1200) and proceeds, because
+`TransactionBehavior` is inside `AuditBehavior` and the change has already committed. `ImpersonationAuditMiddleware`
+(after `UseAuthentication`) records every request made under an impersonation token as `Impersonation.Request`
+with the token's `jti`. `IAuditRequestContext` supplies trace id and source address (Api implements it over
+`HttpContext`). Actor = the `act` subject when impersonated (`AuditIdentity`). Never put a token, secret,
+`Authorization` header or body in an event. Api integration tests get a private temp audit directory per
+`ProductsApiFactory` (`ReadAuditEvents()`); no test writes audit files under the repo.
 
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It
@@ -219,7 +239,7 @@ thread, `TraceId` and, after `UseAuthentication`, `UserId`/`IsImpersonated`/`Imp
 (`UseUserLogContext`). One request line per request (`UseApiRequestLogging`, outside the exception
 handler, health probes at Debug, a handled 500 at Warning so the exception stays a single Error).
 Hot-path messages are `[LoggerMessage]` methods with stable event ids (1000/1001 `LoggingBehavior`,
-2000/2001 `GlobalExceptionHandler`). Never log tokens, `Authorization` headers or bodies. Api
+1100 `AuditBehavior`, 1200 audit middleware, 2000/2001 `GlobalExceptionHandler`). Never log tokens, `Authorization` headers or bodies. Api
 integration tests read events from `ProductsApiFactory.LogSink` (a DI-registered `ILogEventSink`); the
 factory silences the file and console sinks by configuration.
 

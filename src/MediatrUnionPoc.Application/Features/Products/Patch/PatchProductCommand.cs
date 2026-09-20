@@ -1,7 +1,10 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common;
 using MediatrUnionPoc.Application.Common.Abstractions;
+using MediatrUnionPoc.Application.Common.Auditing;
 using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Application.Common.Results;
+using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Features.Products.Patch;
@@ -33,8 +36,30 @@ public sealed record PatchProductCommand(
     Optional<decimal?> Price,
     ClaimsPrincipal Principal,
     ProductVersion ExpectedVersion
-) : ITransactionalCommand<PatchProductResult>
+) : ITransactionalCommand<PatchProductResult>, IAuditableRequest<PatchProductResult>
 {
+    /// <inheritdoc/>
+    public string AuditAction => "Product.Patch";
+
+    /// <inheritdoc/>
+    public AuditFailurePolicy AuditFailurePolicy => AuditFailurePolicy.BestEffort;
+
+    /// <inheritdoc/>
+    public ClaimsPrincipal? AuditPrincipal => Principal;
+
+    /// <inheritdoc/>
+    public AuditDescription DescribeAudit(PatchProductResult response) =>
+        response switch
+        {
+            NotAuthorized denial => ProductAudit.Denied(Id.ToString(), denial),
+            ProductDto
+            or NotFound<ProductId>
+            or ValidationErrors
+            or Error
+            or PreconditionFailed
+            or Conflict => ProductAudit.Target(Id.ToString()),
+        };
+
     /// <summary>The caller's identity, checked by <see cref="PatchProductHandler"/> after loading the product; never <see langword="null"/>.</summary>
     public ClaimsPrincipal Principal { get; init; } =
         Principal ?? throw new ArgumentNullException(nameof(Principal));

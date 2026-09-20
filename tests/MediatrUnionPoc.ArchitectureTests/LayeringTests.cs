@@ -167,6 +167,26 @@ public class LayeringTests
         AssertNoViolations(result);
     }
 
+    /// <summary>
+    /// Verifies neither Domain nor Application references Serilog or the ASP.NET Core HTTP pipeline —
+    /// the audit stream is an <c>IAuditLog</c> abstraction in Application, and the file implementation,
+    /// the request context and the middleware live in the Api project alone.
+    /// </summary>
+    [Fact]
+    public void DomainAndApplication_DependsOnSerilogOrAspNetCoreHttp_HasNone_Test()
+    {
+        // Arrange
+        // Act
+        var result = Types
+            .InAssemblies([DomainAssembly, ApplicationAssembly])
+            .ShouldNot()
+            .HaveDependencyOnAny("Serilog", "Microsoft.AspNetCore.Http")
+            .GetResult();
+
+        // Assert
+        AssertNoViolations(result);
+    }
+
     // Names the offending types so a failure identifies the violated boundary directly.
     private static void AssertNoViolations(NetArchTest.Rules.TestResult result) =>
         Assert.True(

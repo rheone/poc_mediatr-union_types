@@ -63,6 +63,7 @@ Details below.
   - [Configuring resource-based authorization for a new command](#configuring-resource-based-authorization-for-a-new-command)
   - [Why not `IAuthorizationRequirementData` attributes](#why-not-iauthorizationrequirementdata-attributes)
 - [Impersonation: acting as another identity](#impersonation-acting-as-another-identity)
+- [Audit stream: a separate record of security-relevant actions](#audit-stream-a-separate-record-of-security-relevant-actions)
 - [Worked example: `UpdateProductCommand`, case by case](#worked-example-updateproductcommand-case-by-case)
 - [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index)
 - [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
@@ -110,7 +111,7 @@ reopen the solution so it re-resolves.
 | `MediatrUnionPoc.Domain`          | Entities, [Vogen](#vogen-avoiding-primitive-obsession) [value objects](#vogen-vocabulary) (`ProductId`, `Money`, `ProductVersion`), the listing vocabulary (`ProductCriteria`, `ProductSort`, `PagedResult`), `CommitResult`, repository/UoW interfaces |
 | `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors, authorization |
 | `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext` over SQLite, repository + unit-of-work implementations; the only place criteria and sort become a database query |
-| `MediatrUnionPoc.Api`             | The controllers that map each union to an `IActionResult`, the `Http/` extension members, JWT authentication, impersonation token signing, trace id middleware, exception handler and OpenAPI transformers |
+| `MediatrUnionPoc.Api`             | The controllers that map each union to an `IActionResult`, the `Http/` extension members, JWT authentication, impersonation token signing, the file-backed audit stream and its middleware, trace id middleware, exception handler and OpenAPI transformers |
 | `MediatrUnionPoc.Domain.Tests`    | Unit tests for the value objects, `Product`, `ProductNames`, `PagedResult` and the sort vocabulary |
 | `MediatrUnionPoc.Application.Tests` | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators, authorization |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core SQLite provider (in-memory database), end to end |
@@ -184,7 +185,7 @@ pipeline throws for an outcome it expected to see.
 - `union` response types for every command and query, with compiler-checked `switch` exhaustiveness
   at the controller and at every per-union hook (`ShouldCommit`, `FromCommitFailure`,
   `FromValidationErrors`, `FromNotAuthorized`).
-- A MediatR pipeline (logging, authorization, validation, transaction) that stays generic through
+- A MediatR pipeline (logging, audit, authorization, validation, transaction) that stays generic through
   `static abstract` interface members.
 - Optimistic concurrency with a weak `ETag` and `If-Match`, duplicate-name `Conflict`, JSON Merge
   Patch, filtered/sorted/paged listing with `X-Total-Count` and `Link` headers.
@@ -201,7 +202,9 @@ pipeline throws for an outcome it expected to see.
   There is no migration history, and the unique-violation detection reads SQLite's error message,
   so another provider needs its own check (see
   [Duplicate product names](#duplicate-product-names)).
-- **Soft delete and audit fields.** `DELETE` removes the row; the only timestamp is `CreatedAt`.
+- **Soft delete and audit columns.** `DELETE` removes the row; the only timestamp is `CreatedAt`. (Who did
+  what is recorded in the separate [audit stream](#audit-stream-a-separate-record-of-security-relevant-actions),
+  not in the product table; an audit database table is not built.)
 - **Exception tracking and a log server.** Serilog writes the console and a rolling JSON file; no
   exception-tracking service or log server (Seq) is bundled. The trace id is the join key for whichever
   you add: OpenTelemetry (exception events on spans), Sentry, or a Serilog sink added in
@@ -940,6 +943,11 @@ That's it — no DI registration step for the handler or validator; both are fou
 `services.AddMediatR(...)` and `services.AddValidatorsFromAssembly(...)` in
 [`DependencyInjection.cs`](src/MediatrUnionPoc.Application/DependencyInjection.cs).
 
+**6. (Optional) audit it.** A command that changes security-relevant state also implements
+`IAuditableRequest<TResponse>` (an action name, the caller, a failure policy and a `DescribeAudit`
+method) and `AuditBehavior` then records every outcome; see
+[Audit stream](#audit-stream-a-separate-record-of-security-relevant-actions).
+
 ## Request lifecycle
 
 ```mermaid
@@ -949,7 +957,8 @@ flowchart TD
     Parse -->|"missing (428) or malformed (400)"| Map
     Parse --> Sender["sender.Send(request)"]
     Sender --> Logging[LoggingBehavior]
-    Logging --> Auth{"IRequiresAuthorization?<br/>(DeleteProductCommand only)"}
+    Logging --> AuditIn["AuditBehavior<br/>(IAuditableRequest only)"]
+    AuditIn --> Auth{"IRequiresAuthorization?<br/>(DeleteProductCommand only)"}
     Auth -->|"policy fails"| BuildAuth["TResponse.FromNotAuthorized(...)"]
     BuildAuth --> ReturnUp[Union response]
     Auth -->|"passes, or not required"| Validation{"Validator registered and passes?"}
@@ -968,20 +977,23 @@ flowchart TD
     Outcome -->|false| Rollback[TransactionBehavior: rollback]
     Commit -->|Committed| ReturnUp
     Rollback --> ReturnUp
-    ReturnUp --> Map{Controller switches on the union}
+    ReturnUp --> AuditOut["AuditBehavior: record the event<br/>(auditable requests; outcome = case name)"]
+    AuditOut --> Map{Controller switches on the union}
     Map --> Done([HTTP response: status per The HTTP contract table])
 ```
 
 Only the last "Controller switches on the union" step is HTTP-aware — everything above it deals
 purely in domain outcomes; the status each case becomes is in
 [The HTTP contract](#the-http-contract-every-endpoint-and-outcome). The pipeline behaviors run in
-this registration order (`Application/DependencyInjection.cs`): `LoggingBehavior`,
-`AuthorizationBehavior`, `ValidationBehavior`, `TransactionBehavior`. Which of them a request meets
+this registration order (`Application/DependencyInjection.cs`): `LoggingBehavior`, `AuditBehavior`,
+`AuthorizationBehavior`, `ValidationBehavior`, `TransactionBehavior`. `AuditBehavior` sits outside
+authorization and validation on purpose, so a request they refuse is still recorded. Which of them a request meets
 is decided by its marker interfaces and its response union's interfaces:
 
 | Behavior | Applies to requests that | Needs the response union to implement |
 | --- | --- | --- |
 | `LoggingBehavior` | every request | nothing |
+| `AuditBehavior` | implement `IAuditableRequest<TResponse>` (the four product mutations and the impersonation command) | nothing beyond being a union |
 | `AuthorizationBehavior` | implement `IRequiresAuthorization` (`DeleteProductCommand`) | `IAuthorizable<TSelf>` |
 | `ValidationBehavior` | have a response union that implements `IValidatable<TSelf>` (all six operations); it does nothing when no validator is registered | `IValidatable<TSelf>` |
 | `TransactionBehavior` | implement `ITransactionalCommand<TResponse>` (Create, Update, Patch, Delete) | `ITransactionOutcome<TSelf>` and `ICommitFailable<TSelf>` |
@@ -997,7 +1009,7 @@ inside the handler (see [Authorization](#authorization)).
 ```mermaid
 sequenceDiagram
     participant C as Controller
-    participant P as Pipeline (Logging, Authorization, Validation, Transaction)
+    participant P as Pipeline (Logging, Audit, Authorization, Validation, Transaction)
     participant H as Handler
     participant U as IUnitOfWork
     participant D as Database
@@ -1160,8 +1172,10 @@ the default level. The request line sits outside the exception handler and logs 
 
 **Event ids.** The hot-path messages are source-generated `[LoggerMessage]` methods with stable ids:
 `LoggingBehavior` 1000 (`Handling {RequestName}`) and 1001 (`Handled {RequestName} -> {ResultCase}`),
-`GlobalExceptionHandler` 2000 (unhandled exception) and 2001 (client abort). The impersonation audit
-line is a plain `ILogger` call until the audit stream replaces it.
+`GlobalExceptionHandler` 2000 (unhandled exception) and 2001 (client abort), `AuditBehavior` 1100 and the
+audit middleware 1200 (an audit event that could not be written: the action and event id only, never the
+event). Security-relevant actions are not recorded here but in the separate
+[audit stream](#audit-stream-a-separate-record-of-security-relevant-actions), which no logging sink receives.
 
 **Never logged.** Tokens, `Authorization` headers, and request or response bodies. Only the three user
 properties above are read from the principal. Tests assert that no captured event contains a bearer
@@ -1474,7 +1488,8 @@ flowchart TD
     subgraph RoleBased["Role-based — pre-handler (DeleteProductCommand)"]
         direction LR
         C1["Controller"] -->|"sender.Send(request)"| L1[LoggingBehavior]
-        L1 --> A1{"AuthorizationBehavior:\nnamed policy?"}
+        L1 --> AU1["AuditBehavior<br/>(records whatever comes back)"]
+        AU1 --> A1{"AuthorizationBehavior:\nnamed policy?"}
         A1 -->|No| N1["TResponse.FromNotAuthorized(...)"]
         A1 -->|Yes| V1[ValidationBehavior] --> T1[TransactionBehavior] --> H1[Handler]
     end
@@ -1782,12 +1797,13 @@ requirement, not an extra.
 | Safeguard | What it does | Why |
 | --- | --- | --- |
 | Role gate | The `Impersonator` policy (`AdministratorRequirement("Administrator", "Support")`, answered by the existing `AdministratorAuthorizationHandler`) is checked by `AuthorizationBehavior` before validation or the handler run | Only staff who already hold an elevated role may attempt it; never anonymous |
-| Mandatory reason | `reason` is required (10 to 500 characters after trimming, no control characters) and is written into the token and the log line | An impersonation without a stated purpose cannot be reviewed afterwards |
+| Mandatory reason | `reason` is required (10 to 500 characters after trimming, no control characters) and is written into the token and the audit record | An impersonation without a stated purpose cannot be reviewed afterwards |
 | Separate signing key | Tokens are signed with `Impersonation:SigningKey`, which must differ from `Authentication:Jwt:SigningKey` (checked on start) | The two kinds of token stay distinguishable by who can sign them; leaking one key does not leak the other |
 | No chaining | A caller already using an impersonation token is refused (`403`), even one that carries `Administrator` or `Support` | A minted token cannot be used to renew or widen itself |
 | Assignable roles | A requested role must be in `Impersonation:AssignableRoles` | A role outside the list can never be granted, whoever asks |
 | No escalation | Unless the caller is an `Administrator`, every requested role must be one the caller holds | A `Support` user cannot mint an `Administrator` token |
 | Lifetime cap | The lifetime defaults to `DefaultLifetimeMinutes` and a request above `MaxLifetimeMinutes` is a `400` | The window a stolen token is useful is bounded |
+| Audited, fail closed | Every attempt (issued, refused by the handler, refused by the policy, refused by validation) is written to the [audit stream](#audit-stream-a-separate-record-of-security-relevant-actions) before the response leaves; if the record cannot be written, no token is returned (`500`) | A token is never delivered unrecorded, and every later request made with it ties back to its mint through the `jti` |
 | Off switch | `Impersonation:Enabled=false` turns the endpoint into a `404` and stops the bearer scheme accepting impersonation-key tokens | A deployment that does not want the feature has none of it |
 
 ### Requesting a token
@@ -1832,7 +1848,8 @@ It is a normal vertical slice, `Application/Features/Impersonation/IssueToken/`,
 [Configuring role-based authorization for a new command](#configuring-role-based-authorization-for-a-new-command):
 
 - `IssueImpersonationTokenCommand` is an `ICommand<IssueImpersonationTokenResult>` (not
-  transactional) and an `IRequiresAuthorization` request for the `Impersonator` policy.
+  transactional), an `IRequiresAuthorization` request for the `Impersonator` policy and an
+  `IAuditableRequest` (action `Impersonation.IssueToken`, fail closed).
 - `IssueImpersonationTokenResult` is `union(ImpersonationToken, ValidationErrors, NotAuthorized, Error)`
   implementing `IValidatable` and `IAuthorizable`. `Error` (code `IMPERSONATION_DISABLED`, mapped to
   `404`) is the handler's own refusal when the switch is off; the controller checks the switch first
@@ -1881,14 +1898,131 @@ source-generated `ImpersonationOptionsValidator`, the cross-field rules by `Impe
 
 ### Recording attempts
 
-Every attempt that reaches the handler (issued, refused, or disabled) is written through `ILogger`
-in one method, `IssueImpersonationTokenHandler.Audit`, with structured properties: actor, target,
-roles, outcome, reason, ticket and the refusal detail; `Information` when issued, `Warning`
-otherwise. The token is never logged (`ImpersonationToken.ToString()` omits it too). Attempts
-refused earlier in the pipeline (`AuthorizationBehavior`'s role check, `ValidationBehavior`) are logged
-only by those behaviors' own generic lines, without the actor's reason. A separate append-only
-audit stream behind an `IAuditLog` abstraction is planned in
-[`docs/Hardening-Plan.md`](docs/Hardening-Plan.md) and will replace that one method.
+The handler records nothing itself. The command opts into the audit stream, and `AuditBehavior`, which
+wraps the authorization and validation behaviors, writes one `Impersonation.IssueToken` event for every
+attempt: the token issued, a refusal by the handler's rules, a refusal by the `Impersonator` policy (with
+the caller as actor) and a validation failure. Each event names the real caller, the target, the roles
+granted or asked for, the reason, the ticket, the denial message, and for a mint the `jti` of the new
+token; every later request made with that token is recorded too (`Impersonation.Request`, carrying the
+same `tokenId`). The token itself is never recorded (`ImpersonationToken.ToString()` omits it too). The
+endpoint answering `404` while switched off happens before the pipeline and is not audited: no attempt
+can succeed. See [Audit stream](#audit-stream-a-separate-record-of-security-relevant-actions).
+
+## Audit stream: a separate record of security-relevant actions
+
+An audit record answers "who did what, to what, and with what result", years later, for someone who was
+not there. That is a different job from diagnostic logging, so it is a different stream: it is never
+sampled, never filtered by level, never written to the console or the operational log file, and it is
+honest about failure (below). It is deliberately simple, with no new infrastructure: JSON Lines files,
+behind an abstraction that a database table can replace later.
+
+### What is recorded
+
+| Action | Written by | Outcome |
+| --- | --- | --- |
+| `Impersonation.IssueToken` | `AuditBehavior`, for `IssueImpersonationTokenCommand` | The runtime union case: `ImpersonationToken`, `NotAuthorized`, `ValidationErrors`, `Error` |
+| `Product.Create`, `Product.Update`, `Product.Patch`, `Product.Delete` | `AuditBehavior`, for the four product mutations | The case: `ProductDto`, `Success`, `NotFound`, `ValidationErrors`, `NotAuthorized`, `PreconditionFailed`, `Conflict`, `Error` |
+| `Impersonation.Request` | `ImpersonationAuditMiddleware`, for every HTTP request made under an impersonation token | The HTTP status code |
+
+Reads (`GET`) and requests made with ordinary tokens are not audited, and health probes (anonymous) never
+appear. **Not audited:** an anonymous request or a failed authentication (a missing, expired or badly
+signed token) never reaches a principal to attribute, so the framework's `401` is only in the operational
+request log; and `POST /api/impersonation/tokens` answering `404` because impersonation is switched off
+happens before the pipeline.
+
+### The event
+
+One JSON object per line, camelCase, `null` members omitted (`AuditEvent`, serialized by `AuditEventJson`):
+
+| Member | Meaning |
+| --- | --- |
+| `id`, `timestamp` | A GUID, and the UTC time from the injectable `TimeProvider` |
+| `action`, `outcome` | The stable dotted action name; the union case name (or the status code for `Impersonation.Request`; `Exception` when the rest of the pipeline threw) |
+| `actorId` | The **real** caller: the `act` subject when the principal is impersonated, else its own id |
+| `effectiveId`, `isImpersonated` | The identity the request ran as, and whether it ran under an impersonation token |
+| `tokenId` | The `jti` of an impersonation token, both when it is minted and on every request made with it |
+| `targetType`, `targetId` | What the action was aimed at (`User`/`Product` and its id) |
+| `reason`, `ticket` | The impersonation reason and ticket reference |
+| `traceId` | The same value as the response's `X-Trace-Id`, joining the record to the operational log |
+| `sourceIp` | The connection's remote address (behind a reverse proxy, the proxy's unless forwarded headers are enabled) |
+| `details` | Small string facts: `roles` granted or asked for, `denial`, `validation`, `errorCode`, and for a request event `method` and `path` (never the query string) |
+
+A token string, a secret, an `Authorization` header or a request body is never part of an event, and
+free text is cut to 512 characters (input is audited before it is validated). JSON escapes line breaks
+and quotes, so a `reason` containing a newline and a pasted fake record stays one line; a test proves it.
+
+```json
+{"id":"2a0f...","timestamp":"2026-03-02T14:05:00+00:00","action":"Impersonation.IssueToken","outcome":"ImpersonationToken","actorId":"sam","effectiveId":"sam","isImpersonated":false,"tokenId":"9c1e...","targetType":"User","targetId":"alice","reason":"Reproducing the checkout error alice reported","ticket":"SUP-1234","traceId":"4bf92f35...","sourceIp":"203.0.113.7","details":{"roles":"Support"}}
+```
+
+### How it works
+
+- **`IAuditLog`** (`Application/Common/Auditing/`) is the seam: `Task RecordAsync(AuditEvent, CancellationToken)`.
+  Implementations must throw when they cannot store the event. **`FileAuditLog`** (`Api/Audit/`) is the
+  implementation: `audit-yyyyMMdd.jsonl`, one file per UTC day chosen by the event's timestamp, appended
+  under a lock so concurrent requests never interleave, written through to disk before the call returns.
+  (A Serilog sink was not used: sinks swallow write failures, which defeats fail-closed auditing.)
+- **`IAuditableRequest<TResponse>`** (`Application/Common/Abstractions/`) is the opt-in marker: an
+  `AuditAction`, an `AuditFailurePolicy`, the `AuditPrincipal` to attribute, and
+  `DescribeAudit(TResponse)`. **`AuditBehavior`** asks the request to describe itself and the response it
+  got and adds who, when, the outcome name, the trace id and the source address (from
+  `IAuditRequestContext`, which the Api implements over `HttpContext`, so Application stays free of
+  ASP.NET).
+- **The request describes its own response.** A create has no id until it succeeds, so
+  `CreateProductCommand.DescribeAudit` reads the id from the `ProductDto` case of its own union. Case
+  types stay meaning-free: the behavior never interprets a case, it only reads its runtime name for the
+  outcome and lets the request, which owns its union, say what the case means for the target.
+- **Order.** `AuditBehavior` is registered right after `LoggingBehavior`, so it wraps `AuthorizationBehavior`
+  and `ValidationBehavior` and sees their short-circuit outcomes; `TransactionBehavior` is inside it, so a
+  product event is written after the commit and reports its real result (a `Conflict` or a
+  `PreconditionFailed` is recorded as such).
+- **Impersonated requests.** `ImpersonationAuditMiddleware` sits after `UseAuthentication` and before
+  `UseAuthorization`, so a `403` an impersonated caller receives is recorded too. A request that ends in an
+  unhandled exception is recorded as `500`.
+
+### Failure policy
+
+| Policy | Used by | If the event cannot be written |
+| --- | --- | --- |
+| `FailClosed` | `Impersonation.IssueToken` | The failure is logged at Error (event id 1100) and an `AuditWriteFailedException` is thrown: the client gets the ordinary `500` problem, and the token the handler had signed is discarded, never delivered. An audit fault is an infrastructure fault, not an expected outcome, so it is an exception like a database outage rather than a union case |
+| `BestEffort` | The product mutations and `Impersonation.Request` | The failure is logged at Error (1100 or 1200, the action and event id only) and the response proceeds |
+
+The product mutations are best effort because `TransactionBehavior` sits inside `AuditBehavior`: by the time
+the event is written the change has already committed, and failing the request would tell the client that
+nothing happened when something did. An operator must therefore watch for those Error events; an unwritable
+audit directory is a fault to alert on. The write ignores the request's cancellation token so a client that
+disconnects cannot cost a committed action its record.
+
+### Files, retention and configuration
+
+`Audit` section, `AuditOptions`, validated on start: `Directory` (default `logs/audit`, resolved against the
+content root; created on the first write). There is deliberately no `Enabled` switch: auditing cannot be
+turned off. **The application never deletes, rotates or rewrites an audit file**; retention, archiving and
+backup are an operational decision (unlike the operational log, which keeps 14 files). Keep the directory
+apart from the operational logs, restrict who can read and write it, and ship it to storage the application
+cannot alter if tamper-resistance matters; a file the process can write is a file an intruder with the
+process's rights can edit.
+
+### Audit versus logging
+
+| | Operational log | Audit stream |
+| --- | --- | --- |
+| Question | What is the system doing? | Who did what to what? |
+| Level and sampling | Filtered by configured levels | Every event, always |
+| Sinks | Console and rolling file through Serilog, configurable | One writer behind `IAuditLog`, not configurable off |
+| Write failure | Sinks swallow it | Fail closed, or logged at Error for best-effort actions |
+| Content | Diagnostics; never tokens or bodies | Actor, target, outcome, reason; never tokens, secrets or bodies |
+| Retention | Rolling, 14 files | Never deleted by the app |
+
+The two are joined only by `traceId`; a test asserts that no audit content reaches the operational log
+capture and that the audit files hold none of the operational fields.
+
+### Replacing the file with a table
+
+`IAuditLog` is the only thing the pipeline knows. A database implementation (an `AuditEvents` table with the
+same members as columns, `details` as JSON, insert-only permissions for the application's database user)
+replaces `FileAuditLog` in `AddAudit` and changes no caller. It would also make the trail queryable and give
+tamper-resistance the files cannot. It is not built.
 
 ## Worked example: `UpdateProductCommand`, case by case
 
@@ -2110,9 +2244,9 @@ has its own README.
 | Project | What it covers | Persistence |
 | --- | --- | --- |
 | `MediatrUnionPoc.Domain.Tests` | `Money`, `ProductId`, `ProductVersion`, `Product`, `ProductNames`, `PagedResult`, `ProductSort`; no other project referenced | none |
-| `MediatrUnionPoc.Application.Tests` | Union mechanics, the pipeline behaviors and their registration order, every handler, validators, authorization | `IProductRepository` and `IUnitOfWork` substituted with NSubstitute |
+| `MediatrUnionPoc.Application.Tests` | Union mechanics, the pipeline behaviors and their registration order, every handler, validators, authorization, the audit behavior and event format | `IProductRepository` and `IUnitOfWork` substituted with NSubstitute |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | `EfCoreUnitOfWork` (commit, rollback, concurrency and unique-violation translation), `ProductRepository` including listing, converters, the EF model | real SQLite, an in-memory database on one kept-open connection per test |
-| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), impersonation (roles, escalation, chaining, keys, expiry, off switch, no token in logs), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
+| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), impersonation (roles, escalation, chaining, keys, expiry, off switch, no token in logs), the audit stream (files, events, fail-closed and best-effort), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
 | `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions on the compiled assemblies (layering, only Infrastructure sees EF Core, only Api sees MVC) | none |
 
 There is no EF Core InMemory provider anywhere: runtime and tests both use SQLite, so transactions,

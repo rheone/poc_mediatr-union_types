@@ -1,5 +1,8 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Abstractions;
+using MediatrUnionPoc.Application.Common.Auditing;
+using MediatrUnionPoc.Application.Common.Results;
+using MediatrUnionPoc.Application.Features.Products.Common;
 
 namespace MediatrUnionPoc.Application.Features.Products.Create;
 
@@ -25,4 +28,23 @@ public sealed record CreateProductCommand(
     string Name,
     decimal Price,
     ClaimsPrincipal? Principal = null
-) : ITransactionalCommand<CreateProductResult>;
+) : ITransactionalCommand<CreateProductResult>, IAuditableRequest<CreateProductResult>
+{
+    /// <inheritdoc/>
+    public string AuditAction => "Product.Create";
+
+    /// <inheritdoc/>
+    public AuditFailurePolicy AuditFailurePolicy => AuditFailurePolicy.BestEffort;
+
+    /// <inheritdoc/>
+    public ClaimsPrincipal? AuditPrincipal => Principal;
+
+    /// <inheritdoc/>
+    /// <remarks>The target is the id of the product the successful response carries; every other case created nothing, so it has none.</remarks>
+    public AuditDescription DescribeAudit(CreateProductResult response) =>
+        response switch
+        {
+            ProductDto product => ProductAudit.Target(product.Id.Value.ToString()),
+            ValidationErrors or Error or Conflict => ProductAudit.Target(null),
+        };
+}

@@ -12,6 +12,8 @@ happen to still look correct. `LayeringTests.cs` currently checks:
 - Domain does not reference MediatR.
 - Neither Domain nor Application references a JWT or identity-token library (`Microsoft.IdentityModel`,
   `System.IdentityModel.Tokens`): impersonation tokens are signed in Api behind an Application abstraction.
+- Neither Domain nor Application references Serilog or the ASP.NET Core HTTP pipeline (`Microsoft.AspNetCore.Http`):
+  the audit stream is an Application abstraction with its implementation and middleware in Api.
 - Only Api references ASP.NET Core MVC (`Microsoft.AspNetCore.Mvc`) — union-to-HTTP translation stays in the controller.
 
 ## Dependencies

@@ -1,3 +1,4 @@
+using MediatrUnionPoc.Api.Audit;
 using MediatrUnionPoc.Api.Authentication;
 using MediatrUnionPoc.Api.Health;
 using MediatrUnionPoc.Api.Http;
@@ -42,6 +43,7 @@ builder.Services.AddInfrastructure();
 builder.Services.AddHealthEndpoints();
 builder.Services.AddJwtAuthentication();
 builder.Services.AddImpersonation();
+builder.Services.AddAudit();
 
 var app = builder.Build();
 
@@ -69,6 +71,10 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 
 app.UseUserLogContext();
+
+// After authentication (it reads the principal) and before authorization, so a 403 an
+// impersonated caller receives is recorded too.
+app.UseImpersonationAudit();
 
 app.UseAuthorization();
 

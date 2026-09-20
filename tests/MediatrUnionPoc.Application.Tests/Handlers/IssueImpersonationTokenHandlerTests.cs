@@ -2,8 +2,6 @@ using System.Runtime.CompilerServices;
 using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Impersonation.IssueToken;
-using MediatrUnionPoc.Application.Tests.TestData;
-using Microsoft.Extensions.Logging;
 using NSubstitute;
 using static MediatrUnionPoc.Application.Tests.TestData.ImpersonationMother;
 
@@ -12,7 +10,7 @@ namespace MediatrUnionPoc.Application.Tests.Handlers;
 /// <summary>
 /// Tests <see cref="IssueImpersonationTokenHandler"/> against a substituted
 /// <see cref="IImpersonationTokenIssuer"/>: every outcome, the role-escalation rules, chained
-/// impersonation, and the audit line that is written for each attempt and never carries the token.
+/// impersonation. Recording each attempt is the audit behavior's job, tested with it.
 /// </summary>
 public sealed class IssueImpersonationTokenHandlerTests
 {
@@ -20,8 +18,6 @@ public sealed class IssueImpersonationTokenHandlerTests
 
     private readonly IImpersonationTokenIssuer _issuer =
         Substitute.For<IImpersonationTokenIssuer>();
-
-    private readonly CapturingLogger<IssueImpersonationTokenHandler> _logger = new();
 
     /// <summary>Wires the issuer substitute to echo the grant it is given back as a token.</summary>
     public IssueImpersonationTokenHandlerTests() =>
@@ -223,65 +219,25 @@ public sealed class IssueImpersonationTokenHandlerTests
         _issuer.DidNotReceive().Issue(Arg.Any<ImpersonationGrant>());
     }
 
-    /// <summary>Verifies an issued token is audited at Information and a refusal at Warning, each with the actor, target, roles and reason, and neither ever contains the token.</summary>
-    /// <returns>A task representing the asynchronous test.</returns>
-    [Fact]
-    public async Task Handle_IssuedAndRefused_AreAuditedWithoutTheToken_Test()
-    {
-        // Arrange
-        var sut = Sut();
-
-        // Act
-        await sut.Handle(Command(roles: ["Support"], ticket: "SUP-3"), CancellationToken.None);
-        await sut.Handle(Command(roles: ["SuperUser"]), CancellationToken.None);
-
-        // Assert
-        var issued = _logger.Entries[0];
-        var refused = _logger.Entries[1];
-        Assert.Multiple(
-            () => Assert.Equal(2, _logger.Entries.Count),
-            () => Assert.Equal(LogLevel.Information, issued.Level),
-            () => Assert.Equal("Issued", issued.Properties["Outcome"]),
-            () => Assert.Equal(AdminId, issued.Properties["ActorId"]),
-            () => Assert.Equal(TargetId, issued.Properties["TargetUserId"]),
-            () => Assert.Equal("Support", issued.Properties["Roles"]),
-            () => Assert.Equal(ValidReason, issued.Properties["Reason"]),
-            () => Assert.Equal("SUP-3", issued.Properties["Ticket"]),
-            () => Assert.Equal(LogLevel.Warning, refused.Level),
-            () => Assert.Equal("Denied", refused.Properties["Outcome"]),
-            () =>
-                Assert.DoesNotContain(
-                    _logger.Entries,
-                    entry =>
-                        entry.Message.Contains(Secret, StringComparison.Ordinal)
-                        || entry.Properties.Values.Any(value => Equals(value, Secret))
-                )
-        );
-    }
-
     /// <summary>Verifies the constructor rejects null dependencies.</summary>
     [Fact]
     public void Ctor_NullDependencies_ThrowArgumentNullException_Test()
     {
         // Act
         var issuer = Assert.Throws<ArgumentNullException>(() =>
-            new IssueImpersonationTokenHandler(null!, Settings(), _logger)
+            new IssueImpersonationTokenHandler(null!, Settings())
         );
         var settings = Assert.Throws<ArgumentNullException>(() =>
-            new IssueImpersonationTokenHandler(_issuer, null!, _logger)
-        );
-        var logger = Assert.Throws<ArgumentNullException>(() =>
-            new IssueImpersonationTokenHandler(_issuer, Settings(), null!)
+            new IssueImpersonationTokenHandler(_issuer, null!)
         );
 
         // Assert
         Assert.Multiple(
             () => Assert.Equal("issuer", issuer.ParamName),
-            () => Assert.Equal("settings", settings.ParamName),
-            () => Assert.Equal("logger", logger.ParamName)
+            () => Assert.Equal("settings", settings.ParamName)
         );
     }
 
     private IssueImpersonationTokenHandler Sut(bool enabled = true, string[]? assignable = null) =>
-        new(_issuer, Settings(enabled, assignable ?? []), _logger);
+        new(_issuer, Settings(enabled, assignable ?? []));
 }

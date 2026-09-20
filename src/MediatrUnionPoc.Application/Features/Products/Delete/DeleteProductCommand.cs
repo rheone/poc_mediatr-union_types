@@ -1,6 +1,9 @@
 using System.Security.Claims;
 using MediatrUnionPoc.Application.Common.Abstractions;
+using MediatrUnionPoc.Application.Common.Auditing;
 using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Application.Common.Results;
+using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Features.Products.Delete;
@@ -26,8 +29,30 @@ public sealed record DeleteProductCommand(
     Guid Id,
     ClaimsPrincipal Principal,
     ProductVersion? ExpectedVersion = null
-) : ITransactionalCommand<DeleteProductResult>, IRequiresAuthorization
+)
+    : ITransactionalCommand<DeleteProductResult>,
+        IRequiresAuthorization,
+        IAuditableRequest<DeleteProductResult>
 {
+    /// <inheritdoc/>
+    public string AuditAction => "Product.Delete";
+
+    /// <inheritdoc/>
+    public AuditFailurePolicy AuditFailurePolicy => AuditFailurePolicy.BestEffort;
+
+    /// <inheritdoc/>
+    ClaimsPrincipal? IAuditableRequest<DeleteProductResult>.AuditPrincipal => Principal;
+
+    /// <inheritdoc/>
+    public AuditDescription DescribeAudit(DeleteProductResult response) =>
+        response switch
+        {
+            NotAuthorized denial => ProductAudit.Denied(Id.ToString(), denial),
+            Success or NotFound<ProductId> or Error or PreconditionFailed => ProductAudit.Target(
+                Id.ToString()
+            ),
+        };
+
     /// <summary>The caller's identity, checked against <see cref="PolicyName"/> before the handler runs; never <see langword="null"/>.</summary>
     public ClaimsPrincipal Principal { get; init; } =
         Principal ?? throw new ArgumentNullException(nameof(Principal));

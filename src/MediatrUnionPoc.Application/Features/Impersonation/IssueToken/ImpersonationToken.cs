@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace MediatrUnionPoc.Application.Features.Impersonation.IssueToken;
 
@@ -22,6 +23,14 @@ public sealed record ImpersonationToken(
     string ActorId
 )
 {
+    /// <summary>
+    /// Gets the token's unique id (its <c>jti</c>), so the audit trail can tie every request made
+    /// with the token back to the record of its issue. Not part of the response body and never the
+    /// token itself.
+    /// </summary>
+    [JsonIgnore]
+    public string? TokenId { get; init; }
+
     /// <summary>The scheme to present <see cref="Token"/> under; always <c>Bearer</c>.</summary>
     public string TokenType { get; init; } = "Bearer";
 

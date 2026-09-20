@@ -6,7 +6,6 @@ using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Serilog.Events;
 using static MediatrUnionPoc.Api.IntegrationTests.TestData.ImpersonationTestSupport;
 
 namespace MediatrUnionPoc.Api.IntegrationTests;
@@ -345,10 +344,10 @@ public sealed class ImpersonationEndpointTests : IDisposable
         );
     }
 
-    /// <summary>Verifies an issued token is logged as an Information audit line (actor, target, roles, reason) that never contains the token, and a refusal is logged as a Warning.</summary>
+    /// <summary>Verifies the operational log never contains the token, the reason or the ticket of a mint: those belong to the audit stream only.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Post_IssuedAndDenied_AreLoggedWithoutTheToken_Test()
+    public async Task Post_IssuedAndDenied_OperationalLogHasNeitherTheTokenNorTheAuditContent_Test()
     {
         // Arrange
         using var support = ClientWithToken(
@@ -363,22 +362,21 @@ public sealed class ImpersonationEndpointTests : IDisposable
         using var listing = await withToken.GetAsync("/api/products", CancellationToken.None);
 
         // Assert
-        var events = _factory.LogSink.Events;
-        var everything = events.Select(entry => entry.RenderEverything()).ToList();
-        var issued = Assert.Single(events, entry => (string?)entry.Scalar("Outcome") == "Issued");
-        var refused = Assert.Single(events, entry => (string?)entry.Scalar("Outcome") == "Denied");
+        var everything = _factory.LogSink.Events.Select(entry => entry.RenderEverything()).ToList();
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, listing.StatusCode),
-            () => Assert.Equal(LogEventLevel.Information, issued.Level),
-            () => Assert.Equal(SupportId, issued.Scalar("ActorId")),
-            () => Assert.Equal(UserId, issued.Scalar("TargetUserId")),
-            () => Assert.Equal(ValidReason, issued.Scalar("Reason")),
-            () => Assert.Equal("SUP-9", issued.Scalar("Ticket")),
-            () => Assert.Equal(LogEventLevel.Warning, refused.Level),
+            () => Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode),
             () =>
                 Assert.DoesNotContain(
                     everything,
                     line => line.Contains(token, StringComparison.Ordinal)
+                ),
+            () =>
+                Assert.DoesNotContain(
+                    everything,
+                    line =>
+                        line.Contains(ValidReason, StringComparison.Ordinal)
+                        || line.Contains("SUP-9", StringComparison.Ordinal)
                 )
         );
     }

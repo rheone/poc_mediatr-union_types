@@ -131,6 +131,27 @@ assignable roles, no escalation, mandatory reason) live in the Application layer
 See the repo root README's [Impersonation](../../README.md#impersonation-acting-as-another-identity)
 for the rules, the claims, the options table and the operational warning.
 
+## Audit (`Audit/`)
+
+- `AddAudit()` (called from `Program.cs`, after `AddApplication()`) registers `AuditOptions` (`Audit`:
+  `Directory`, default `logs/audit` resolved against the content root; validated on start by the
+  source-generated `AuditOptionsValidator`; there is no `Enabled` switch), the file-backed `IAuditLog`
+  (`FileAuditLog`) and `HttpAuditRequestContext`, which gives the Application layer's `AuditBehavior`
+  the request's trace id (`HttpContext.TraceId`) and remote address without Application referencing ASP.NET.
+- `FileAuditLog` writes JSON Lines (`AuditEventJson`, one event per line, UTF-8, LF) to
+  `audit-yyyyMMdd.jsonl`, one file per UTC day chosen by the event's timestamp, appended under a lock
+  and written through to disk. It throws on an IO failure (a Serilog sink would swallow it) so the
+  `AuditFailurePolicy` of the request decides what a lost record means. It never deletes a file.
+- `UseImpersonationAudit()` (after `UseAuthentication` and `UseUserLogContext`, before
+  `UseAuthorization`) adds `ImpersonationAuditMiddleware`: one `Impersonation.Request` event per request
+  made under an impersonation token (method, path without the query string, status, `jti`, actor,
+  effective id, reason, trace id, source address). Best effort; ordinary requests are not audited.
+- Audit events never pass through Serilog. The `AuditBehavior` and middleware log only "the audit
+  event could not be written" (event ids 1100 and 1200) through `ILogger`.
+
+See the repo root README's [Audit stream](../../README.md#audit-stream-a-separate-record-of-security-relevant-actions)
+for the event shape, what is and is not audited, the failure policies and retention.
+
 ## Logging (`Logging/`)
 
 - `UseApiLogging()` (called first in `Program.cs`) makes Serilog the implementation behind `ILogger`

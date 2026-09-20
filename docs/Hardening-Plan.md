@@ -89,9 +89,8 @@ An endpoint, `POST /api/impersonation/tokens` (unversioned until step 6), that m
 `ImpersonationToken | ValidationErrors | NotAuthorized | Error`, policy `Impersonator` = Administrator or
 Support). Signing is behind `IImpersonationTokenIssuer`, implemented in Api, so Application references no JWT
 library. The handler refuses chained impersonation, roles outside `Impersonation:AssignableRoles`, and (for a
-non-administrator) roles the caller does not hold. Every attempt that reaches the handler is logged through
-`ILogger` in one method (`Audit`) so step 5 can replace it with `IAuditLog`; attempts refused earlier in the
-pipeline (the policy check, validation) are not yet audited, and step 5 must cover them. The README's
+non-administrator) roles the caller does not hold. Step 5 records every attempt, including those refused earlier in the
+pipeline (the policy check, validation), through the audit stream. The README's
 "Impersonation" section is the reference.
 
 **Tests:** minting requires the role; reason is mandatory; token carries `act` and the marker; a
@@ -132,6 +131,8 @@ the listed packages (explicit reference for the JSON formatters).
 
 ## Step 5: Audit stream
 
+Status: implemented.
+
 A separate, append-only record of security-relevant actions. Not diagnostic logging: it must not be
 sampled, level-filtered or mixed into the operational log.
 
@@ -149,6 +150,31 @@ sampled, level-filtered or mixed into the operational log.
 
 **Tests:** events are written for mint success and denial; reason is present; audit events do not
 appear in the operational log capture; mutations record the actor.
+
+**As built.** One deliberate deviation from the plan text above: there is **no Serilog sub-logger**.
+Serilog sinks swallow write failures, which defeats fail-closed auditing, so the stream is a small
+dedicated writer instead. `IAuditLog.RecordAsync(AuditEvent, CancellationToken)` is in Application;
+`FileAuditLog` in Api appends JSON Lines to `audit-yyyyMMdd.jsonl` (one file per UTC day, chosen by
+the event's `TimeProvider` timestamp), under a lock, written through to disk, and throws on IO
+failure. `AuditOptions` (`Audit:Directory`, default `logs/audit`) has no `Enabled` switch; the
+application never deletes an audit file (retention is an operational decision). The events reach it
+through a generic `AuditBehavior<TRequest,TResponse>`, registered right after `LoggingBehavior` so it
+wraps authorization and validation and also records the attempts those refuse (the gap step 3
+noted). Requests opt in with `IAuditableRequest<TResponse>`; the impersonation command and the four
+product mutations do. A create learns its target by the request describing its own response
+(`DescribeAudit(TResponse)` reads the id from the `ProductDto` case), so case types stay meaning-free.
+`ImpersonationAuditMiddleware` (after authentication, before authorization) writes an
+`Impersonation.Request` event for each request made under an impersonation token; the token's `jti` is
+on both the mint event and every request event. Anonymous and failed-authentication requests are not
+audited (no principal to attribute); they stay in the operational request log.
+
+**Failure policy.** The impersonation mint is `FailClosed`: the failure is logged at Error and an
+`AuditWriteFailedException` is thrown, which `GlobalExceptionHandler` answers with a `500`; the token
+is never delivered. An unwritable audit store is an infrastructure fault, so it is an exception like a
+database outage, not a union case. The product mutations and the request events are `BestEffort`:
+`TransactionBehavior` sits inside `AuditBehavior`, so the change has already committed when the event is
+written; the failure is logged at Error and the response proceeds. The README's "Audit stream" section
+is the reference.
 
 ## Step 6: API versioning and CORS
 

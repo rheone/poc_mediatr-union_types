@@ -49,6 +49,7 @@ public sealed class JwtImpersonationTokenIssuer(
         var issuedAt = DateTimeOffset.FromUnixTimeSeconds(_clock.GetUtcNow().ToUnixTimeSeconds());
         var expiresAt = issuedAt + grant.Lifetime;
 
+        var tokenId = Guid.NewGuid().ToString("N");
         var claims = new Dictionary<string, object>
         {
             ["sub"] = grant.TargetUserId,
@@ -58,7 +59,7 @@ public sealed class JwtImpersonationTokenIssuer(
             },
             [ImpersonationClaims.Impersonated] = true,
             [ImpersonationClaims.Reason] = grant.Reason,
-            ["jti"] = Guid.NewGuid().ToString("N"),
+            [ImpersonationClaims.TokenId] = tokenId,
         };
 
         if (grant.Roles.Count > 0)
@@ -90,7 +91,10 @@ public sealed class JwtImpersonationTokenIssuer(
             grant.TargetUserId,
             grant.Roles,
             grant.ActorId
-        );
+        )
+        {
+            TokenId = tokenId,
+        };
     }
 
     // Built on first use: a host with impersonation switched off has no key and never gets here.

@@ -35,6 +35,9 @@ public static class ImpersonationClaims
     /// <summary>The claim (<c>imp_ticket</c>) carrying the optional ticket reference the token was issued under.</summary>
     public const string Ticket = "imp_ticket";
 
+    /// <summary>The registered <c>jti</c> claim: the unique id of the token, recorded by the audit trail when the token is minted and on every request made with it.</summary>
+    public const string TokenId = "jti";
+
     private const string ActorSubjectMember = "sub";
 
     extension(ClaimsPrincipal principal)
@@ -54,6 +57,17 @@ public static class ImpersonationClaims
                     claim.Type == Impersonated
                     && string.Equals(claim.Value, "true", StringComparison.OrdinalIgnoreCase)
                 ) || principal.HasClaim(claim => claim.Type == Actor);
+        }
+
+        /// <summary>Gets the <see cref="TokenId"/> (<c>jti</c>) of the token the caller presented.</summary>
+        /// <returns>The token id, or <see langword="null"/> when the principal has none.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="principal"/> is <see langword="null"/>.</exception>
+        public string? GetTokenId()
+        {
+            ArgumentNullException.ThrowIfNull(principal);
+
+            var value = principal.FindFirst(TokenId)?.Value;
+            return string.IsNullOrEmpty(value) ? null : value;
         }
 
         /// <summary>Gets the id of the real caller behind an impersonation token: the <c>sub</c> member of its <see cref="Actor"/> claim.</summary>

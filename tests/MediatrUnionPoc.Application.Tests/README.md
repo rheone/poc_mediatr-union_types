@@ -7,12 +7,21 @@ Unit tests for `MediatrUnionPoc.Application`, organized by what's under test:
   `ResultShouldCommitTests`, ...), JSON serialization of unions, and `ExhaustivenessTests.cs` (shells
   out to the real `dotnet build` against the scratch projects under `tests/CompileTimeChecks/` — see
   that folder's `README.md`).
-- `Behaviors/` — the MediatR pipeline behaviors (`LoggingBehavior`, `AuthorizationBehavior`,
+- `Auditing/` — `AuditEventJson` (camelCase, one line, nulls omitted, a reason with newlines and quotes
+  cannot forge a second record), `AuditIdentity` (actor is the `act` subject when impersonated) and the
+  free-text bound.
+- `Behaviors/` — the MediatR pipeline behaviors (`LoggingBehavior`, `AuditBehavior`, `AuthorizationBehavior`,
   `ValidationBehavior`, `TransactionBehavior`, including `TransactionBehaviorCommitFailureTests` for a
   refused commit), and `PipelineRegistrationTests.cs`, which resolves the real, DI-built pipeline to
-  prove the registration order (Logging → Authorization → Validation → Transaction, with Authorization
-  only for `IRequiresAuthorization` requests), and that a plain `ICommand<TResponse>` never picks up
+  prove the registration order (Logging → Audit → Authorization → Validation → Transaction, with Audit only
+  for `IAuditableRequest` requests and Authorization only for `IRequiresAuthorization` requests), and that a plain `ICommand<TResponse>` never picks up
   `TransactionBehavior`. `LoggingBehaviorTests.cs`
+  `AuditBehaviorTests.cs` covers the outcome named per case, actor and effective identity (plain and
+  impersonated), the target learned from a create's response, fail-closed versus best-effort with a
+  throwing `RecordingAuditLog`, an exception from the pipeline, and that the token never reaches the
+  event; `AuditPipelineTests.cs` sends the impersonation command through the real DI pipeline to prove a
+  policy refusal and a validation failure, which never reach the handler, are still audited.
+  `LoggingBehaviorTests.cs`
   proves the behavior is purely observational: it always calls `next` exactly once, returns its
   result unchanged, and propagates rather than swallows an exception `next` throws.
 - `Authorization/` — the requirement/handler pairs, `ResourceAuthorizationService`, the
@@ -21,7 +30,7 @@ Unit tests for `MediatrUnionPoc.Application`, organized by what's under test:
   malformed actor claims).
 - `Handlers/` — every command/query handler (`Create`, `Update`, `Patch`, `Delete`, `GetById`,
   `GetPaged`, plus `IssueImpersonationTokenHandler`: every outcome, role escalation, chained
-  impersonation and the audit log line, against a substituted `IImpersonationTokenIssuer`), with
+  impersonation, against a substituted `IImpersonationTokenIssuer`; recording is the audit behavior's job), with
   `IProductRepository` substituted via NSubstitute rather than hitting
   `MediatrUnionPoc.Infrastructure`'s real EF Core provider. (The tests that *do* exercise the real
   EF Core SQLite provider — `EfCoreUnitOfWorkTests` and `ProductRepositoryTests` — live in

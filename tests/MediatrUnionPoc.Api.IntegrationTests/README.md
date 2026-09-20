@@ -24,13 +24,20 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   `TestData/ImpersonationTestSupport.cs`), all on the real JWT scheme — `POST /api/impersonation/tokens`:
   `401` anonymous, `403` for a plain user, Support can mint a plain or `Support` token but not an
   `Administrator` one, an administrator can, mandatory reason and lifetime cap as per-field `400`s, the
-  `404` off switch (and `401` still for anonymous), `Cache-Control: no-store`, the audit log line with
-  no token in any log, and the OpenAPI declaration. The token tests validate a minted token with the
+  `404` off switch (and `401` still for anonymous), `Cache-Control: no-store`, no token or audit content in any log, and the OpenAPI declaration. The token tests validate a minted token with the
   host's own bearer handler and read `act`, the marker and the reason back on the principal, use it
   against protected endpoints (it owns what it creates, its roles apply), check the two accepted signing
   keys against a random one, expiry (crafted and minted on a past clock), chained impersonation, and that
   switching impersonation off stops the impersonation key being trusted. The options tests cover
   start-up validation (key required outside Development while enabled, not the ordinary key, lifetimes).
+- `AuditStreamTests.cs`, `FileAuditLogTests.cs`, `AuditOptionsTests.cs` — the audit stream over real HTTP
+  with real JWTs: a mint is audited (actor, effective id, roles, reason, ticket, `tokenId` equal to the
+  token's `jti`, trace id, source address), refusals by the handler, by the `Impersonator` policy and by
+  validation are audited, every request under a minted token is an `Impersonation.Request` event with the
+  same `tokenId` (ordinary reads and health probes are not), the four product mutations carry actor and
+  target, audit and operational content never mix, an unwritable audit directory fails a mint closed (no
+  token anywhere in the response) and lets a create through with an Error logged; the writer against a
+  temp directory (append, daily roll, concurrent writers, a forged line, IO failure); and the options.
 - `ProductsControllerTests.cs` — exercises the union-to-HTTP-status mapping each controller
   action's `switch` performs, end to end through routing and the real MediatR pipeline behaviors.
   A fresh `ProductsApiFactory` per test gives each test its own isolated database.
@@ -57,6 +64,12 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   unexpected exception, Development-only `detail`, exactly one `Error` log entry carrying the trace
   id (the request line for the 500 is a `Warning`), and client aborts (using `ThrowingSender` and
   `BlockingSender`).
+
+**Audit files.** Every `ProductsApiFactory` host writes its audit stream to its own directory under the
+system temp path (`factory.AuditDirectory`, set through `Audit:Directory`), never under the repository;
+`factory.ReadAuditEvents()` reads the events back, and the directory is removed on dispose (and at process
+exit as a backstop). The factory also gives every request a fixed remote address, since the in-memory
+server has none. A test makes the audit path unwritable by pointing `Audit:Directory` at an existing file.
 
 **Capturing logs.** `ProductsApiFactory` runs the real Serilog setup and registers a
 `CapturingLogEventSink` (`factory.LogSink.Events`, shared with derived hosts), which sees every
