@@ -5,6 +5,35 @@
     <File Path="Directory.Packages.props" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/index.md" />
+    <File Path="docs/scope.md" />
+    <File Path="docs/union-type.md" />
+    <File Path="docs/case-types.md" />
+    <File Path="docs/no-exceptions.md" />
+    <File Path="docs/request-lifecycle.md" />
+    <File Path="docs/transactions.md" />
+    <File Path="docs/value-objects.md" />
+    <File Path="docs/adding-a-command.md" />
+    <File Path="docs/worked-example-update.md" />
+    <File Path="docs/extending-search-index.md" />
+    <File Path="docs/speculative-case-types.md" />
+    <File Path="docs/testing.md" />
+    <File Path="docs/http-contract.md" />
+    <File Path="docs/concurrency.md" />
+    <File Path="docs/patch.md" />
+    <File Path="docs/listing.md" />
+    <File Path="docs/authorization.md" />
+    <File Path="docs/impersonation.md" />
+    <File Path="docs/audit.md" />
+    <File Path="docs/logging-and-errors.md" />
+    <File Path="docs/operations.md" />
+    <File Path="docs/notes-and-gotchas.md" />
+    <File Path="docs/glossary.md" />
+    <File Path="docs/Features.md" />
+    <File Path="docs/Hardening-Plan.md" />
+    <File Path="docs/README-Split-Plan.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/MediatrUnionPoc.Api/MediatrUnionPoc.Api.csproj" />
     <Project Path="src/MediatrUnionPoc.Application/MediatrUnionPoc.Application.csproj" />

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace MediatrUnionPoc.Api.IntegrationTests;
 
-/// <summary>Verifies the request-timeout options: secure defaults (the same in code, in appsettings.json and in the README), every validation rule, and that an invalid value stops the host from starting.</summary>
+/// <summary>Verifies the request-timeout options: secure defaults (the same in code, in appsettings.json and in the documentation), every validation rule, and that an invalid value stops the host from starting.</summary>
 [Trait("Category", "Integration")]
 public sealed class RequestTimeoutOptionsTests : IDisposable
 {
@@ -53,13 +53,12 @@ public sealed class RequestTimeoutOptionsTests : IDisposable
         Assert.Equivalent(defaults, bound);
     }
 
-    /// <summary>Verifies the README's request-timeout table lists every setting with its default.</summary>
+    /// <summary>Verifies the request-timeout section of docs/operations.md lists every setting with its default.</summary>
     [Fact]
-    public void Readme_DocumentsTheDefaults_Test()
+    public void OperationsDocs_DocumentTheTimeoutDefaults_Test()
     {
         // Arrange
-        var readme = File.ReadAllText(Path.Combine(RepositoryRoot(), "README.md"));
-        var section = readme[readme.IndexOf("## Request timeouts", StringComparison.Ordinal)..];
+        var section = OperationsDocumentation.Section(RepositoryRoot(), "Request timeouts");
 
         // Act / Assert
         Assert.Multiple(

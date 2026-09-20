@@ -27,8 +27,8 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   the defaults. The host runs in Development, so tests that need a specific list post-configure
   `ApiCorsOptions`.
 - `CorsOptionsTests.cs` — the CORS defaults, every validation rule (origins, wildcard, duplicates,
-  method and header tokens, max-age bounds, each also refusing host start) and a check that the root
-  README names every default method, header and exposed header.
+  method and header tokens, max-age bounds, each also refusing host start) and a check that
+  [`docs/operations.md`](../../docs/operations.md) names every default method, header and exposed header.
 - `RateLimitingTests.cs` — the limiter over real HTTP with tiny limits and hour-long windows (count
   requests, never wait): the exact `429` problem (`type`, `title`, `status`, `code` `RATE_LIMITED`, `traceId`
   equal to `X-Trace-Id`, whole-second `Retry-After`), the `Warning` log with policy and partition kind but no
@@ -45,7 +45,7 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   an application part) proves an unannotated action is limited, a declared policy beats the default and
   `DisableRateLimiting` exempts; walks every mapped endpoint to prove each declares a policy or is an
   explicit operational exemption, and that each controller action's policy fits its verb.
-- `RateLimitingOptionsTests.cs` — defaults (equal in code, `appsettings.json` and the README table), every
+- `RateLimitingOptionsTests.cs` — defaults (equal in code, `appsettings.json` and the [operations page](../../docs/operations.md) table), every
   bound of every policy, host start refusing an invalid limit, and a configuration reload (valid or invalid)
   changing nothing until restart. `RateLimitingOpenApiTests.cs` — every operation declares the `429` with its
   header and example.
@@ -61,13 +61,13 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   10 minute timeout.
 - `RequestTimeoutSecureByDefaultTests.cs` — walks every mapped endpoint: no controller action is exempt, only the
   token endpoint names a policy, every exempt endpoint is operational, and the framework holds a default and a named
-  policy. `RequestTimeoutOptionsTests.cs` — defaults (equal in code, `appsettings.json` and the README table), every
+  policy. `RequestTimeoutOptionsTests.cs` — defaults (equal in code, `appsettings.json` and the [operations page](../../docs/operations.md) table), every
   bound, host start refusing an invalid value. `RequestTimeoutOpenApiTests.cs` — every operation declares the `504`.
 - `OpenApiContractTests.cs` (with `TestData/OpenApiContract.cs` and `Contracts/openapi.v1.json`) — the OpenAPI
   contract check: the live `v1` document, normalized, equals the committed snapshot; versioned paths only; no signing
   key, token or local path in it; the snapshot is canonical (LF, sorted, one trailing newline) and stable across
-  fetches. `UPDATE_OPENAPI_SNAPSHOT=1` rewrites it (never with `CI` set); see the root README's "OpenAPI contract
-  check". `OpenApiContractComparerTests.cs` — against a mutated copy of the snapshot an added path, a removed response
+  fetches. `UPDATE_OPENAPI_SNAPSHOT=1` rewrites it (never with `CI` set); see the
+  [OpenAPI contract check](../../docs/operations.md#openapi-contract-check-no-accidental-drift). `OpenApiContractComparerTests.cs` — against a mutated copy of the snapshot an added path, a removed response
   code and a changed schema property are each detected, the failure message names operations, caps the list and gives
   the regeneration command, and key order, line endings and `servers` are not differences.
 - `ForwardedHeadersTests.cs` — with no trusted proxy a spoofed `X-Forwarded-For` cannot change the rate-limit

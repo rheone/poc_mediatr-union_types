@@ -161,7 +161,7 @@ public sealed class OpenApiContractTests : IDisposable
         if (!File.Exists(path))
         {
             Assert.Fail(
-                $"The OpenAPI snapshot {SnapshotRelativePath} does not exist. Create it with {OpenApiContract.UpdateVariable}=1 (see the README's \"OpenAPI contract check\" section) and commit it."
+                $"The OpenAPI snapshot {SnapshotRelativePath} does not exist. Create it with {OpenApiContract.UpdateVariable}=1 (see the \"OpenAPI contract check\" section of docs/operations.md) and commit it."
             );
         }
 

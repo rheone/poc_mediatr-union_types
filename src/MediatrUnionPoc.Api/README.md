@@ -4,9 +4,9 @@ The ASP.NET Core host. Two controllers, `ProductsController` and `ImpersonationC
 every action does exactly one thing: send a command/query via MediatR, then `switch` on the returned union to produce an
 `IActionResult`. That `switch` is the only place in the whole solution where a union outcome gets
 translated into an HTTP status — handlers and validators never touch `IActionResult` or any other
-web concern. See the repo root README's
-[Switch-and-unwrap: why controllers never return the union directly](../../README.md#switch-and-unwrap-why-controllers-never-return-the-union-directly)
-for why, and its [Authorization](../../README.md#authorization) section for how the caller's
+web concern. See the documentation's
+[Switch-and-unwrap: why controllers never return the union directly](../../docs/union-type.md#switch-and-unwrap-why-controllers-never-return-the-union-directly)
+for why, and its [Authorization](../../docs/authorization.md#authorization) section for how the caller's
 identity (a JWT bearer token) reaches the commands.
 
 ## HTTP mapping (`Http/`)
@@ -48,8 +48,8 @@ versioned response. Health, OpenAPI and Scalar endpoints are plain endpoints and
   `Microsoft.AspNetCore.OpenApi` 11 (it needs `Microsoft.OpenApi` 2.x; NU1107), hence the manual
   registration and the `AV0029`/`AV0030` `NoWarn` in the project file. Scalar lists each document.
 - **Errors.** A version that is not served is an unmatched route: the standard `404` (or `401` for an
-  anonymous caller) problem with the `traceId`. See the repo root README's
-  [API versioning](../../README.md#api-versioning).
+  anonymous caller) problem with the `traceId`. See the documentation's
+  [API versioning](../../docs/http-contract.md#api-versioning).
 
 ## ETag and If-Match (`Http/`)
 
@@ -62,8 +62,8 @@ present. `IfMatchHeader.Parse` classifies the header (`ProductVersion`, `Missing
 `ValidationErrors`) so all three actions share one parser, and `Response.SetETag(version)`
 (`ETagHttpExtensions`) writes the header. The OpenAPI document declares the `409`/`412`/`428` responses
 with example bodies (`PreconditionProblemExampleTransformer`) and the `ETag` response header on
-actions marked `[ReturnsETag]` (`ETagResponseHeaderTransformer`). See the repo root README's
-[Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).
+actions marked `[ReturnsETag]` (`ETagResponseHeaderTransformer`). See the documentation's
+[Optimistic concurrency](../../docs/concurrency.md#optimistic-concurrency-productversion-etag-and-if-match).
 
 ## PATCH: JSON Merge Patch (`Contracts/`, `Http/`, `OpenApi/`)
 
@@ -80,8 +80,8 @@ the contract does not know are ignored (RFC 7396). `If-Match` is required exactl
 `application/merge-patch+json` (`ConsumesMediaTypeTransformer`), inlines `Optional<T>` as the
 wrapped type with the member not `required` (`OptionalSchemaTransformer`, wired with
 `OpenApiOptions.CreateSchemaReferenceId`) and carries a one-field example
-(`ProductContractExampleTransformer`). See the repo root README's
-[Partial updates](../../README.md#partial-updates-patch-as-json-merge-patch).
+(`ProductContractExampleTransformer`). See the documentation's
+[Partial updates](../../docs/patch.md#partial-updates-patch-as-json-merge-patch).
 
 ## Listing: filters, sort, paging headers (`Contracts/`, `Http/`, `OpenApi/`)
 
@@ -95,8 +95,8 @@ is a `PagedResult<ProductDto>` (applied sort, `totalCount`, `totalPages`, `first
 `X-Total-Count` and an RFC 8288 `Link` header (`first`, `prev`, `next`, `last`; `prev`/`next` omitted
 at the ends; the request URL with only `pageNumber` replaced). The OpenAPI document declares those
 headers on actions marked `[ReturnsPagingHeaders]` (`PagingResponseHeaderTransformer`) and carries an
-example paged body (`ProductContractExampleTransformer`). See the repo root README's
-[Listing products](../../README.md#listing-products-filtering-sorting-and-paging).
+example paged body (`ProductContractExampleTransformer`). See the documentation's
+[Listing products](../../docs/listing.md#listing-products-filtering-sorting-and-paging).
 
 ## Authentication (`Authentication/`)
 
@@ -120,8 +120,8 @@ example paged body (`ProductContractExampleTransformer`). See the repo root READ
 - `BearerSecuritySchemeTransformer` (`OpenApi/`) declares the `Bearer` HTTP scheme and requires it in the
   OpenAPI document so Scalar offers an authorization field; every action also declares its `401`.
 - `POST` with a valid token that has no `sub` is a `403` (`NotAuthorized` through the usual extension
-  member, decided in the controller before any command is sent); see the repo root README's
-  [Where the identity comes from](../../README.md#where-the-identity-comes-from).
+  member, decided in the controller before any command is sent); see the documentation's
+  [Where the identity comes from](../../docs/authorization.md#where-the-identity-comes-from).
 
 ## Impersonation (`Impersonation/`, `Controllers/ImpersonationController.cs`)
 
@@ -152,7 +152,7 @@ assignable roles, no escalation, mandatory reason) live in the Application layer
   per-field validator error, not a model-binding one; the OpenAPI document carries request and response
   examples (`ProductContractExampleTransformer`).
 
-See the repo root README's [Impersonation](../../README.md#impersonation-acting-as-another-identity)
+See the documentation's [Impersonation](../../docs/impersonation.md#impersonation-acting-as-another-identity)
 for the rules, the claims, the options table and the operational warning.
 
 ## Audit (`Audit/`)
@@ -173,7 +173,7 @@ for the rules, the claims, the options table and the operational warning.
 - Audit events never pass through Serilog. The `AuditBehavior` and middleware log only "the audit
   event could not be written" (event ids 1100 and 1200) through `ILogger`.
 
-See the repo root README's [Audit stream](../../README.md#audit-stream-a-separate-record-of-security-relevant-actions)
+See the documentation's [Audit stream](../../docs/audit.md#audit-stream-a-separate-record-of-security-relevant-actions)
 for the event shape, what is and is not audited, the failure policies and retention.
 
 ## Logging (`Logging/`)
@@ -254,7 +254,7 @@ since it's the one project that's actually a runnable web application.
 - Pipeline position: after routing and HTTPS redirection, before `UseAuthentication`, so a preflight
   (no `Authorization` header) is answered before the fallback authorization policy can refuse it. It
   sits inside `TraceIdMiddleware`, request logging and the exception handler, so every CORS answer
-  carries `X-Trace-Id`. See the root README's [CORS](../../README.md#cors-letting-a-browser-client-call-the-api)
+  carries `X-Trace-Id`. See the documentation's [CORS](../../docs/operations.md#cors-letting-a-browser-client-call-the-api)
   section for the options table and the exposed-headers contract.
 
 ## Rate limiting (`RateLimiting/`)
@@ -303,8 +303,8 @@ since it's the one project that's actually a runnable web application.
   `X-Forwarded-For` and `X-Forwarded-Proto`.
 - `UseApiForwardedHeaders()` is the first middleware, and adds nothing at all when no proxy is configured, so
   a client-supplied `X-Forwarded-For` is ignored by default. The address it produces feeds the rate limiter,
-  the request log and the audit `sourceIp`. See the root README's
-  [Rate limiting](../../README.md#rate-limiting-a-budget-per-caller) section.
+  the request log and the audit `sourceIp`. See the documentation's
+  [Rate limiting](../../docs/operations.md#rate-limiting-a-budget-per-caller) section.
 
 ## Dependencies
 
@@ -376,8 +376,8 @@ dotnet run --project src/MediatrUnionPoc.Api
 ```
 
 The default launch profile listens on `http://localhost:5233`. Hit `ProductsController`'s endpoints
-(the complete endpoint-by-outcome table is the repo root README's
-[The HTTP contract](../../README.md#the-http-contract-every-endpoint-and-outcome)), or browse the
+(the complete endpoint-by-outcome table is the documentation's
+[The HTTP contract](../../docs/http-contract.md#the-http-contract-every-endpoint-and-outcome)), or browse the
 OpenAPI document (`/openapi/v1.json`) and Scalar UI (`/scalar`), both Development-only (and anonymous;
 everything else needs a bearer token, see [Authentication](#authentication-authentication)). Action names
 keep their `Async` suffix in MVC's route/action metadata — `Program.cs` sets

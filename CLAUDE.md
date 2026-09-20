@@ -6,8 +6,9 @@ This file provides guidance to AI coding assistants working with code in this re
 
 A proof of concept testing whether C#'s `union` type (a C# 15 / .NET 11 preview language feature) works as a MediatR/CQRS response type, replacing
 thrown exceptions and null with a closed, compiler-exhaustive set of outcomes per operation. See
-`README.md` for the full write-up (motivation, design rationale, Mermaid diagrams) — this file only
-covers what a session needs to be productive quickly.
+`README.md` for the motivation and getting started, and the flat documentation set under `docs/` (start at
+[`docs/index.md`](docs/index.md)) for the design rationale, the HTTP contract, security and operations pages and the Mermaid
+diagrams — this file only covers what a session needs to be productive quickly.
 
 ## Commands
 
@@ -73,7 +74,11 @@ project wherever tests need a real database, a real HTTP host, or both:
   `WebApplicationFactory` and exercises it through actual HTTP requests, against the real SQLite
   provider; each host gets its own private in-memory database.
 - `tests/MediatrUnionPoc.ArchitectureTests` — `NetArchTest.Rules` assertions on the compiled `src/`
-  assemblies enforcing the layering described above.
+  assemblies enforcing the layering described above, plus `DocumentationLinkTests`: every relative link,
+  `#fragment` (checked against GitHub heading slugs, duplicate suffixes included), reference link and
+  footnote in every `*.md` file (except `.claude/skills`, `docs/research`, build output) must resolve.
+  Renaming or moving a heading or page means fixing the links to it, or that test fails with
+  `file:line -> target`.
 
 `tests/CompileTimeChecks/` holds four tiny scratch projects (`Exhaustive`, `NonExhaustive`,
 `ShouldCommitExhaustive`, `ShouldCommitNonExhaustive`) **deliberately excluded from the `.slnx`**
@@ -86,9 +91,8 @@ keeping it out of the `.slnx`, `.csharpierignore` interaction).
 **The core pattern**: every command/query returns a `union` of exactly the outcomes that operation
 can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error, Conflict)`) and never
 throws for an expected outcome (validation failure, not-found, etc.) — the controller's `switch`
-is the only place a union gets translated into an HTTP status. See `README.md`'s "No exceptions for
-expected outcomes" and "Shared case types are meaning-free" sections for the full rationale. The
-per-endpoint status table is `README.md`'s "The HTTP contract" section; note that a successful `PUT`
+is the only place a union gets translated into an HTTP status. See [`docs/no-exceptions.md`](docs/no-exceptions.md) and [`docs/case-types.md`](docs/case-types.md) ("Shared case types are meaning-free") for the full rationale. The
+per-endpoint status table is in [`docs/http-contract.md`](docs/http-contract.md); note that a successful `PUT`
 returns its `ProductDto` case as `204` (with the new `ETag`), `PATCH` returns it as `200`, and
 `DELETE`'s `Success` is `204`.
 
@@ -128,8 +132,8 @@ calling is checked before whether their input is well-formed, and the audit beha
   same generic short-circuit pattern `IValidatable` uses for validation. Only `DeleteProductCommand`
   (`Administrator` policy) and `IssueImpersonationTokenCommand` (`Impersonator` policy: Administrator
   or Support, the same `AdministratorRequirement`/handler with two roles) use it; `Update`/`Patch` check ownership inside the handler instead (`LoadForChangeAsync` →
-  `ResourceAuthorizationService`), since that needs the loaded product. See README's
-  "Authorization" section for how to configure it and gate a new command behind it.
+  `ResourceAuthorizationService`), since that needs the loaded product. See
+  [`docs/authorization.md`](docs/authorization.md) for how to configure it and gate a new command behind it.
 
 - `IAuditableRequest<TResponse>` — a request opts into the audit stream (`AuditAction`, `AuditFailurePolicy`,
   `AuditPrincipal`, `DescribeAudit(TResponse)`); `AuditBehavior` then records one `AuditEvent` per request
@@ -149,7 +153,7 @@ query (every sort ends in an implicit `Id` tiebreaker). `Product.CreatedAt` is s
 as UTC ticks (`UtcTicksValueConverter`) because SQLite cannot order a `DateTimeOffset`'s text.
 `GetPagedProductsResult` has a real `ValidationErrors` case (per-field 400s); `GetById`/`Delete`
 still fold validation failures into `Error(ValidationFailureCode)`. The 200 carries `X-Total-Count`
-and an RFC 8288 `Link` header (`Api/Http/PagingHttpExtensions`). See README's "Listing products".
+and an RFC 8288 `Link` header (`Api/Http/PagingHttpExtensions`). See [`docs/listing.md`](docs/listing.md).
 
 Case types (`Success`, `NotFound`, `Error`, `ValidationErrors`, `Failure`, `NotAuthorized`,
 `PreconditionFailed`, `Conflict` — one file each in `Application/Common/Results/`) are deliberately meaning-free and reused across unions;
@@ -193,7 +197,7 @@ convention for every new setting:** `AddOptions<T>().BindConfiguration("Section"
 plus an `[OptionsValidator]` source-generated `IValidateOptions<T>` (DataAnnotations on the class);
 `HealthEndpointsOptions` is the reference. The health-check package is pinned to EF Core's `10.0.12`.
 
-**Impersonation** (`POST /api/v1/impersonation/tokens`, README "Impersonation"): a controlled
+**Impersonation** (`POST /api/v1/impersonation/tokens`, [`docs/impersonation.md`](docs/impersonation.md)): a controlled
 authentication bypass available in every environment. The command slice
 (`Application/Features/Impersonation/IssueToken/`) is a non-transactional `ICommand` gated by the
 `Impersonator` policy; its handler refuses chained impersonation, roles outside
@@ -221,7 +225,7 @@ with the token's `jti`. `IAuditRequestContext` supplies trace id and source addr
 `Authorization` header or body in an event. Api integration tests get a private temp audit directory per
 `ProductsApiFactory` (`ReadAuditEvents()`); no test writes audit files under the repo.
 
-**API versioning** (`Api/Http/ApiVersions.cs`, `Api/OpenApi/`; README "API versioning"): URL segment,
+**API versioning** (`Api/Http/ApiVersions.cs`, `Api/OpenApi/`; [`docs/http-contract.md`](docs/http-contract.md#api-versioning)): URL segment,
 `Asp.Versioning.Mvc` + `.ApiExplorer`; both controllers are `[ApiVersion("1.0")]` on
 `api/v{version:apiVersion}/...`, health/OpenAPI/Scalar are unversioned. A second `[Route]` per
 controller (`ApiVersions.UnversionedAliasPrefix`, `Order = 1`) plus `AssumeDefaultVersionWhenUnspecified`
@@ -244,7 +248,7 @@ for an impersonated token, else `ip:<address>`. Middleware order: forwarded head
 redirection, CORS, authentication, user log context, impersonation audit, request timeout, rate limiter,
 authorization, endpoints. `RateLimitRejectionHandler` writes the `429` problem (`code` `RATE_LIMITED`, `Retry-After`) and,
 for `Impersonation` only, a best-effort `RateLimited` audit event. The default test host uses maximal limits;
-rate-limit tests use `factory.WithLimits(...)`. See README "Rate limiting".
+rate-limit tests use `factory.WithLimits(...)`. See [`docs/operations.md`](docs/operations.md#rate-limiting-a-budget-per-caller).
 
 **Request timeouts** (`Api/RequestTimeouts/`): the framework's `Microsoft.AspNetCore.Http.Timeouts`, options
 `RequestTimeoutOptions` (section `RequestTimeouts`: `Default` 30 s, `Impersonation` 10 s; `TimeSpan`s, 1 ms to
@@ -254,14 +258,14 @@ and the Development OpenAPI/Scalar say `DisableRequestTimeout()`; the token endp
 real 504). A timeout is `504` `application/problem+json`, `code` `REQUEST_TIMEOUT` (`RequestTimeoutResponseWriter`,
 event 1400); a client abort is still swallowed silently. `TransactionBehavior` rolls back with
 `CancellationToken.None` and logs a requested cancellation at Information. The middleware is a no-op under a
-debugger. The default test host uses a 10 minute timeout; timeout tests use `factory.WithTimeouts(...)`. See README
-"Request timeouts".
+debugger. The default test host uses a 10 minute timeout; timeout tests use `factory.WithTimeouts(...)`. See
+[`docs/operations.md`](docs/operations.md#request-timeouts-a-deadline-per-request).
 
 **OpenAPI contract check**: `OpenApiContractTests` compares the served `/openapi/v1.json` (normalized:
 sorted keys, LF, no `servers`) with the committed `tests/MediatrUnionPoc.Api.IntegrationTests/Contracts/openapi.v1.json`.
 A deliberate contract change regenerates it with `UPDATE_OPENAPI_SNAPSHOT=1 dotnet test ... --filter
-"FullyQualifiedName~OpenApiContractTests"` (refused when `CI` is set) and commits the diff. See README "OpenAPI
-contract check".
+"FullyQualifiedName~OpenApiContractTests"` (refused when `CI` is set) and commits the diff. See
+[`docs/operations.md`](docs/operations.md#openapi-contract-check-no-accidental-drift).
 
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It

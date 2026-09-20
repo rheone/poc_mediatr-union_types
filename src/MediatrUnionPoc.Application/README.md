@@ -1,7 +1,7 @@
 # MediatrUnionPoc.Application
 
 The core of the proof of concept. Commands, queries, handlers, and validators, organized as
-**[vertical slices](../../README.md#architectural-patterns)** under `Features/Products/<Operation>/` (Create, Update, Patch, Delete, GetById,
+**[vertical slices](../../docs/glossary.md#architectural-patterns)** under `Features/Products/<Operation>/` (Create, Update, Patch, Delete, GetById,
 GetPaged) rather than by technical layer — everything one operation needs lives in one folder.
 `Patch` is the partial update (JSON Merge Patch): its command carries `Optional<string?>` /
 `Optional<decimal?>` (`Common/Optional.cs`, a serializer-free "absent or present" struct, present
@@ -20,11 +20,11 @@ requirements and handlers (`Common/Authorization/`), and the meaning-free *share
 unions compose from alongside their own *bespoke* case types (e.g. `ProductDto`). `Failure` is
 defined but no Products union declares it.
 
-Every command/query returns a [`union`](../../README.md#the-c-union-type) of exactly the outcomes
+Every command/query returns a [`union`](../../docs/union-type.md#the-c-union-type) of exactly the outcomes
 that operation can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error, Conflict)`)
-instead of throwing for an expected outcome — see the repo root README's
-["No exceptions for expected outcomes"](../../README.md#no-exceptions-for-expected-outcomes)
-section for the full rationale, and its [Glossary](../../README.md#glossary) for any term below
+instead of throwing for an expected outcome — see the documentation's
+["No exceptions for expected outcomes"](../../docs/no-exceptions.md#no-exceptions-for-expected-outcomes)
+section for the full rationale, and its [Glossary](../../docs/glossary.md#glossary) for any term below
 that isn't self-explanatory.
 
 `GetPaged` lists the products matching optional filters in a requested order: the query carries the

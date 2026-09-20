@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace MediatrUnionPoc.Api.IntegrationTests;
 
-/// <summary>Verifies the rate-limiting options: secure defaults (the same in code, in appsettings.json and in the README), every validation rule (each also fails host start), and what a live configuration reload does and does not reach.</summary>
+/// <summary>Verifies the rate-limiting options: secure defaults (the same in code, in appsettings.json and in the documentation), every validation rule (each also fails host start), and what a live configuration reload does and does not reach.</summary>
 [Trait("Category", "Integration")]
 public sealed class RateLimitingOptionsTests : IDisposable
 {
@@ -59,13 +59,12 @@ public sealed class RateLimitingOptionsTests : IDisposable
         );
     }
 
-    /// <summary>Verifies the README's rate-limiting table lists every policy with its default limit, window and queue.</summary>
+    /// <summary>Verifies the rate-limiting section of docs/operations.md lists every policy with its default limit, window and queue.</summary>
     [Fact]
-    public void Readme_DocumentsTheDefaults_Test()
+    public void OperationsDocs_DocumentTheRateLimitDefaults_Test()
     {
         // Arrange
-        var readme = File.ReadAllText(Path.Combine(RepositoryRoot(), "README.md"));
-        var section = readme[readme.IndexOf("## Rate limiting", StringComparison.Ordinal)..];
+        var section = OperationsDocumentation.Section(RepositoryRoot(), "Rate limiting");
         var defaults = new RateLimitingOptions();
 
         // Act

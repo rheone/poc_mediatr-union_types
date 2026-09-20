@@ -7,9 +7,9 @@ part of a web API or which database persists it.
 
 Value objects are declared with [Vogen](https://github.com/SteveDunn/Vogen) rather than hand-rolled
 wrapper structs, so `ProductId`/`Money` get value equality, parsing, and validation from a source
-generator instead of boilerplate — see the repo root README's
-[Vogen: avoiding primitive obsession](../../README.md#vogen-avoiding-primitive-obsession) for the
-full rationale and its [Glossary](../../README.md#glossary) for any term below that isn't
+generator instead of boilerplate — see the documentation's
+[Vogen: avoiding primitive obsession](../../docs/value-objects.md#vogen-avoiding-primitive-obsession) for the
+full rationale and its [Glossary](../../docs/glossary.md#glossary) for any term below that isn't
 self-explanatory.
 
 `ProductVersion` is the optimistic-concurrency version: it starts at 1 (`ProductVersion.Initial`),
@@ -27,8 +27,8 @@ neither throws). Each advances `Version` exactly once per call, and neither touc
 `ProductNames.Normalize` (trim, then upper-case with the invariant culture) is the single definition
 of when two product names are duplicates; `Product.NormalizedName` carries the key and
 `IProductRepository.ExistsWithNameAsync` compares by it. Persistence puts its unique index on the
-same key, so the up-front check and the database cannot disagree. See the repo root README's
-[Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).
+same key, so the up-front check and the database cannot disagree. See the documentation's
+[Optimistic concurrency](../../docs/concurrency.md#optimistic-concurrency-productversion-etag-and-if-match).
 
 The listing vocabulary is database-agnostic: `ProductCriteria` (optional `NameContains`, `MinPrice`,
 `MaxPrice`, `OwnerId`, combined with AND), `ProductSort` (a `ProductSortField` enum allowlist of

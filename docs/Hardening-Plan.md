@@ -90,8 +90,8 @@ An endpoint, `POST /api/v1/impersonation/tokens`, that mints a short-lived JWT f
 Support). Signing is behind `IImpersonationTokenIssuer`, implemented in Api, so Application references no JWT
 library. The handler refuses chained impersonation, roles outside `Impersonation:AssignableRoles`, and (for a
 non-administrator) roles the caller does not hold. Step 5 records every attempt, including those refused earlier in the
-pipeline (the policy check, validation), through the audit stream. The README's
-"Impersonation" section is the reference.
+pipeline (the policy check, validation), through the audit stream. The [impersonation page](impersonation.md)
+is the reference.
 
 **Tests:** minting requires the role; reason is mandatory; token carries `act` and the marker; a
 minted token is accepted by the API; expiry cap enforced; disabled switch returns `404`.
@@ -173,7 +173,7 @@ audited (no principal to attribute); they stay in the operational request log.
 is never delivered. An unwritable audit store is an infrastructure fault, so it is an exception like a
 database outage, not a union case. The product mutations and the request events are `BestEffort`:
 `TransactionBehavior` sits inside `AuditBehavior`, so the change has already committed when the event is
-written; the failure is logged at Error and the response proceeds. The README's "Audit stream" section
+written; the failure is logged at Error and the response proceeds. The [audit page](audit.md)
 is the reference.
 
 ## Step 6: API versioning and CORS
@@ -195,7 +195,7 @@ Status: implemented.
 
 **As built (versioning).** The unversioned URLs are kept as a transitional alias for v1 (a second
 `[Route]` per controller with `Order = 1`, plus `AssumeDefaultVersionWhenUnspecified`); the alias is
-not in the OpenAPI document, and the README's "API versioning" section says how to retire it.
+not in the OpenAPI document, and the [API versioning section](http-contract.md#api-versioning) says how to retire it.
 `Location` and `Link` are always the canonical `/api/v1/...` URL, even for a client that used the
 alias: `CreatedAtAction` is replaced by `Created(Url.Action(...))` so the versioned route is chosen
 explicitly, and `SetPagingHeaders` takes an optional canonical URL. `Asp.Versioning.OpenApi` could
@@ -304,8 +304,8 @@ Status: not part of this repository. The dev container is set up and maintained 
 
 ## Cross-cutting: documentation and tests
 
-Each step updates the README sections it invalidates (the "Where the identity comes from" section
-and the header table in "The HTTP contract" change in step 2; the routes in step 6), the API and
+Each step updates the documentation sections it invalidates (the [Where the identity comes from](authorization.md#where-the-identity-comes-from) section
+and the header table in [The HTTP contract](http-contract.md#the-http-contract-every-endpoint-and-outcome) change in step 2; the routes in step 6), the API and
 tests READMEs, and `CLAUDE.md`. `dotnet format whitespace` and the analyzers' documentation
 requirement apply to all new public members.
 

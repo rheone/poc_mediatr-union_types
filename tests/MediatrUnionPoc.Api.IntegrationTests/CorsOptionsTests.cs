@@ -1,4 +1,5 @@
 using MediatrUnionPoc.Api.Cors;
+using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -55,9 +56,9 @@ public sealed class CorsOptionsTests : IDisposable
         );
     }
 
-    /// <summary>Verifies the README documents every default list entry (the docs table derives from the same defaults).</summary>
+    /// <summary>Verifies the CORS section of docs/operations.md documents every default list entry (the docs table derives from the same defaults).</summary>
     [Fact]
-    public void Readme_DocumentsEveryDefault_Test()
+    public void OperationsDocs_DocumentEveryDefault_Test()
     {
         // Arrange
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -70,8 +71,7 @@ public sealed class CorsOptionsTests : IDisposable
         }
 
         Assert.NotNull(directory);
-        var readme = File.ReadAllText(Path.Combine(directory.FullName, "README.md"));
-        var section = readme[readme.IndexOf("## CORS", StringComparison.Ordinal)..];
+        var section = OperationsDocumentation.Section(directory.FullName, "CORS");
 
         // Act
         var missing = ApiCorsOptions
