@@ -569,4 +569,72 @@ public class EfCoreUnitOfWorkTests
             () => Assert.Equal(2L, stored.Version.Value)
         );
     }
+
+    /// <summary>
+    /// Verifies the unique index is the race backstop: a duplicate name that slipped past any
+    /// up-front check (this test never runs one) is refused at commit as a
+    /// <see cref="UniqueViolation"/>, and nothing extra is persisted.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task CommitAsync_DuplicateNameIgnoringCaseAndPadding_ReturnsUniqueViolationAndPersistsNothing_Test()
+    {
+        // Arrange
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await database.SeedAsync(
+            [ProductMother.Named("Blue Widget")],
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
+        var repository = new ProductRepository(dbContext);
+        await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
+        await unitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        await repository.AddAsync(
+            ProductMother.Named("  BLUE widget "),
+            TestContext.Current.CancellationToken
+        );
+
+        // Act
+        var result = await unitOfWork.CommitAsync(TestContext.Current.CancellationToken);
+        await unitOfWork.RollbackAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.IsType<UniqueViolation>(((System.Runtime.CompilerServices.IUnion)result).Value);
+        await using var verifyContext = database.CreateContext();
+        var names = await verifyContext
+            .Products.Select(p => p.Name)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(["Blue Widget"], names);
+    }
+
+    /// <summary>Verifies a name that differs beyond case and padding is not mistaken for a duplicate by the index.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task CommitAsync_DistinctName_Commits_Test()
+    {
+        // Arrange
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await database.SeedAsync(
+            [ProductMother.Named("Blue Widget")],
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
+        var repository = new ProductRepository(dbContext);
+        await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
+        await unitOfWork.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        await repository.AddAsync(
+            ProductMother.Named("Blue Widget 2"),
+            TestContext.Current.CancellationToken
+        );
+
+        // Act
+        var result = await unitOfWork.CommitAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.IsType<Committed>(((System.Runtime.CompilerServices.IUnion)result).Value);
+    }
 }

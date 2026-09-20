@@ -16,7 +16,12 @@ self-explanatory.
 `Product` advances it with `Version.Next()` on every mutation, and it renders as the weak ETag
 `W/"n"` (`ToETag` / `ParseETag`). `IUnitOfWork.CommitAsync` returns a `CommitResult` union
 (`Committed`, `ConcurrencyConflict`, `UniqueViolation`; `CommitFailure` is the two failing cases) so
-an expected commit refusal is a value, not an exception. See the repo root README's
+an expected commit refusal is a value, not an exception.
+
+`ProductNames.Normalize` (trim, then upper-case with the invariant culture) is the single definition
+of when two product names are duplicates; `Product.NormalizedName` carries the key and
+`IProductRepository.ExistsWithNameAsync` compares by it. Persistence puts its unique index on the
+same key, so the up-front check and the database cannot disagree. See the repo root README's
 [Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).
 
 ## Dependencies

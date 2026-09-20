@@ -25,6 +25,22 @@ public interface IProductRepository
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Reports whether any stored product's name is a duplicate of <paramref name="name"/> under
+    /// <see cref="ProductNames.Normalize"/> (case-insensitive, ignoring surrounding whitespace).
+    /// Reads committed state only — products staged but not yet committed are invisible to it, which
+    /// is why persistence also carries a unique index as the race backstop.
+    /// </summary>
+    /// <param name="name">The candidate name.</param>
+    /// <param name="excludingId">A product to leave out of the comparison — the one being renamed, so it never collides with itself; <see langword="null"/> to compare against every product.</param>
+    /// <param name="cancellationToken">Token to cancel the query; defaults to <see cref="CancellationToken.None"/>.</param>
+    /// <returns><see langword="true"/> if another product already holds an equivalent name.</returns>
+    Task<bool> ExistsWithNameAsync(
+        string name,
+        ProductId? excludingId = null,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Stages a new product for insertion. Not persisted until the unit of work commits.</summary>
     /// <param name="product">The product to add.</param>
     /// <param name="cancellationToken">Token to cancel the operation; defaults to <see cref="CancellationToken.None"/>.</param>

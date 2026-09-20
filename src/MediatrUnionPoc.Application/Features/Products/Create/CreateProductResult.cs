@@ -15,7 +15,7 @@ namespace MediatrUnionPoc.Application.Features.Products.Create;
 /// NotFound because there's nothing to look up before creating.
 /// </summary>
 [DebuggerDisplay("{Value}")]
-public union CreateProductResult(ProductDto, ValidationErrors, Error)
+public union CreateProductResult(ProductDto, ValidationErrors, Error, Conflict)
     : IValidatable<CreateProductResult>,
         ITransactionOutcome<CreateProductResult>,
         ICommitFailable<CreateProductResult>
@@ -40,13 +40,15 @@ public union CreateProductResult(ProductDto, ValidationErrors, Error)
         ProductDto => true,
         ValidationErrors => false,
         Error => false,
+        Conflict => false,
     };
 
     /// <inheritdoc/>
     /// <remarks>
     /// A brand-new row cannot be stale, so a <see cref="ConcurrencyConflict"/> here means something
     /// is wrong with the persistence setup rather than with the caller's request: it maps to
-    /// <see cref="Error"/>. A <see cref="UniqueViolation"/> maps to <see cref="Error"/> as well.
+    /// <see cref="Error"/>. A <see cref="UniqueViolation"/> means a concurrent request claimed the
+    /// same product name after the handler's up-front check passed: it maps to <see cref="Conflict"/>.
     /// </remarks>
     public static CreateProductResult FromCommitFailure(CommitFailure failure)
     {
@@ -56,10 +58,7 @@ public union CreateProductResult(ProductDto, ValidationErrors, Error)
                 "A newly created product cannot conflict with a concurrent change.",
                 "COMMIT_CONCURRENCY_CONFLICT"
             ),
-            UniqueViolation => new Error(
-                "The product violates a uniqueness constraint.",
-                "COMMIT_UNIQUE_VIOLATION"
-            ),
+            UniqueViolation => ProductConflicts.NameTakenByConcurrentRequest(),
         };
     }
 }

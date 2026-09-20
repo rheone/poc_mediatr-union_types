@@ -70,7 +70,7 @@ to `dotnet build` against them; that's why those directories live outside the so
 keeping it out of the `.slnx`, `.csharpierignore` interaction).
 
 **The core pattern**: every command/query returns a `union` of exactly the outcomes that operation
-can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error)`) and never
+can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error, Conflict)`) and never
 throws for an expected outcome (validation failure, not-found, etc.) — the controller's `switch`
 is the only place a union gets translated into an HTTP status. See `README.md`'s "Why this
 matters" and "Shared case types are meaning-free" sections for the full rationale.
@@ -89,7 +89,7 @@ calling is checked before whether their input is well-formed. When `CommitAsync`
 - `ICommitFailable<TSelf>` — a union implements `static abstract TSelf
   FromCommitFailure(CommitFailure)` as an exhaustive `switch` over `ConcurrencyConflict` /
   `UniqueViolation`, deciding what a refused commit means for that operation (e.g. Update:
-  `ConcurrencyConflict` → `PreconditionFailed`); the compiler forces every transactional union to
+  `ConcurrencyConflict` → `PreconditionFailed`; Create/Update: `UniqueViolation` → `Conflict`); the compiler forces every transactional union to
   classify every commit failure.
 - `IQuery<TResponse>` — read-only, never wrapped in a transaction.
 - `IValidatable<TSelf>` — a union implements this (`static abstract TSelf
@@ -108,6 +108,14 @@ Case types (`Success`, `NotFound`, `Error`, `ValidationErrors`, `Failure`, `NotA
 a case type's identity never implies what it means for commit/rollback or anything else — only
 the union that declares it decides that. That's why `ITransactionOutcome.ShouldCommit` exists
 instead of `TransactionBehavior` pattern-matching a fixed list of known case types.
+
+**Unique product names**: two products may not share a name ignoring case and surrounding
+whitespace (global, not per owner). `Domain/ProductNames.Normalize` is the one definition of that
+rule; `Product.NormalizedName` carries it. `Create`/`Update` handlers check up front through
+`IProductRepository.ExistsWithNameAsync(name, excludingId)` and return `Conflict` (409); a unique
+index on `NormalizedName` is the race backstop, which `EfCoreUnitOfWork.CommitAsync` reports as
+`UniqueViolation` and those two unions' `FromCommitFailure` maps to the same `Conflict`. `Delete`
+has no `Conflict` case.
 
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It

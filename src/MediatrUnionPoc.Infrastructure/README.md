@@ -19,8 +19,12 @@ created with `EnsureCreated` (no migrations) by `EnsureInfrastructureCreatedAsyn
 `ProductVersion` is configured as an EF Core concurrency token, so every `UPDATE`/`DELETE` is
 conditioned on the version that was loaded. `EfCoreUnitOfWork.CommitAsync` translates the resulting
 `DbUpdateConcurrencyException` into a `ConcurrencyConflict` in the `CommitResult` it returns
-(nothing persisted; the caller rolls back). `UniqueViolation` is part of the same result union for
-uniqueness-constraint failures.
+(nothing persisted; the caller rolls back). Product names are unique ignoring case and surrounding
+whitespace: `Product.NormalizedName` (the Domain's `ProductNames.Normalize` of the name) has a unique
+index, and `CommitAsync` reports a violation of it (SQLite extended error 2067 naming
+`Products.NormalizedName`) as `UniqueViolation`. Any other constraint failure, such as a primary-key
+collision, is not translated and propagates. `ProductRepository.ExistsWithNameAsync` is the
+up-front check the handlers use; the index is the backstop for races between two such checks.
 
 ## Dependencies
 

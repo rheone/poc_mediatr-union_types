@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.Create;
 using MediatrUnionPoc.Application.Tests.TestData;
@@ -144,5 +145,27 @@ public class CreateProductHandlerTests
         await _repository
             .DidNotReceiveWithAnyArgs()
             .AddAsync(default!, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Verifies a name the repository reports as already taken yields a <see cref="Conflict"/> naming it, and nothing is added.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_NameAlreadyTaken_ReturnsConflictAndAddsNothing_Test()
+    {
+        // Arrange
+        _repository
+            .ExistsWithNameAsync(ProductName, null, Arg.Any<CancellationToken>())
+            .Returns(true);
+        var command = new CreateProductCommand(ProductName, ProductPrice);
+
+        // Act
+        var result = await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        var conflict = Assert.IsType<Conflict>(((IUnion)result).Value);
+        Assert.Contains($"'{ProductName}'", conflict.Message, StringComparison.Ordinal);
+        await _repository
+            .DidNotReceive()
+            .AddAsync(Arg.Any<Product>(), Arg.Any<CancellationToken>());
     }
 }

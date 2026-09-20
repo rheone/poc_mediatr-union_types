@@ -22,10 +22,10 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// via <c>ProducesResponseType</c> on each action):
 /// <list type="table">
 /// <listheader><term>Action</term><description>Cases</description></listheader>
-/// <item><term>CreateAsync</term><description>ProductDto 201 (with <c>ETag</c>); ValidationErrors 400; Error 500.</description></item>
+/// <item><term>CreateAsync</term><description>ProductDto 201 (with <c>ETag</c>); ValidationErrors 400; Conflict 409 (duplicate product name); Error 500.</description></item>
 /// <item><term>GetByIdAsync</term><description>ProductDto 200 (with <c>ETag</c>); NotFound 404; Error 500.</description></item>
 /// <item><term>GetPagedAsync</term><description>PagedResult 200; Error 400 for <see cref="Error.ValidationFailureCode"/> and 500 otherwise (the default of <c>HttpMappingOptions</c>).</description></item>
-/// <item><term>UpdateAsync</term><description>ProductDto 204 (with the new <c>ETag</c>); NotFound 404; ValidationErrors 400 (also a malformed <c>If-Match</c>); NotAuthorized 403; PreconditionFailed 412; missing <c>If-Match</c> 428; Error 500.</description></item>
+/// <item><term>UpdateAsync</term><description>ProductDto 204 (with the new <c>ETag</c>); NotFound 404; ValidationErrors 400 (also a malformed <c>If-Match</c>); NotAuthorized 403; Conflict 409 (duplicate product name); PreconditionFailed 412; missing <c>If-Match</c> 428; Error 500.</description></item>
 /// <item><term>DeleteAsync</term><description>Success 204; NotFound 404; NotAuthorized 403; PreconditionFailed 412; malformed <c>If-Match</c> 400; Error 500.</description></item>
 /// </list>
 /// </summary>
@@ -64,12 +64,13 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
     /// 201 with the created <see cref="ProductDto"/> and its <c>ETag</c>; 400 with per-field errors if <paramref name="request"/>
-    /// fails validation; 500 for any other <see cref="Error"/> case.
+    /// fails validation; 409 if another product already has an equivalent name (ignoring case and surrounding whitespace); 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpPost]
     [ReturnsETag]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> CreateAsync(
         CreateProductRequest request,
@@ -93,6 +94,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
                 CreatedAtAction(nameof(GetByIdAsync), new { id = dto.Id.Value }, dto)
             ),
             ValidationErrors errors => errors.ToProblemResult(HttpContext),
+            Conflict conflict => conflict.ToProblemResult(HttpContext),
             Error error => error.ToProblemResult(HttpContext),
         };
     }
@@ -167,7 +169,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// <returns>
     /// 204 on success, with the product's new <c>ETag</c>; 404 if the product doesn't exist; 400 on
     /// validation failure or a malformed <c>If-Match</c>; 403 if the caller doesn't own the product;
-    /// 412 if <c>If-Match</c> no longer names the product's version; 428 if <c>If-Match</c> is
+    /// 409 if the new name duplicates another product's; 412 if <c>If-Match</c> no longer names the product's version; 428 if <c>If-Match</c> is
     /// absent; 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpPut("{id:guid}")]
@@ -176,6 +178,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -233,6 +236,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             ValidationErrors errors => errors.ToProblemResult(HttpContext),
             NotAuthorized notAuthorized => notAuthorized.ToProblemResult(HttpContext),
             PreconditionFailed stale => stale.ToProblemResult(HttpContext),
+            Conflict conflict => conflict.ToProblemResult(HttpContext),
             Error error => error.ToProblemResult(HttpContext),
         };
     }

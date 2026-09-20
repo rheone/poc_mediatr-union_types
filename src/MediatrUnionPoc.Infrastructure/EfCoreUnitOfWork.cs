@@ -1,4 +1,5 @@
 using MediatrUnionPoc.Domain;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -23,6 +24,9 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
         IDisposable,
         IAsyncDisposable
 {
+    /// <summary>SQLite's <c>SQLITE_CONSTRAINT_UNIQUE</c> extended result code.</summary>
+    private const int SqliteUniqueConstraintExtendedCode = 2067;
+
     private readonly AppDbContext _dbContext =
         dbContext ?? throw new ArgumentNullException(nameof(dbContext));
 
@@ -49,8 +53,13 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
     /// A <see cref="DbUpdateConcurrencyException"/> — a row's concurrency token no longer matched
     /// the stored one, or the row was deleted meanwhile — is reported as
     /// <see cref="ConcurrencyConflict"/> instead of propagating. The transaction is left open; the
-    /// caller rolls it back, which also detaches the stale entities. Every other exception is
-    /// unexpected and propagates.
+    /// caller rolls it back, which also detaches the stale entities. A unique-constraint failure on
+    /// the product-name index (SQLite extended error 2067, <c>UNIQUE constraint failed:
+    /// Products.NormalizedName</c>) is reported as <see cref="UniqueViolation"/> likewise. Every other
+    /// exception — including a primary-key collision (extended error 1555) — is unexpected and
+    /// propagates. Telling the index apart relies on the SQLite message naming the column, the only
+    /// identifier SQLite reports; a provider that reports the index name instead would need its own
+    /// check here.
     /// </remarks>
     public async Task<CommitResult> CommitAsync(CancellationToken cancellationToken = default)
     {
@@ -62,6 +71,10 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
         {
             return new ConcurrencyConflict();
         }
+        catch (DbUpdateException ex) when (IsProductNameUniqueViolation(ex))
+        {
+            return new UniqueViolation();
+        }
 
         if (_transaction is not null)
         {
@@ -72,6 +85,14 @@ public sealed class EfCoreUnitOfWork(AppDbContext dbContext)
 
         return new Committed();
     }
+
+    private static bool IsProductNameUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is SqliteException sqlite
+        && sqlite.SqliteExtendedErrorCode == SqliteUniqueConstraintExtendedCode
+        && sqlite.Message.Contains(
+            $"{nameof(AppDbContext.Products)}.{nameof(Product.NormalizedName)}",
+            StringComparison.Ordinal
+        );
 
     /// <inheritdoc/>
     /// <remarks>

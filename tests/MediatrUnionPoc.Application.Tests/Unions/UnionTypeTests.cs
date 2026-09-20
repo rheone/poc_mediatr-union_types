@@ -73,6 +73,7 @@ public class UnionTypeTests
             ProductDto dto => $"created:{dto.Name}",
             ValidationErrors => "invalid",
             Error => "error",
+            Conflict => "duplicate",
         };
 
         // Assert
@@ -96,6 +97,7 @@ public class UnionTypeTests
                 ProductDto dto => $"created:{dto.Name}",
                 ValidationErrors errors => $"invalid:{errors.Errors.Count}",
                 Error error => $"error:{error.Code}",
+                Conflict conflict => $"conflict:{conflict.Message}",
             };
 
         // Act
@@ -136,6 +138,7 @@ public class UnionTypeTests
             Error => "error",
             NotAuthorized => "unauthorized",
             PreconditionFailed => "stale",
+            Conflict => "duplicate",
         };
 
         // Assert

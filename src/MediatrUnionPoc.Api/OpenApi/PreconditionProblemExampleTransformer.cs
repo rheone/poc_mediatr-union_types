@@ -5,8 +5,8 @@ using Microsoft.OpenApi;
 namespace MediatrUnionPoc.Api.OpenApi;
 
 /// <summary>
-/// Attaches an RFC 7807 example body to every 412 and 428 response, showing what a stale or
-/// missing <c>If-Match</c> looks like on the wire. Registered as an operation transformer because
+/// Attaches an RFC 7807 example body to every 409, 412 and 428 response, showing what a duplicate
+/// product name, a stale <c>If-Match</c> and a missing <c>If-Match</c> look like on the wire. Registered as an operation transformer because
 /// the generic <c>ProblemDetails</c> schema is shared by every error response and so cannot carry
 /// a status-specific example itself.
 /// </summary>
@@ -32,6 +32,14 @@ public sealed class PreconditionProblemExampleTransformer : IOpenApiOperationTra
         {
             var example = status switch
             {
+                "409" => new JsonObject
+                {
+                    ["type"] = "https://tools.ietf.org/html/rfc7231#section-6.5.8",
+                    ["title"] = "Conflict",
+                    ["status"] = 409,
+                    ["detail"] =
+                        "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                },
                 "412" => new JsonObject
                 {
                     ["type"] = "https://tools.ietf.org/html/rfc7232#section-4.2",

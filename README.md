@@ -130,7 +130,7 @@ pipeline throws for an outcome it expected to see.
   over it stops compiling until you handle the new case. A forgotten `if (result == null)` check
   simply can't happen — there's no null, only the cases you declared.
 - **The signature *is* the contract.** `Task<CreateProductResult>` where
-  `CreateProductResult` is `union(ProductDto, ValidationErrors, Error)` tells a caller everything
+  `CreateProductResult` is `union(ProductDto, ValidationErrors, Error, Conflict)` tells a caller everything
   that can happen without reading the method body or any docs.
 - **Mix-and-match per operation.** A union is declared per use case, not shared globally — a
   "get" query might only ever produce `(Dto, NotFound, Error)` while a "delete" produces
@@ -161,10 +161,10 @@ the end is reference material, not required front-to-back reading.
 > bug tracker) for every claim below, plus open questions not yet settled upstream.
 
 ```csharp
-public union CreateProductResult(ProductDto, ValidationErrors, Error);
+public union CreateProductResult(ProductDto, ValidationErrors, Error, Conflict);
 ```
 
-This declares a closed set of three **[case types](#this-repos-own-types)**. The compiler generates
+This declares a closed set of four **[case types](#this-repos-own-types)**. The compiler generates
 a [struct](#c-language-concepts) implementing `IUnion { object? Value { get; } }`, plus an implicit
 conversion from each case type:
 
@@ -182,7 +182,8 @@ var response = result switch
     ProductDto dto => Ok(dto),          // matches result.Value is ProductDto
     ValidationErrors e => BadRequest(e),
     Error err => Problem(err.Message),  // or err.ToProblemResult(HttpContext), see below
-    // no default/discard needed — the compiler knows these are the only three cases
+    Conflict c => Conflict(c.Message),
+    // no default/discard needed — the compiler knows these are the only four cases
 };
 ```
 
@@ -369,7 +370,7 @@ Each command's union implements it with a `switch` over **its own** cases:
 
 ```csharp
 public union UpdateProductResult(
-    ProductDto, NotFound<ProductId>, ValidationErrors, Error, NotAuthorized, PreconditionFailed)
+    ProductDto, NotFound<ProductId>, ValidationErrors, Error, NotAuthorized, PreconditionFailed, Conflict)
     : IValidatable<UpdateProductResult>, ITransactionOutcome<UpdateProductResult>,
         IAuthorizable<UpdateProductResult>, ICommitFailable<UpdateProductResult>
 {
@@ -381,6 +382,7 @@ public union UpdateProductResult(
         Error => false,
         NotAuthorized => false,
         PreconditionFailed => false,
+        Conflict => false,
     };
 }
 ```
@@ -418,7 +420,7 @@ behavior rolls back correctly purely by asking the union, never by recognizing t
 
 `ShouldCommit` decides whether to *attempt* a commit. The commit itself can still be refused for an
 ordinary, expected reason: another request changed the row first (an optimistic-concurrency
-failure), or the write would break a uniqueness constraint. Those are outcomes, not faults, so
+failure), or the write would break a uniqueness constraint (the unique index on a product's normalised name). Those are outcomes, not faults, so
 [`IUnitOfWork.CommitAsync`](src/MediatrUnionPoc.Domain/IUnitOfWork.cs) reports them as a small
 closed union instead of throwing:
 
@@ -429,7 +431,7 @@ public union CommitFailure(ConcurrencyConflict, UniqueViolation);   // the two f
 
 What a failure *means* is operation-specific — a stale write on an update is a precondition
 failure; the same failure on a brand-new row is impossible, so for a create it can only be an
-unexpected error; a uniqueness violation on a create is a conflict. So, exactly as with
+unexpected error; a uniqueness violation on a create or an update is a conflict. So, exactly as with
 `ShouldCommit`, the union answers, through
 [`ICommitFailable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/ICommitFailable.cs):
 
@@ -443,7 +445,7 @@ public interface ICommitFailable<TSelf> where TSelf : ICommitFailable<TSelf>
 public static UpdateProductResult FromCommitFailure(CommitFailure failure) => failure switch
 {
     ConcurrencyConflict => new PreconditionFailed("The product was changed by another request; reload it and retry."),
-    UniqueViolation => new Error("The update violates a uniqueness constraint.", "COMMIT_UNIQUE_VIOLATION"),
+    UniqueViolation => new Conflict("A product with this name already exists. Product names must be unique, ignoring case and surrounding whitespace."),
 };
 ```
 
@@ -906,12 +908,38 @@ a version that is no longer current is refused.
   same `PreconditionFailed`. Two racing `PUT`s with the same `ETag` therefore yield exactly one `204`
   and one `412`.
 
-`PreconditionFailed` (412) and `Conflict` (409, for a collision with existing state such as a
-duplicate name) are shared case types in the same sense as `NotFound`: meaning-free records whose
+`PreconditionFailed` (412) and `Conflict` (409, for a collision with existing state — here a
+duplicate product name) are shared case types in the same sense as `NotFound`: meaning-free records whose
 HTTP mapping lives in
 [`ResultHttpExtensions`](src/MediatrUnionPoc.Api/Http/ResultHttpExtensions.cs) as extension members,
 with RFC 7807 bodies and the trace id like every other problem response. The OpenAPI document
-declares the `412`/`428` responses (with example bodies) and the `ETag` response header.
+declares the `409`/`412`/`428` responses (with example bodies) and the `ETag` response header.
+
+#### Duplicate product names
+
+A product name is a duplicate if it matches another product's name **ignoring case and
+surrounding whitespace** (`"  BLUE widget "` collides with `"Blue Widget"`), across all owners.
+`Create` and `Update` can therefore return `Conflict` (`Delete` cannot). The rule is enforced in
+two layers that share one definition:
+
+- **The Domain owns the rule.** [`ProductNames.Normalize`](src/MediatrUnionPoc.Domain/ProductNames.cs)
+  (trim, then upper-case with the invariant culture) is the one canonical comparison key, and
+  `Product.NormalizedName` keeps it in step with `Name` on every create and rename.
+- **Up front, in the handler.** `IProductRepository.ExistsWithNameAsync(name, excludingId, ct)` asks
+  whether another product already holds an equivalent name; on `true` the handler returns
+  `Conflict` before mutating anything. `Update` passes the product's own id as `excludingId`, so
+  resubmitting a product's own name (even re-cased) is never a conflict with itself. The problem
+  body's `detail` echoes only the name the caller supplied, never anything about the product that
+  holds it.
+- **At commit, as the race backstop.** The check reads committed state, so two simultaneous requests
+  can both pass it. A unique index on `NormalizedName` (Infrastructure's `AppDbContext`) settles the
+  race: the loser's `SaveChanges` fails, `EfCoreUnitOfWork.CommitAsync` reports `UniqueViolation`,
+  and `FromCommitFailure` turns that into the same `Conflict` — so two racing `POST`s with the same
+  name yield exactly one `201` and one `409`. Storing the normalised key as a plain column keeps the
+  index database-agnostic (no collation), and the translation only treats a unique violation on that
+  index as `UniqueViolation`; any other constraint failure (a primary-key collision, say) still
+  propagates as the unexpected fault it is. Identifying the index relies on SQLite's message naming
+  the column (`Products.NormalizedName`); another provider needs its own check there.
 
 ```bash
 # Create: 201 with ETag: W/"1"
@@ -1385,7 +1413,7 @@ operation:
 | Case                                    | Meaning                                                                 |
 | ----------------------------------------- | -------------------------------------------------------------------------- |
 | `Accepted(jobId)`                        | Work was queued/deferred, not completed synchronously                     |
-| `Conflict(currentVersion)`               | [Optimistic-concurrency](#cross-cutting-concepts) version mismatch on update |
+| `Conflict(currentVersion)`               | [Optimistic-concurrency](#cross-cutting-concepts) version mismatch on update *(the `Conflict` case actually used here is the simpler `Conflict(message)` for a duplicate product name; a version mismatch is `PreconditionFailed`)* |
 | `Locked(heldBy)`                         | Resource is [pessimistically locked](#cross-cutting-concepts) by another process |
 | `RateLimited(retryAfter)`                | Caller hit a throttling limit                                             |
 | `Timeout(dependency)`                    | A downstream dependency didn't respond in time                           |
@@ -1420,7 +1448,7 @@ in their own boundary code.
   adapts (EF Core), not for a provider: a future NHibernate adapter would be a separate
   `IUnitOfWork` implementation. `CommitAsync` returns a `CommitResult` union rather than `Task`: a
   concurrency-token failure comes back as `ConcurrencyConflict` (nothing persisted; the caller
-  rolls back), and `UniqueViolation` is declared for the same purpose.
+  rolls back), and a unique-constraint failure on the product-name index comes back as `UniqueViolation`.
 - **NSubstitute + Vogen structs:** two `Arg.Any<T>()` matchers in the same mocked call, where one
   `T` is a Vogen value object (custom equality), can throw `AmbiguousArgumentsException`. Use a
   concrete value object instance instead of `Arg.Any<T>()` for at least one of the arguments.

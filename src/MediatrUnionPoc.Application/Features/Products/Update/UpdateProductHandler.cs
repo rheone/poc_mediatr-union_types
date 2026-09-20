@@ -67,6 +67,11 @@ public sealed class UpdateProductHandler(
             );
         }
 
+        if (await _repository.ExistsWithNameAsync(request.Name, productId, cancellationToken))
+        {
+            return ProductConflicts.NameTaken(request.Name);
+        }
+
         product.UpdateDetails(request.Name, Money.From(request.Price));
         return ProductDto.FromDomain(product);
     }

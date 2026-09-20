@@ -385,4 +385,89 @@ public class ProductRepositoryTests
         var exception = Assert.Throws<ArgumentNullException>(act);
         Assert.Equal("dbContext", exception.ParamName);
     }
+
+    /// <summary>Verifies the existence query treats names differing only by case and surrounding whitespace as the same name.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task ExistsWithNameAsync_SameNameDifferentCaseAndPadding_ReturnsTrue_Test()
+    {
+        // Arrange
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await database.SeedAsync(
+            [ProductMother.Named("Blue Widget")],
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
+        var repository = new ProductRepository(dbContext);
+
+        // Act
+        var exists = await repository.ExistsWithNameAsync(
+            "  bLUE widget ",
+            null,
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        Assert.True(exists);
+    }
+
+    /// <summary>Verifies the existence query reports no match for a different name.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task ExistsWithNameAsync_DifferentName_ReturnsFalse_Test()
+    {
+        // Arrange
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        await database.SeedAsync(
+            [ProductMother.Named("Blue Widget")],
+            TestContext.Current.CancellationToken
+        );
+        await using var dbContext = database.CreateContext();
+        var repository = new ProductRepository(dbContext);
+
+        // Act
+        var exists = await repository.ExistsWithNameAsync(
+            "Red Widget",
+            null,
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        Assert.False(exists);
+    }
+
+    /// <summary>Verifies excluding a product's own id stops it colliding with its own name, while another product's name still collides.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task ExistsWithNameAsync_ExcludingOwnId_IgnoresOwnRowOnly_Test()
+    {
+        // Arrange
+        await using var database = await SqliteDatabaseMother.CreateAsync(
+            TestContext.Current.CancellationToken
+        );
+        var blue = ProductMother.Named("Blue Widget");
+        var red = ProductMother.Named("Red Widget");
+        await database.SeedAsync([blue, red], TestContext.Current.CancellationToken);
+        await using var dbContext = database.CreateContext();
+        var repository = new ProductRepository(dbContext);
+
+        // Act
+        var ownName = await repository.ExistsWithNameAsync(
+            "blue widget",
+            blue.Id,
+            TestContext.Current.CancellationToken
+        );
+        var otherName = await repository.ExistsWithNameAsync(
+            "RED WIDGET",
+            blue.Id,
+            TestContext.Current.CancellationToken
+        );
+
+        // Assert
+        Assert.Multiple(() => Assert.False(ownName), () => Assert.True(otherName));
+    }
 }

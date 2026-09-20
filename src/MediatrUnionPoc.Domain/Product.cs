@@ -18,6 +18,14 @@ public sealed class Product
     /// <value>The current name, set by <see cref="Create"/> and replaceable via <see cref="UpdateDetails"/>.</value>
     public string Name { get; private set; }
 
+    /// <summary>
+    /// The comparison key of <see cref="Name"/> (see <see cref="ProductNames.Normalize"/>), kept in
+    /// step with it by this entity. Persistence puts its unique index on this value, so the
+    /// database enforces exactly the duplicate rule the application checks.
+    /// </summary>
+    /// <value>The normalised form of the current <see cref="Name"/>.</value>
+    public string NormalizedName { get; private set; }
+
     /// <summary>This product's price.</summary>
     /// <value>The current price, set by <see cref="Create"/> and replaceable via <see cref="UpdateDetails"/>.</value>
     public Money Price { get; private set; }
@@ -60,6 +68,7 @@ public sealed class Product
     {
         Id = id;
         Name = name;
+        NormalizedName = ProductNames.Normalize(name);
         Price = price;
         OwnerId = ownerId;
         Version = version;
@@ -90,6 +99,7 @@ public sealed class Product
     {
         ArgumentNullException.ThrowIfNull(name);
         Name = name;
+        NormalizedName = ProductNames.Normalize(name);
         Price = price;
         Version = Version.Next();
     }

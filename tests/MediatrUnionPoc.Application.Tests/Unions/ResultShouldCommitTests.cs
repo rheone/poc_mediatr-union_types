@@ -42,7 +42,8 @@ public class ResultShouldCommitTests
                 new ValidationErrors([new ValidationError("Name", "required")]),
                 false
             ),
-            CreateRow("Error", new Error(ErrorMessage, ErrorCode), false)
+            CreateRow("Error", new Error(ErrorMessage, ErrorCode), false),
+            CreateRow("Conflict", new Conflict("name taken"), false)
         );
 
     /// <summary>Rows: one per <see cref="UpdateProductResult"/> case, with whether it should commit — only <see cref="ProductDto"/> does.</summary>
@@ -63,7 +64,8 @@ public class ResultShouldCommitTests
                 false
             ),
             UpdateRow("Error", new Error(ErrorMessage, ErrorCode), false),
-            UpdateRow("NotAuthorized", new NotAuthorized(["not the owner"]), false)
+            UpdateRow("NotAuthorized", new NotAuthorized(["not the owner"]), false),
+            UpdateRow("Conflict", new Conflict("name taken"), false)
         );
 
     // Union values have no distinguishing ToString, so each row names its case explicitly to keep

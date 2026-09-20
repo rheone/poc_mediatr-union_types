@@ -184,4 +184,31 @@ public class ProductTests
         // Assert
         Assert.Equal(3L, product.Version.Value);
     }
+
+    /// <summary>Verifies a new product carries the comparison key of its name.</summary>
+    [Fact]
+    public void Create_PaddedMixedCaseName_HasTrimmedUpperCaseNormalizedName_Test()
+    {
+        // Arrange
+
+        // Act
+        var product = Product.Create("  Blue Widget ", Money.From(PriceValue));
+
+        // Assert
+        Assert.Equal("BLUE WIDGET", product.NormalizedName);
+    }
+
+    /// <summary>Verifies renaming a product re-derives its comparison key.</summary>
+    [Fact]
+    public void UpdateDetails_NewName_RefreshesNormalizedName_Test()
+    {
+        // Arrange
+        var product = Product.Create(Name, Money.From(PriceValue));
+
+        // Act
+        product.UpdateDetails("  Red gadget", Money.From(PriceValue));
+
+        // Assert
+        Assert.Equal("RED GADGET", product.NormalizedName);
+    }
 }

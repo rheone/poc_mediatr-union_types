@@ -51,4 +51,32 @@ public class FromCommitFailureTests
         // Assert
         Assert.IsType<Error>(((IUnion)result).Value);
     }
+
+    /// <summary>Verifies a unique violation at commit time is a conflict for a create: a concurrent request claimed the name first.</summary>
+    [Fact]
+    public void FromCommitFailure_CreateUniqueViolation_IsConflict_Test()
+    {
+        // Arrange
+        CommitFailure failure = new UniqueViolation();
+
+        // Act
+        var result = CreateProductResult.FromCommitFailure(failure);
+
+        // Assert
+        Assert.IsType<Conflict>(((IUnion)result).Value);
+    }
+
+    /// <summary>Verifies a unique violation at commit time is a conflict for an update.</summary>
+    [Fact]
+    public void FromCommitFailure_UpdateUniqueViolation_IsConflict_Test()
+    {
+        // Arrange
+        CommitFailure failure = new UniqueViolation();
+
+        // Act
+        var result = UpdateProductResult.FromCommitFailure(failure);
+
+        // Assert
+        Assert.IsType<Conflict>(((IUnion)result).Value);
+    }
 }

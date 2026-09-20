@@ -37,6 +37,23 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
     }
 
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    public Task<bool> ExistsWithNameAsync(
+        string name,
+        ProductId? excludingId = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(name);
+
+        var key = ProductNames.Normalize(name);
+        return _dbContext.Products.AnyAsync(
+            p => p.NormalizedName == key && (excludingId == null || p.Id != excludingId.Value),
+            cancellationToken
+        );
+    }
+
+    /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="product"/> is <see langword="null"/>.</exception>
     public async Task AddAsync(Product product, CancellationToken cancellationToken = default)
     {

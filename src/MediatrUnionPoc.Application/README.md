@@ -11,7 +11,7 @@ GetPaged) rather than by technical layer — everything one operation needs live
 case types (e.g. `ProductDto`).
 
 Every command/query returns a [`union`](../../README.md#the-c-union-type) of exactly the outcomes
-that operation can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error)`)
+that operation can produce (e.g. `union CreateProductResult(ProductDto, ValidationErrors, Error, Conflict)`)
 instead of throwing for an expected outcome — see the repo root README's
 ["No exceptions for expected outcomes"](../../README.md#no-exceptions-for-expected-outcomes)
 section for the full rationale, and its [Glossary](../../README.md#glossary) for any term below
@@ -95,7 +95,8 @@ interface based on what it does:
   ShouldCommit(TResponse)`, exhaustively switching over that union's own cases) and
   `ICommitFailable<TResponse>` (a `static abstract TSelf FromCommitFailure(CommitFailure)`,
   exhaustively switching over the ways a commit can be refused — a stale write, a uniqueness
-  violation — and deciding what each means for this operation). `TransactionBehavior` rolls back and
+  violation — and deciding what each means for this operation; for Create and Update a uniqueness
+  violation on the product name is a `Conflict`). `TransactionBehavior` rolls back and
   returns `FromCommitFailure(...)` when `IUnitOfWork.CommitAsync` reports a failure.
 - Needs `ValidationBehavior` to short-circuit before the handler runs → the response union also
   implements `IValidatable<TSelf>` (`static abstract TSelf FromValidationErrors(ValidationErrors)`).

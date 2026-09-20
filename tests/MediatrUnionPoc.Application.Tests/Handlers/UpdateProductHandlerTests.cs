@@ -222,6 +222,67 @@ public sealed class UpdateProductHandlerTests : IDisposable
         );
     }
 
+    /// <summary>Verifies renaming onto a name another product holds is refused as a Conflict, and the product is left unchanged.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_NewNameHeldByAnotherProduct_ReturnsConflictAndLeavesProductUnchanged_Test()
+    {
+        // Arrange
+        var product = StoredProduct();
+        _repository
+            .ExistsWithNameAsync(NewName, Arg.Any<ProductId?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _sut.Handle(
+            new UpdateProductCommand(
+                product.Id.Value,
+                NewName,
+                NewPrice,
+                PrincipalMother.WithId(OwnerId),
+                product.Version
+            ),
+            CancellationToken.None
+        );
+
+        // Assert
+        var conflict = Assert.IsType<Conflict>(((IUnion)result).Value);
+        Assert.Multiple(
+            () => Assert.Contains($"'{NewName}'", conflict.Message, StringComparison.Ordinal),
+            () => Assert.Equal(OriginalName, product.Name),
+            () => Assert.Equal(1L, product.Version.Value)
+        );
+    }
+
+    /// <summary>Verifies resubmitting a product's own, unchanged name is not a duplicate of itself.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_NameUnchanged_DoesNotConflictWithItself_Test()
+    {
+        // Arrange
+        var product = StoredProduct();
+
+        // The name is taken — by this very product. Only a comparison that excludes it may say "free".
+        _repository
+            .ExistsWithNameAsync(OriginalName, Arg.Any<ProductId?>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<ProductId?>(1) != product.Id);
+
+        // Act
+        var result = await _sut.Handle(
+            new UpdateProductCommand(
+                product.Id.Value,
+                OriginalName,
+                NewPrice,
+                PrincipalMother.WithId(OwnerId),
+                product.Version
+            ),
+            CancellationToken.None
+        );
+
+        // Assert
+        Assert.IsType<ProductDto>(((IUnion)result).Value);
+    }
+
     private Product StoredProduct()
     {
         var product = Product.Create(OriginalName, Money.From(OriginalPrice), ownerId: OwnerId);

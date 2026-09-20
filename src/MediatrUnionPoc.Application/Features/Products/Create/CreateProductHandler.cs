@@ -30,6 +30,11 @@ public sealed class CreateProductHandler(IProductRepository repository)
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (await _repository.ExistsWithNameAsync(request.Name, null, cancellationToken))
+        {
+            return ProductConflicts.NameTaken(request.Name);
+        }
+
         var ownerId =
             request.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
         var product = Product.Create(request.Name, Money.From(request.Price), ownerId);

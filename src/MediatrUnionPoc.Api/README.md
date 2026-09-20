@@ -36,7 +36,7 @@ returns the new one with `204`. `PUT` requires `If-Match`: missing is `428`, mal
 validation problem naming the header, stale is `412`. On `DELETE` it is optional, and enforced when
 present. `IfMatchHeader.Parse` classifies the header (`ProductVersion`, `MissingIfMatch` or
 `ValidationErrors`) so both actions share one parser, and `Response.SetETag(version)`
-(`ETagHttpExtensions`) writes the header. The OpenAPI document declares the `412`/`428` responses
+(`ETagHttpExtensions`) writes the header. The OpenAPI document declares the `409`/`412`/`428` responses
 with example bodies (`PreconditionProblemExampleTransformer`) and the `ETag` response header on
 actions marked `[ReturnsETag]` (`ETagResponseHeaderTransformer`). See the repo root README's
 [Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).

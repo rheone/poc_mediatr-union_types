@@ -50,7 +50,8 @@ public union UpdateProductResult(
     ValidationErrors,
     Error,
     NotAuthorized,
-    PreconditionFailed
+    PreconditionFailed,
+    Conflict
 )
     : IValidatable<UpdateProductResult>,
         ITransactionOutcome<UpdateProductResult>,
@@ -97,14 +98,16 @@ public union UpdateProductResult(
         Error => false,
         NotAuthorized => false,
         PreconditionFailed => false,
+        Conflict => false,
     };
 
     /// <inheritdoc/>
     /// <remarks>
     /// A <see cref="ConcurrencyConflict"/> means another writer changed the product between this
     /// request loading it and committing — the caller's version is stale, exactly what the handler's
-    /// up-front check reports, so it is a <see cref="PreconditionFailed"/> too. Nothing about an
-    /// update can violate a uniqueness constraint yet, so that failure is an <see cref="Error"/>.
+    /// up-front check reports, so it is a <see cref="PreconditionFailed"/> too. A
+    /// <see cref="UniqueViolation"/> means a concurrent request claimed the new name after the
+    /// handler's up-front check passed: <see cref="Conflict"/>.
     /// </remarks>
     public static UpdateProductResult FromCommitFailure(CommitFailure failure)
     {
@@ -113,10 +116,7 @@ public union UpdateProductResult(
             ConcurrencyConflict => new PreconditionFailed(
                 "The product was changed by another request; reload it and retry."
             ),
-            UniqueViolation => new Error(
-                "The update violates a uniqueness constraint.",
-                "COMMIT_UNIQUE_VIOLATION"
-            ),
+            UniqueViolation => ProductConflicts.NameTakenByConcurrentRequest(),
         };
     }
 }
