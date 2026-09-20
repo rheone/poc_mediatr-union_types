@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Asp.Versioning;
 using MediatR;
 using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.Http;
@@ -36,7 +37,9 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// <param name="sender">The MediatR sender every action dispatches its request through.</param>
 /// <exception cref="ArgumentNullException"><paramref name="sender"/> is <see langword="null"/>.</exception>
 [ApiController]
-[Route("api/products")]
+[ApiVersion(ApiVersions.V1)]
+[Route(ApiVersions.VersionedPrefix + "/products")]
+[Route(ApiVersions.UnversionedAliasPrefix + "/products", Order = 1)] // transitional alias for v1
 public sealed class ProductsController(ISender sender) : ControllerBase
 {
     private const string NoSubjectReason =
@@ -84,7 +87,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         {
             ProductDto dto => WithETag(
                 dto,
-                CreatedAtAction(nameof(GetByIdAsync), new { id = dto.Id.Value }, dto)
+                Created(VersionedUrl(nameof(GetByIdAsync), new { id = dto.Id.Value }), dto)
             ),
             ValidationErrors errors => errors.ToProblemResult(HttpContext),
             Conflict conflict => conflict.ToProblemResult(HttpContext),
@@ -281,9 +284,22 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         };
     }
 
+    /// <summary>
+    /// Builds the URL of one of this controller's actions on the versioned route, whichever route the
+    /// current request used: a client that called the unversioned alias is still pointed at the
+    /// canonical <c>/api/v1/...</c> address.
+    /// </summary>
+    private string VersionedUrl(string action, object? values = null)
+    {
+        var routeValues = new RouteValueDictionary(values) { ["version"] = ApiVersions.V1Segment };
+
+        return Url.Action(action, controller: "Products", routeValues)
+            ?? throw new InvalidOperationException($"No route generates a URL for {action}.");
+    }
+
     private IActionResult WithPagingHeaders(PagedResult<ProductDto> page, IActionResult result)
     {
-        Response.SetPagingHeaders(page);
+        Response.SetPagingHeaders(page, VersionedUrl(nameof(GetPagedAsync)));
         return result;
     }
 

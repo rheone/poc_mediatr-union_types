@@ -14,6 +14,8 @@ happen to still look correct. `LayeringTests.cs` currently checks:
   `System.IdentityModel.Tokens`): impersonation tokens are signed in Api behind an Application abstraction.
 - Neither Domain nor Application references Serilog or the ASP.NET Core HTTP pipeline (`Microsoft.AspNetCore.Http`):
   the audit stream is an Application abstraction with its implementation and middleware in Api.
+- Neither Domain, Application nor Infrastructure references `Asp.Versioning`: a version is a property of the
+  HTTP address, so it lives in Api only.
 - Only Api references ASP.NET Core MVC (`Microsoft.AspNetCore.Mvc`) — union-to-HTTP translation stays in the controller.
 
 ## Dependencies

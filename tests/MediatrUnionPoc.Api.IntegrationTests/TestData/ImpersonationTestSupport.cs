@@ -13,7 +13,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests.TestData;
 public static class ImpersonationTestSupport
 {
     /// <summary>The route of the token endpoint.</summary>
-    public const string TokensUri = "/api/impersonation/tokens";
+    public const string TokensUri = ApiRoutes.ImpersonationTokens;
 
     /// <summary>A reason that satisfies the validator.</summary>
     public const string ValidReason = "Reproducing the checkout error alice reported";

@@ -14,7 +14,7 @@ passing.
 | Impersonation | Available to `Administrator` and `Support` roles, in **every** environment; a non-empty **reason** is mandatory and is recorded |
 | Audit | A separate, simple audit stream (see step 5); a database table and Seq are deferred |
 | Logging | Serilog with enrichment. Seq is **not** part of this plan (a new deployment is overkill for a POC) |
-| Versioning | URL segment: `/api/v1/products` |
+| Versioning | URL segment: `/api/v1/products`; the unversioned URLs stay as a transitional alias for v1 |
 | CORS | A configurable stub policy for a future browser client |
 | Rate limiting | Built-in ASP.NET Core rate limiter, per-user partitioning |
 | Language | No `field` keyword or primary-constructor work; only touch a file for other reasons |
@@ -69,7 +69,7 @@ Status: implemented.
 
 Status: implemented.
 
-An endpoint, `POST /api/impersonation/tokens` (unversioned until step 6), that mints a short-lived JWT for a target identity.
+An endpoint, `POST /api/v1/impersonation/tokens`, that mints a short-lived JWT for a target identity.
 
 - **Who:** callers with the `Administrator` or `Support` role. Nobody else, and never anonymously.
 - **Request:** target user id, roles to grant, lifetime (capped by `ImpersonationOptions`), and a
@@ -178,13 +178,33 @@ is the reference.
 
 ## Step 6: API versioning and CORS
 
-**Versioning.** `Asp.Versioning.Mvc` and `Asp.Versioning.Mvc.ApiExplorer`, URL-segment reader.
-- Routes become `/api/v{version:apiVersion}/products`; unversioned requests default to v1
-  (`AssumeDefaultVersionWhenUnspecified`) so existing callers keep working during the move.
+Status: versioning implemented; CORS pending.
+
+**Versioning.**
+
+Status: implemented.
+
+`Asp.Versioning.Mvc` and `Asp.Versioning.Mvc.ApiExplorer`, URL-segment reader.
+- Routes become `/api/v{version:apiVersion}/products` and `/api/v{version:apiVersion}/impersonation/tokens`;
+  unversioned requests default to v1 (`AssumeDefaultVersionWhenUnspecified`) so existing callers keep
+  working during the move. Every response reports `api-supported-versions` (`ReportApiVersions`).
 - One OpenAPI document per version; existing transformers apply to each.
 - `Location` and `Link` headers must emit the versioned URL. `CreatedAtAction` and the paging
   helpers need checking, and each gets a test.
 - Move every integration test URL, the `.http` file and README examples.
+
+**As built (versioning).** The unversioned URLs are kept as a transitional alias for v1 (a second
+`[Route]` per controller with `Order = 1`, plus `AssumeDefaultVersionWhenUnspecified`); the alias is
+not in the OpenAPI document, and the README's "API versioning" section says how to retire it.
+`Location` and `Link` are always the canonical `/api/v1/...` URL, even for a client that used the
+alias: `CreatedAtAction` is replaced by `Created(Url.Action(...))` so the versioned route is chosen
+explicitly, and `SetPagingHeaders` takes an optional canonical URL. `Asp.Versioning.OpenApi` could
+not be used (it needs `Microsoft.OpenApi` 2.x, `Microsoft.AspNetCore.OpenApi` 11 needs 3.x, NU1107),
+so `AddVersionedOpenApi(name)` registers one document per version by hand, filtered by the API
+explorer group, and its `AV0029`/`AV0030` advice is silenced in the Api project. With the version in
+the path, a version that is not served is an unmatched route: a `404` problem (or `401` for an
+anonymous caller, by the fallback policy), not a `400`. The Application layer has no versioning
+dependency (architecture test).
 
 **CORS.** A named policy bound to `CorsOptions` (allowed origins, methods, headers), empty or
 localhost by default. Never a wildcard origin combined with credentials. Placed before

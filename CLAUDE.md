@@ -52,7 +52,7 @@ machine and fail with `NETSDK1045`.
   shared policy is a DI-registered `HttpMappingOptions` (`AddResultHttpMapping(...)` in
   `Program.cs`: `Error.Code` to status table, `type` URI switch); each extension also takes per-call
   overrides, and the controller keeps its own `switch` so `CS8509` exhaustiveness still applies.
-  `PATCH /api/products/{id}` requires `Content-Type: application/merge-patch+json` (`[Consumes]`,
+  `PATCH /api/v1/products/{id}` requires `Content-Type: application/merge-patch+json` (`[Consumes]`,
   else 415) and binds `Optional<T>` members through `OptionalJsonConverterFactory` (registered in
   `Program.cs` via `AddJsonOptions`); unknown members are ignored, a present `null` or an empty
   patch is a 400. The OpenAPI schema/media-type shaping for it lives in `Api/OpenApi/`
@@ -141,7 +141,7 @@ calling is checked before whether their input is well-formed, and the audit beha
 union is `IValidatable` (all six operations), `AuthorizationBehavior` to `IRequiresAuthorization`
 requests, `TransactionBehavior` to `ITransactionalCommand` requests (Create, Update, Patch, Delete).
 
-**Listing** (`GET /api/products`): the Domain defines a database-agnostic vocabulary
+**Listing** (`GET /api/v1/products`): the Domain defines a database-agnostic vocabulary
 (`ProductCriteria`, `ProductSort` with a `ProductSortField` enum allowlist, `PagedResult<T>` — the
 one place page arithmetic lives) and only `ProductRepository` in Infrastructure turns it into a
 query (every sort ends in an implicit `Id` tiebreaker). `Product.CreatedAt` is stamped by
@@ -193,7 +193,7 @@ convention for every new setting:** `AddOptions<T>().BindConfiguration("Section"
 plus an `[OptionsValidator]` source-generated `IValidateOptions<T>` (DataAnnotations on the class);
 `HealthEndpointsOptions` is the reference. The health-check package is pinned to EF Core's `10.0.12`.
 
-**Impersonation** (`POST /api/impersonation/tokens`, README "Impersonation"): a controlled
+**Impersonation** (`POST /api/v1/impersonation/tokens`, README "Impersonation"): a controlled
 authentication bypass available in every environment. The command slice
 (`Application/Features/Impersonation/IssueToken/`) is a non-transactional `ICommand` gated by the
 `Impersonator` policy; its handler refuses chained impersonation, roles outside
@@ -220,6 +220,18 @@ with the token's `jti`. `IAuditRequestContext` supplies trace id and source addr
 `HttpContext`). Actor = the `act` subject when impersonated (`AuditIdentity`). Never put a token, secret,
 `Authorization` header or body in an event. Api integration tests get a private temp audit directory per
 `ProductsApiFactory` (`ReadAuditEvents()`); no test writes audit files under the repo.
+
+**API versioning** (`Api/Http/ApiVersions.cs`, `Api/OpenApi/`; README "API versioning"): URL segment,
+`Asp.Versioning.Mvc` + `.ApiExplorer`; both controllers are `[ApiVersion("1.0")]` on
+`api/v{version:apiVersion}/...`, health/OpenAPI/Scalar are unversioned. A second `[Route]` per
+controller (`ApiVersions.UnversionedAliasPrefix`, `Order = 1`) plus `AssumeDefaultVersionWhenUnspecified`
+keeps `/api/products` and `/api/impersonation/tokens` working as a transitional alias for v1, not in
+the OpenAPI document; `ReportApiVersions` puts `api-supported-versions` on every response.
+`Location` and `Link` are always the canonical `/api/v1/...` URL (`ProductsController.VersionedUrl`).
+A version that is not served is an unmatched route (404 problem, or 401 when anonymous). One OpenAPI
+document per version via `AddVersionedOpenApi("v1")` (`Asp.Versioning.OpenApi` cannot be used: it needs
+`Microsoft.OpenApi` 2.x, the built-in generator 3.x). Domain/Application/Infrastructure never reference
+`Asp.Versioning` (architecture test). Integration tests take every URL from `tests/.../ApiRoutes.cs`.
 
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It
@@ -251,7 +263,7 @@ factory silences the file and console sinks by configuration.
   name and require a non-defaulted token, so those can't follow the convention.
 - ASP.NET Core's `SuppressAsyncSuffixInActionNames` default (`true`) is overridden to `false` in
   `Program.cs` so controller action names keep the `Async` suffix — otherwise `nameof(GetByIdAsync)`
-  used in `CreatedAtAction` silently stops matching the action name MVC would register it under.
+  used in `Url.Action` (the `Location` builder) silently stops matching the action name MVC would register it under.
 - Central Package Management: every package version lives in `Directory.Packages.props`;
   individual `.csproj` files reference packages without a `Version` attribute.
 - `.editorconfig` documents, with inline rationale, every analyzer severity override — check it

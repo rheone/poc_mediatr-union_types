@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace MediatrUnionPoc.Api.IntegrationTests;
 
-/// <summary>Verifies the generated OpenAPI document describes <c>PATCH /api/products/{id}</c> as a JSON Merge Patch operation.</summary>
+/// <summary>Verifies the generated OpenAPI document describes <c>PATCH /api/v1/products/{id}</c> as a JSON Merge Patch operation.</summary>
 [Trait("Category", "Integration")]
 public sealed class PatchOpenApiTests : IDisposable
 {
@@ -115,19 +115,19 @@ public sealed class PatchOpenApiTests : IDisposable
     private async Task<JsonNode> PatchOperationAsync()
     {
         var document = await _client.GetFromJsonAsync<JsonObject>(
-            "/openapi/v1.json",
+            ApiRoutes.OpenApiV1,
             CancellationToken.None
         );
-        return document!["paths"]!["/api/products/{id}"]!["patch"]!;
+        return document!["paths"]![ApiRoutes.ProductByIdTemplate]!["patch"]!;
     }
 
     private async Task<JsonNode> PatchBodySchemaAsync()
     {
         var document = await _client.GetFromJsonAsync<JsonObject>(
-            "/openapi/v1.json",
+            ApiRoutes.OpenApiV1,
             CancellationToken.None
         );
-        var schema = document!["paths"]!["/api/products/{id}"]!["patch"]!["requestBody"]![
+        var schema = document!["paths"]![ApiRoutes.ProductByIdTemplate]!["patch"]!["requestBody"]![
             "content"
         ]![MergePatchJson]!["schema"]!;
 

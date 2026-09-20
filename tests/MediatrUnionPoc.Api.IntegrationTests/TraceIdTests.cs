@@ -21,7 +21,7 @@ public sealed class TraceIdTests
         using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
-        using var response = await client.GetAsync("/api/products", CancellationToken.None);
+        using var response = await client.GetAsync(ApiRoutes.Products, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -40,7 +40,7 @@ public sealed class TraceIdTests
 
         // Act
         using var response = await client.GetAsync(
-            $"/api/products/{Guid.NewGuid()}",
+            $"{ApiRoutes.Products}/{Guid.NewGuid()}",
             CancellationToken.None
         );
 
@@ -65,7 +65,7 @@ public sealed class TraceIdTests
 
         // Act
         using var response = await client.PostAsync(
-            "/api/products",
+            ApiRoutes.Products,
             content,
             CancellationToken.None
         );
@@ -105,7 +105,7 @@ public sealed class TraceIdTests
 
         // Act
         using var response = await client.PostAsync(
-            "/api/products",
+            ApiRoutes.Products,
             content,
             CancellationToken.None
         );
@@ -125,7 +125,7 @@ public sealed class TraceIdTests
         using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
-        using var response = await client.GetAsync("/api/products", CancellationToken.None);
+        using var response = await client.GetAsync(ApiRoutes.Products, CancellationToken.None);
 
         // Assert
         var header = Assert.Single(response.Headers.GetValues(TraceHeader));

@@ -20,7 +20,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class ProductListingTests : IDisposable
 {
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
 
     private static readonly DateTimeOffset ClockStart = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -399,7 +399,7 @@ public sealed class ProductListingTests : IDisposable
 
         // Assert
         const string Base =
-            "http://localhost/api/products?nameContains=item&pageSize=2&pageNumber=";
+            $"http://localhost{ApiRoutes.Products}?nameContains=item&pageSize=2&pageNumber=";
         const string Rest = "&sort=name,-price";
         Assert.Equal(
             $"<{Base}1{Rest}>; rel=\"first\", <{Base}1{Rest}>; rel=\"prev\", <{Base}3{Rest}>; rel=\"next\", <{Base}4{Rest}>; rel=\"last\"",
@@ -457,7 +457,7 @@ public sealed class ProductListingTests : IDisposable
 
         // Assert
         Assert.Equal(
-            "<http://localhost/api/products?pageSize=2&pageNumber=1>; rel=\"first\", <http://localhost/api/products?pageSize=2&pageNumber=2>; rel=\"next\", <http://localhost/api/products?pageSize=2&pageNumber=2>; rel=\"last\"",
+            $"<http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=1>; rel=\"first\", <http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=2>; rel=\"next\", <http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=2>; rel=\"last\"",
             Assert.Single(response.Headers.GetValues("Link"))
         );
     }
@@ -481,7 +481,7 @@ public sealed class ProductListingTests : IDisposable
 
         // Assert
         Assert.Equal(
-            "<http://localhost/api/products?pageSize=2&pageNumber=1>; rel=\"first\", <http://localhost/api/products?pageSize=2&pageNumber=3>; rel=\"prev\", <http://localhost/api/products?pageSize=2&pageNumber=3>; rel=\"last\"",
+            $"<http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=1>; rel=\"first\", <http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=3>; rel=\"prev\", <http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=3>; rel=\"last\"",
             Assert.Single(response.Headers.GetValues("Link"))
         );
     }
@@ -499,7 +499,7 @@ public sealed class ProductListingTests : IDisposable
 
         // Assert
         Assert.Equal(
-            "<http://localhost/api/products?nameContains=zzz&pageNumber=1>; rel=\"first\", <http://localhost/api/products?nameContains=zzz&pageNumber=1>; rel=\"last\"",
+            $"<http://localhost{ApiRoutes.Products}?nameContains=zzz&pageNumber=1>; rel=\"first\", <http://localhost{ApiRoutes.Products}?nameContains=zzz&pageNumber=1>; rel=\"last\"",
             Assert.Single(response.Headers.GetValues("Link"))
         );
     }
@@ -535,7 +535,7 @@ public sealed class ProductListingTests : IDisposable
 
         // Assert
         Assert.Equal(
-            "<http://localhost/api/products?nameContains=a%26b%2Bc%20d&pageNumber=1>; rel=\"first\", <http://localhost/api/products?nameContains=a%26b%2Bc%20d&pageNumber=1>; rel=\"last\"",
+            $"<http://localhost{ApiRoutes.Products}?nameContains=a%26b%2Bc%20d&pageNumber=1>; rel=\"first\", <http://localhost{ApiRoutes.Products}?nameContains=a%26b%2Bc%20d&pageNumber=1>; rel=\"last\"",
             Assert.Single(response.Headers.GetValues("Link"))
         );
     }

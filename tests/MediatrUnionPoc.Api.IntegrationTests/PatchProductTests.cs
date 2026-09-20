@@ -10,14 +10,14 @@ using MediatrUnionPoc.Application.Features.Products.Common;
 namespace MediatrUnionPoc.Api.IntegrationTests;
 
 /// <summary>
-/// Exercises <c>PATCH /api/products/{id}</c> (JSON Merge Patch, RFC 7396) over real HTTP against the
+/// Exercises <c>PATCH /api/v1/products/{id}</c> (JSON Merge Patch, RFC 7396) over real HTTP against the
 /// real host and real SQLite: which fields change, what each refusal looks like on the wire, and that
 /// concurrent patches cannot both win.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class PatchProductTests : IDisposable
 {
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
     private const string MergePatchJson = "application/merge-patch+json";
     private const string ProblemJson = "application/problem+json";
 

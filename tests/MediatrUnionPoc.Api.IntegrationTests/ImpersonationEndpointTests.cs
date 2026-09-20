@@ -11,7 +11,7 @@ using static MediatrUnionPoc.Api.IntegrationTests.TestData.ImpersonationTestSupp
 namespace MediatrUnionPoc.Api.IntegrationTests;
 
 /// <summary>
-/// Exercises <c>POST /api/impersonation/tokens</c> over real HTTP with the real JWT bearer scheme:
+/// Exercises <c>POST /api/v1/impersonation/tokens</c> over real HTTP with the real JWT bearer scheme:
 /// who may call it, what it validates, which grants it refuses, the off switch, and that the token is
 /// never cached or logged.
 /// </summary>
@@ -359,7 +359,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
         // Act
         using var denied = await PostAsync(support, Body(roles: ["Administrator"]));
         using var withToken = ClientWithToken(_factory, token);
-        using var listing = await withToken.GetAsync("/api/products", CancellationToken.None);
+        using var listing = await withToken.GetAsync(ApiRoutes.Products, CancellationToken.None);
 
         // Assert
         var everything = _factory.LogSink.Events.Select(entry => entry.RenderEverything()).ToList();
@@ -391,7 +391,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
 
         // Act
         var document = (
-            await client.GetFromJsonAsync<JsonObject>("/openapi/v1.json", CancellationToken.None)
+            await client.GetFromJsonAsync<JsonObject>(ApiRoutes.OpenApiV1, CancellationToken.None)
         )!;
 
         // Assert

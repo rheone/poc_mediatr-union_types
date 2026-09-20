@@ -10,13 +10,15 @@
 @supportToken = <a support user's token>
 @adminToken = <the administrator's token>
 
+# One OpenAPI document per API version; every product and impersonation route is /api/v1/...
+# (the unversioned /api/products URLs still work as a transitional alias for v1).
 GET {{MediatrUnionPoc.Api_HostAddress}}/openapi/v1.json
 Accept: application/json
 
 ###
 
 # Create: 201 with ETag: W/"1". The token's sub becomes the owner. 401 without a token.
-POST {{MediatrUnionPoc.Api_HostAddress}}/api/products
+POST {{MediatrUnionPoc.Api_HostAddress}}/api/v1/products
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
@@ -25,7 +27,7 @@ Content-Type: application/json
 ###
 
 # List: 200 with X-Total-Count and Link headers.
-GET {{MediatrUnionPoc.Api_HostAddress}}/api/products?sort=name,-price&pageSize=10
+GET {{MediatrUnionPoc.Api_HostAddress}}/api/v1/products?sort=name,-price&pageSize=10
 Authorization: Bearer {{token}}
 Accept: application/json
 
@@ -34,14 +36,14 @@ Accept: application/json
 # The requests below need an id and its current ETag from the create/get responses.
 @id = 00000000-0000-0000-0000-000000000001
 
-GET {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+GET {{MediatrUnionPoc.Api_HostAddress}}/api/v1/products/{{id}}
 Authorization: Bearer {{token}}
 Accept: application/json
 
 ###
 
 # Replace: 204 with the new ETag. If-Match is required (428 without it).
-PUT {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+PUT {{MediatrUnionPoc.Api_HostAddress}}/api/v1/products/{{id}}
 Authorization: Bearer {{token}}
 If-Match: W/"1"
 Content-Type: application/json
@@ -51,7 +53,7 @@ Content-Type: application/json
 ###
 
 # Partial update (JSON Merge Patch): 200 with the product and the new ETag.
-PATCH {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+PATCH {{MediatrUnionPoc.Api_HostAddress}}/api/v1/products/{{id}}
 Authorization: Bearer {{token}}
 If-Match: W/"2"
 Content-Type: application/merge-patch+json
@@ -61,7 +63,7 @@ Content-Type: application/merge-patch+json
 ###
 
 # Delete: 204. Administrator only; If-Match is optional here.
-DELETE {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+DELETE {{MediatrUnionPoc.Api_HostAddress}}/api/v1/products/{{id}}
 Authorization: Bearer {{adminToken}}
 
 ###
@@ -70,7 +72,7 @@ Authorization: Bearer {{adminToken}}
 # Needs the Administrator or Support role; reason is required (10 to 500 characters). 403 when the
 # caller is already using an impersonation token, or asks for a role it may not grant (a Support user
 # cannot grant Administrator); 404 when Impersonation:Enabled is false. The response is never cached.
-POST {{MediatrUnionPoc.Api_HostAddress}}/api/impersonation/tokens
+POST {{MediatrUnionPoc.Api_HostAddress}}/api/v1/impersonation/tokens
 Authorization: Bearer {{supportToken}}
 Content-Type: application/json
 

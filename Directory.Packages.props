@@ -12,6 +12,9 @@
       Include="Microsoft.AspNetCore.Authentication.JwtBearer"
       Version="11.0.0-rc.1.26425.128"
     />
+    <!-- URL-segment API versioning: the MVC integration plus the ApiExplorer that groups actions per version for the built-in OpenAPI generator. Asp.Versioning.OpenApi is not used: it needs Microsoft.OpenApi 2.x while Microsoft.AspNetCore.OpenApi 11 needs 3.x (NU1107) -->
+    <PackageVersion Include="Asp.Versioning.Mvc" Version="10.2.1" />
+    <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.17.5" />
     <!-- Logging: Serilog behind ILogger, wired only in the Api host. AspNetCore brings the console sink, request logging and Serilog.Formatting.Compact -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />

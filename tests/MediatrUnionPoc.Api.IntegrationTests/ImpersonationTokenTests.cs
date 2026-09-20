@@ -23,7 +23,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class ImpersonationTokenTests : IDisposable
 {
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
     private const string RandomKey = "a-completely-different-signing-key-of-sufficient-length";
 
     private readonly ProductsApiFactory _factory = new(ApiAuthentication.RealJwt);

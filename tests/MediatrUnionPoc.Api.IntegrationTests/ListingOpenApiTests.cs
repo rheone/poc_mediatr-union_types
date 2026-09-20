@@ -7,8 +7,8 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class ListingOpenApiTests : IDisposable
 {
-    private const string OpenApiDocumentUri = "/openapi/v1.json";
-    private const string ListPath = "/api/products";
+    private const string OpenApiDocumentUri = ApiRoutes.OpenApiV1;
+    private const string ListPath = ApiRoutes.Products;
 
     private readonly ProductsApiFactory _factory = new();
     private readonly HttpClient _client;

@@ -26,7 +26,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class ProductsControllerTests : IDisposable
 {
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
     private const string NameErrorKey = "Name";
 
     // FluentValidation's NotEmpty message ("'Name' must not be empty.") vs MVC's implicit
@@ -107,8 +107,8 @@ public sealed class ProductsControllerTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies a valid create's Location header resolves to the created product. CreatedAtAction
-    /// resolves its target by action name, so the header only works if <c>nameof(GetByIdAsync)</c>
+    /// Verifies a valid create's Location header resolves to the created product. The controller
+    /// builds it from the action name, so the header only works if <c>nameof(GetByIdAsync)</c>
     /// matches the name MVC registered (<c>SuppressAsyncSuffixInActionNames = false</c>).
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>

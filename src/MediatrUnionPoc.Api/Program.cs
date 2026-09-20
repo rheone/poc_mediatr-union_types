@@ -1,3 +1,5 @@
+using Asp.Versioning;
+using Asp.Versioning.ApiExplorer;
 using MediatrUnionPoc.Api.Audit;
 using MediatrUnionPoc.Api.Authentication;
 using MediatrUnionPoc.Api.Health;
@@ -16,24 +18,33 @@ builder.Host.UseApiLogging();
 // This project's async methods keep their "Async" suffix by convention; ASP.NET Core's default
 // (SuppressAsyncSuffixInActionNames = true) would otherwise register CreateAsync/GetByIdAsync/etc.
 // as action names with the suffix trimmed (e.g. "GetById"), silently breaking any nameof(...)
-// reference — such as CreatedAtAction(nameof(GetByIdAsync), ...) — used for link generation.
+// reference — such as Url.Action(nameof(GetByIdAsync), ...) — used for link generation.
 builder
     .Services.AddControllers(options => options.SuppressAsyncSuffixInActionNames = false)
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new OptionalJsonConverterFactory())
     );
 
-builder.Services.AddOpenApi(options =>
-{
-    options.CreateSchemaReferenceId = OptionalSchemaTransformer.CreateSchemaReferenceId;
-    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
-    options.AddSchemaTransformer<OptionalSchemaTransformer>();
-    options.AddSchemaTransformer<ProductContractExampleTransformer>();
-    options.AddOperationTransformer<ConsumesMediaTypeTransformer>();
-    options.AddOperationTransformer<ETagResponseHeaderTransformer>();
-    options.AddOperationTransformer<PagingResponseHeaderTransformer>();
-    options.AddOperationTransformer<PreconditionProblemExampleTransformer>();
-});
+// URL-segment versioning: /api/v{version}/... . Requests without a version segment (the transitional
+// unversioned aliases) are treated as the default version, 1.0. Every versioned response reports
+// api-supported-versions; a rejected version is answered through IProblemDetailsService, so it is
+// application/problem+json with the traceId like every other error.
+builder
+    .Services.AddApiVersioning(options =>
+    {
+        options.DefaultApiVersion = new ApiVersion(1, 0);
+        options.AssumeDefaultVersionWhenUnspecified = true;
+        options.ReportApiVersions = true;
+        options.ApiVersionReader = new UrlSegmentApiVersionReader();
+    })
+    .AddMvc()
+    .AddApiExplorer(options =>
+    {
+        options.GroupNameFormat = "'v'V";
+        options.SubstituteApiVersionInUrl = true;
+    });
+
+builder.Services.AddVersionedOpenApi(ApiVersions.V1DocumentName);
 
 builder.Services.AddApiProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -53,7 +64,12 @@ if (app.Environment.IsDevelopment())
 {
     // The documents stay anonymous in Development so the UI can load before a token is entered.
     app.MapOpenApi().AllowAnonymous();
-    app.MapScalarApiReference().AllowAnonymous();
+
+    // One entry per API version, so the UI's document picker lists /openapi/v1.json, /openapi/v2.json, ...
+    app.MapScalarApiReference(options =>
+            options.AddDocuments(app.DescribeApiVersions().Select(version => version.GroupName))
+        )
+        .AllowAnonymous();
 }
 
 app.UseMiddleware<TraceIdMiddleware>();

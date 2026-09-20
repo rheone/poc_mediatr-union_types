@@ -27,6 +27,29 @@ C# 14 extension members in `MediatrUnionPoc.Api.Http` (`ResultHttpExtensions`):
   case differently, and everything is public: write a hand-rolled arm or your own extension members
   whenever the built-ins do not fit.
 
+## API versioning (`Http/ApiVersions.cs`, `OpenApi/`)
+
+Routes are `/api/v{version:apiVersion}/...` (`Asp.Versioning.Mvc`, URL-segment reader); both
+controllers declare `[ApiVersion(ApiVersions.V1)]`. `ApiVersions` is the one place a version number
+or the versioned route prefix is spelled. `ReportApiVersions` puts `api-supported-versions` on every
+versioned response. Health, OpenAPI and Scalar endpoints are plain endpoints and stay unversioned.
+
+- **Generated URLs.** `ProductsController.VersionedUrl` builds the `Location` of a create and the
+  base URL of the `Link` paging headers (`SetPagingHeaders(page, canonicalUrl)`) from the versioned
+  route, so they are `/api/v1/...` whichever route the request used.
+- **Transitional alias.** Each controller has a second `[Route]` (`ApiVersions.UnversionedAliasPrefix`,
+  `Order = 1` so link generation prefers the versioned route) and `AssumeDefaultVersionWhenUnspecified`
+  is on, so `/api/products` behaves as version 1. Remove both to retire it; the alias is not in the
+  OpenAPI document.
+- **OpenAPI.** `AddVersionedOpenApi(documentName)` registers one document per version with every
+  transformer, including only the operations of that API explorer group (named `v1`, ...) reached
+  through the versioned route template. `Asp.Versioning.OpenApi` is not usable with
+  `Microsoft.AspNetCore.OpenApi` 11 (it needs `Microsoft.OpenApi` 2.x; NU1107), hence the manual
+  registration and the `AV0029`/`AV0030` `NoWarn` in the project file. Scalar lists each document.
+- **Errors.** A version that is not served is an unmatched route: the standard `404` (or `401` for an
+  anonymous caller) problem with the `traceId`. See the repo root README's
+  [API versioning](../../README.md#api-versioning).
+
 ## ETag and If-Match (`Http/`)
 
 Products carry an optimistic-concurrency version, exposed as a weak ETag `W/"n"`. `GET` by id and
@@ -43,7 +66,7 @@ actions marked `[ReturnsETag]` (`ETagResponseHeaderTransformer`). See the repo r
 
 ## PATCH: JSON Merge Patch (`Contracts/`, `Http/`, `OpenApi/`)
 
-`PATCH /api/products/{id}` binds a `PatchProductRequest(Optional<string?> Name, Optional<decimal?> Price)`
+`PATCH /api/v1/products/{id}` binds a `PatchProductRequest(Optional<string?> Name, Optional<decimal?> Price)`
 and sends a `PatchProductCommand`. `[Consumes("application/merge-patch+json")]` makes any other body
 media type (plain `application/json` included) a `415` problem; the default JSON input formatter
 already accepts `application/*+json`, so the body binds without a custom formatter.
@@ -61,7 +84,7 @@ wrapped type with the member not `required` (`OptionalSchemaTransformer`, wired 
 
 ## Listing: filters, sort, paging headers (`Contracts/`, `Http/`, `OpenApi/`)
 
-`GET /api/products` binds a `ListProductsRequest` (`Contracts/ProductContracts.cs`) from the query
+`GET /api/v1/products` binds a `ListProductsRequest` (`Contracts/ProductContracts.cs`) from the query
 string (`nameContains`, `minPrice`, `maxPrice`, `ownerId`, `sort`, `pageNumber`, `pageSize`; binding
 is case-insensitive) and sends a `GetPagedProductsQuery`. `GetPagedProductsResult` has a real
 `ValidationErrors` case, so bad input answers `400` with per-field `errors` like every other
@@ -101,7 +124,7 @@ example paged body (`ProductContractExampleTransformer`). See the repo root READ
 
 ## Impersonation (`Impersonation/`, `Controllers/ImpersonationController.cs`)
 
-`POST /api/impersonation/tokens` mints a short-lived token acting as another identity, for
+`POST /api/v1/impersonation/tokens` mints a short-lived token acting as another identity, for
 `Administrator` and `Support` callers, in every environment. The decisions (role gate, no chaining,
 assignable roles, no escalation, mandatory reason) live in the Application layer's
 `Features/Impersonation/IssueToken/` slice; this project supplies the parts that need a JWT library:
@@ -226,7 +249,9 @@ since it's the one project that's actually a runnable web application.
 
 - `Microsoft.AspNetCore.Authentication.JwtBearer` — the JWT bearer scheme (not part of the shared
   framework). Same `11.0.0-rc.1` build as the other ASP.NET Core packages.
-- `Microsoft.AspNetCore.OpenApi` — generates the OpenAPI document (`/openapi/v1.json`), including
+- `Asp.Versioning.Mvc`, `Asp.Versioning.Mvc.ApiExplorer` — URL-segment API versioning and the
+  per-version API explorer groups the OpenAPI documents are built from.
+- `Microsoft.AspNetCore.OpenApi` — generates one OpenAPI document per API version (`/openapi/v1.json`), including
   the request examples described in the repo root `README.md`.
 - `Serilog.AspNetCore` (console sink, request logging), `Serilog.Settings.Configuration`,
   `Serilog.Sinks.File`, `Serilog.Formatting.Compact`, `Serilog.Enrichers.Environment`,
@@ -289,7 +314,7 @@ OpenAPI document (`/openapi/v1.json`) and Scalar UI (`/scalar`), both Developmen
 everything else needs a bearer token, see [Authentication](#authentication-authentication)). Action names
 keep their `Async` suffix in MVC's route/action metadata — `Program.cs` sets
 `SuppressAsyncSuffixInActionNames = false` (ASP.NET Core's default is `true`), because
-`CreatedAtAction`'s `nameof(GetByIdAsync)` calls would otherwise silently stop matching the action
+the `Url.Action(nameof(GetByIdAsync), ...)` call that builds `Location` would otherwise silently stop matching the action
 name MVC registers.
 
 In Development there is nothing to configure beyond what `Program.cs` already wires up (the

@@ -54,7 +54,7 @@ public sealed class UnhandledExceptionTests
         using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
-        using var response = await client.GetAsync("/api/products", CancellationToken.None);
+        using var response = await client.GetAsync(ApiRoutes.Products, CancellationToken.None);
 
         // Assert
         var text = await response.Content.ReadAsStringAsync(CancellationToken.None);
@@ -89,7 +89,7 @@ public sealed class UnhandledExceptionTests
         using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
-        using var response = await client.GetAsync("/api/products", CancellationToken.None);
+        using var response = await client.GetAsync(ApiRoutes.Products, CancellationToken.None);
 
         // Assert
         using var body = JsonDocument.Parse(
@@ -115,7 +115,7 @@ public sealed class UnhandledExceptionTests
         using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
-        using var response = await client.GetAsync("/api/products", CancellationToken.None);
+        using var response = await client.GetAsync(ApiRoutes.Products, CancellationToken.None);
 
         // Assert
         var header = Assert.Single(response.Headers.GetValues("X-Trace-Id"));
@@ -157,7 +157,7 @@ public sealed class UnhandledExceptionTests
         var request = Task.Run(
             async () =>
             {
-                using var response = await client.GetAsync("/api/products", cts.Token);
+                using var response = await client.GetAsync(ApiRoutes.Products, cts.Token);
             },
             CancellationToken.None
         );

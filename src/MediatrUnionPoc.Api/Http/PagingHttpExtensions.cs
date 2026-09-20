@@ -24,8 +24,9 @@ public static class PagingHttpExtensions
         /// <summary>Sets <c>X-Total-Count</c> and the <c>Link</c> header describing <paramref name="page"/>, built from this response's request.</summary>
         /// <typeparam name="T">The type of item being paged.</typeparam>
         /// <param name="page">The page being returned.</param>
+        /// <param name="canonicalUrl">The URL (path, optionally with the request's path base) the <c>Link</c> URLs are built on instead of the request's own path; used to point every client, including one that called an alias route, at the canonical versioned address. The request's query string is still used.</param>
         /// <exception cref="ArgumentNullException"><paramref name="response"/> or <paramref name="page"/> is <see langword="null"/>.</exception>
-        public void SetPagingHeaders<T>(PagedResult<T> page)
+        public void SetPagingHeaders<T>(PagedResult<T> page, string? canonicalUrl = null)
         {
             ArgumentNullException.ThrowIfNull(response);
             ArgumentNullException.ThrowIfNull(page);
@@ -33,7 +34,10 @@ public static class PagingHttpExtensions
             response.Headers[TotalCountHeaderName] = page.TotalCount.ToString(
                 CultureInfo.InvariantCulture
             );
-            response.Headers[HeaderNames.Link] = page.ToLinkHeader(response.HttpContext.Request);
+            response.Headers[HeaderNames.Link] = page.ToLinkHeader(
+                response.HttpContext.Request,
+                canonicalUrl
+            );
         }
     }
 
@@ -47,31 +51,37 @@ public static class PagingHttpExtensions
         /// appended if the request did not send it).
         /// </summary>
         /// <param name="request">The request the page answers.</param>
+        /// <param name="canonicalUrl">When given, the URL (already including any path base) used instead of the request's own path.</param>
         /// <returns>The header value.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
-        public string ToLinkHeader(HttpRequest request)
+        public string ToLinkHeader(HttpRequest request, string? canonicalUrl = null)
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            var links = new List<string> { LinkTo(request, page.FirstPage, "first") };
+            var links = new List<string> { LinkTo(request, canonicalUrl, page.FirstPage, "first") };
 
             if (page.PreviousPage is { } previous)
             {
-                links.Add(LinkTo(request, previous, "prev"));
+                links.Add(LinkTo(request, canonicalUrl, previous, "prev"));
             }
 
             if (page.NextPage is { } next)
             {
-                links.Add(LinkTo(request, next, "next"));
+                links.Add(LinkTo(request, canonicalUrl, next, "next"));
             }
 
-            links.Add(LinkTo(request, page.LastPage, "last"));
+            links.Add(LinkTo(request, canonicalUrl, page.LastPage, "last"));
 
             return string.Join(", ", links);
         }
     }
 
-    private static string LinkTo(HttpRequest request, int pageNumber, string rel)
+    private static string LinkTo(
+        HttpRequest request,
+        string? canonicalUrl,
+        int pageNumber,
+        string rel
+    )
     {
         var pageValue = pageNumber.ToString(CultureInfo.InvariantCulture);
         var parameters = new List<KeyValuePair<string, string?>>();
@@ -103,8 +113,8 @@ public static class PagingHttpExtensions
         var url = UriHelper.BuildAbsolute(
             request.Scheme,
             request.Host,
-            request.PathBase,
-            request.Path,
+            canonicalUrl is null ? request.PathBase : PathString.Empty,
+            canonicalUrl is null ? request.Path : new PathString(canonicalUrl),
             QueryString.Create(parameters)
         );
 

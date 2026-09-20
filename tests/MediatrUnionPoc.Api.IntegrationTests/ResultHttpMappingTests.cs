@@ -18,7 +18,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class ResultHttpMappingTests
 {
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
 
     /// <summary>Verifies a host-registered error-code mapping changes the status the API answers with for that code.</summary>
     /// <returns>A task representing the asynchronous test.</returns>

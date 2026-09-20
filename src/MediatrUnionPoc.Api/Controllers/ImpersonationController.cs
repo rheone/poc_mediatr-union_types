@@ -1,3 +1,4 @@
+using Asp.Versioning;
 using MediatR;
 using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.Http;
@@ -20,7 +21,9 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// <param name="settings">Supplies the impersonation on/off switch.</param>
 /// <exception cref="ArgumentNullException"><paramref name="sender"/> or <paramref name="settings"/> is <see langword="null"/>.</exception>
 [ApiController]
-[Route("api/impersonation")]
+[ApiVersion(ApiVersions.V1)]
+[Route(ApiVersions.VersionedPrefix + "/impersonation")]
+[Route(ApiVersions.UnversionedAliasPrefix + "/impersonation", Order = 1)] // transitional alias for v1
 public sealed class ImpersonationController(ISender sender, IImpersonationSettings settings)
     : ControllerBase
 {

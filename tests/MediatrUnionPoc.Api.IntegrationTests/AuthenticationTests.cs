@@ -20,7 +20,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class AuthenticationTests : IDisposable
 {
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
     private const string ProblemJson = "application/problem+json";
     private const string TraceHeader = "X-Trace-Id";
 
@@ -174,7 +174,7 @@ public sealed class AuthenticationTests : IDisposable
     [Theory]
     [InlineData("/health/live")]
     [InlineData("/health/ready")]
-    [InlineData("/openapi/v1.json")]
+    [InlineData(ApiRoutes.OpenApiV1)]
     public async Task Get_AnonymousEndpoint_Returns200WithoutCredentials_Test(string path)
     {
         // Arrange
@@ -197,7 +197,7 @@ public sealed class AuthenticationTests : IDisposable
 
         // Act
         var document = await client.GetFromJsonAsync<JsonElement>(
-            "/openapi/v1.json",
+            ApiRoutes.OpenApiV1,
             CancellationToken.None
         );
 
@@ -223,7 +223,7 @@ public sealed class AuthenticationTests : IDisposable
         using var client = _factory.CreateClient();
 
         // Act
-        var text = await client.GetStringAsync("/openapi/v1.json", CancellationToken.None);
+        var text = await client.GetStringAsync(ApiRoutes.OpenApiV1, CancellationToken.None);
 
         // Assert
         using var document = JsonDocument.Parse(text);

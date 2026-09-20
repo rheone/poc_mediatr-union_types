@@ -16,7 +16,7 @@ public sealed class LoggingTests
 {
     private const string HandlingTemplate = "Handling {RequestName}";
     private const string RequestLoggingCategory = "Serilog.AspNetCore.RequestLoggingMiddleware";
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
 
     /// <summary>
     /// Verifies an ordinary <c>ILogger</c> call from the MediatR pipeline carries the enriched

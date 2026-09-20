@@ -8,6 +8,15 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
 - `ProductsApiFactory.cs` — boots the real host with nothing substituted: with no
   `ConnectionStrings:Products` value each host gets its own private in-memory SQLite database (its
   schema created at startup), so tests using their own factory never see another test's data.
+- `ApiRoutes.cs` — the one place the tests spell a URL: the versioned routes (`/api/v1/products`,
+  `/api/v1/impersonation/tokens`, `/openapi/v1.json`) every ordinary test uses, plus the `Unversioned`
+  members only the alias tests use.
+- `ApiVersioningTests.cs` — URL-segment versioning: the transitional unversioned alias behaves as the
+  versioned route for each verb group (create, get, list, put, patch, delete, impersonation),
+  `api-supported-versions` on every versioned response (and not on health or OpenAPI), `Location` and
+  `Link` always on the versioned URL (also when the alias or `v1.0` was used), a version that is not
+  served is a `404` problem with the trace id (`401` when anonymous), and the v1 OpenAPI document lists
+  only the versioned paths, each operation once, with Scalar pointing at it.
 - `ApiAuthentication.cs`, `TestAuthenticationHandler.cs`, `TestIdentityExtensions.cs` — how tests state
   who is calling. By default the factory registers a header-driven test scheme as the default
   authentication scheme, and `client.AsUser("alice", roles)` (or `request.AsUser(...)` for one request)
@@ -21,7 +30,7 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   wrongly signed, wrongly addressed and malformed ones are `401`; `sub` becomes the owner and a `role`
   claim of `Administrator` passes `DELETE`; a token with no `sub` cannot create.
 - `ImpersonationEndpointTests.cs`, `ImpersonationTokenTests.cs`, `ImpersonationOptionsTests.cs` (with
-  `TestData/ImpersonationTestSupport.cs`), all on the real JWT scheme — `POST /api/impersonation/tokens`:
+  `TestData/ImpersonationTestSupport.cs`), all on the real JWT scheme — `POST /api/v1/impersonation/tokens`:
   `401` anonymous, `403` for a plain user, Support can mint a plain or `Support` token but not an
   `Administrator` one, an administrator can, mandatory reason and lifetime cap as per-field `400`s, the
   `404` off switch (and `401` still for anonymous), `Cache-Control: no-store`, no token or audit content in any log, and the OpenAPI declaration. The token tests validate a minted token with the

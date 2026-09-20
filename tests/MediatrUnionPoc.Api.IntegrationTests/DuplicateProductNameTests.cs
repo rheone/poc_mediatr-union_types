@@ -18,7 +18,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class DuplicateProductNameTests : IDisposable
 {
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
     private const string ProblemJson = "application/problem+json";
 
     private readonly ProductsApiFactory _factory = new();
@@ -161,8 +161,8 @@ public sealed class DuplicateProductNameTests : IDisposable
     /// <param name="method">The HTTP method.</param>
     /// <returns>A task representing the asynchronous test.</returns>
     [Theory]
-    [InlineData("/api/products", "post")]
-    [InlineData("/api/products/{id}", "put")]
+    [InlineData(ApiRoutes.Products, "post")]
+    [InlineData(ApiRoutes.ProductByIdTemplate, "put")]
     public async Task Document_ConflictResponse_HasProblemExampleNamingTheProduct_Test(
         string path,
         string method
@@ -170,7 +170,7 @@ public sealed class DuplicateProductNameTests : IDisposable
     {
         // Arrange
         var document = await _client.GetFromJsonAsync<JsonObject>(
-            "/openapi/v1.json",
+            ApiRoutes.OpenApiV1,
             CancellationToken.None
         );
         var responses = document!["paths"]![path]![method]!["responses"]!.AsObject();

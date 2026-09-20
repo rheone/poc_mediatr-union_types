@@ -16,7 +16,7 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class JwtBearerAuthenticationTests : IDisposable
 {
-    private const string ProductsUri = "/api/products";
+    private const string ProductsUri = ApiRoutes.Products;
     private const string OtherSigningKey =
         "a-completely-different-signing-key-of-sufficient-length";
 

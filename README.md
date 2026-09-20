@@ -82,20 +82,21 @@ dotnet run --project src/MediatrUnionPoc.Api
 
 `dotnet run` uses the first launch profile, so the API listens on `http://localhost:5233` (the
 `https` profile adds `https://localhost:7070`). In the Development environment it serves the
-OpenAPI document at `/openapi/v1.json` and a Scalar UI at `/scalar`. With no
+OpenAPI document of API version 1 at `/openapi/v1.json` (one document per version) and a Scalar UI at `/scalar`. With no
 `ConnectionStrings:Products` value the API keeps a private in-memory SQLite database (empty on every
 start); set that value to a SQLite connection string such as `Data Source=products.db` to persist.
 Every endpoint except the health probes (and, in Development, the OpenAPI and Scalar documents) requires a bearer token; a quick tour, using a token minted as described under [Authorization](#where-the-identity-comes-from):
 
 ```bash
-curl -i -X POST http://localhost:5233/api/products -H "Authorization: Bearer $TOKEN" \
+curl -i -X POST http://localhost:5233/api/v1/products -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"name":"Widget","price":9.99}'   # 201, ETag: W/"1"
-curl -i http://localhost:5233/api/products -H "Authorization: Bearer $TOKEN" # 200 with X-Total-Count and Link
-curl -i http://localhost:5233/api/products                                   # 401, a problem body
+curl -i http://localhost:5233/api/v1/products -H "Authorization: Bearer $TOKEN" # 200 with X-Total-Count and Link
+curl -i http://localhost:5233/api/v1/products                                   # 401, a problem body
 ```
 
 The full request/response contract of every endpoint is in
-[The HTTP contract](#the-http-contract-every-endpoint-and-outcome).
+[The HTTP contract](#the-http-contract-every-endpoint-and-outcome); the routes are versioned
+(`/api/v1/...`, see [API versioning](#api-versioning)).
 
 `global.json` pins the SDK to the exact `11.0.100-rc.1...` preview build this repo was written
 against. Without it, an IDE's own SDK resolver (Visual Studio in particular) can silently fall
@@ -111,7 +112,7 @@ reopen the solution so it re-resolves.
 | `MediatrUnionPoc.Domain`          | Entities, [Vogen](#vogen-avoiding-primitive-obsession) [value objects](#vogen-vocabulary) (`ProductId`, `Money`, `ProductVersion`), the listing vocabulary (`ProductCriteria`, `ProductSort`, `PagedResult`), `CommitResult`, repository/UoW interfaces |
 | `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors, authorization |
 | `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext` over SQLite, repository + unit-of-work implementations; the only place criteria and sort become a database query |
-| `MediatrUnionPoc.Api`             | The controllers that map each union to an `IActionResult`, the `Http/` extension members, JWT authentication, impersonation token signing, the file-backed audit stream and its middleware, trace id middleware, exception handler and OpenAPI transformers |
+| `MediatrUnionPoc.Api`             | The controllers that map each union to an `IActionResult`, the `Http/` extension members, URL-segment API versioning, JWT authentication, impersonation token signing, the file-backed audit stream and its middleware, trace id middleware, exception handler and OpenAPI transformers |
 | `MediatrUnionPoc.Domain.Tests`    | Unit tests for the value objects, `Product`, `ProductNames`, `PagedResult` and the sort vocabulary |
 | `MediatrUnionPoc.Application.Tests` | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators, authorization |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core SQLite provider (in-memory database), end to end |
@@ -196,7 +197,7 @@ pipeline throws for an outcome it expected to see.
 
 - **An identity provider.** The API validates JWT bearer tokens but issues none (no login, no
   refresh, no user store); see [Where the identity comes from](#where-the-identity-comes-from).
-- **API versioning, rate limiting, CORS.** None are configured. (Health checks are; see
+- **Rate limiting, CORS.** Neither is configured. (Health checks are; see
   [Health checks and options](#health-checks-and-options).)
 - **Migrations and a production database.** The schema is created with `EnsureCreated` on SQLite.
   There is no migration history, and the unique-violation detection reads SQLite's error message,
@@ -1066,18 +1067,18 @@ Request headers the API reads:
 
 | Endpoint | Union case | Status | Notes |
 | --- | --- | --- | --- |
-| `POST /api/products` | `ProductDto` | `201` | `ETag: W/"1"`, `Location` header, product in the body |
+| `POST /api/v1/products` | `ProductDto` | `201` | `ETag: W/"1"`, `Location` header (the versioned URL of the new product), product in the body |
 | | `ValidationErrors` | `400` | Per-field `errors` |
 | | `NotAuthorized` | `403` | The token is valid but has no `sub` claim, so there is no identity to own the product; answered before anything is sent to MediatR |
 | | `Conflict` | `409` | Another product has an equivalent name |
 | | `Error` | `500` | Only a commit that cannot fail this way (`COMMIT_CONCURRENCY_CONFLICT`) |
-| `GET /api/products/{id}` | `ProductDto` | `200` | `ETag` header |
+| `GET /api/v1/products/{id}` | `ProductDto` | `200` | `ETag` header |
 | | `NotFound<ProductId>` | `404` | `code` member `NOT_FOUND` |
 | | `Error` | `400` / `500` | `400` for `Error.ValidationFailureCode` (an empty GUID), `500` for any other code |
-| `GET /api/products` | `PagedResult<ProductDto>` | `200` | `X-Total-Count` and RFC 8288 `Link` headers; a page past the end is still `200` with empty `items` |
+| `GET /api/v1/products` | `PagedResult<ProductDto>` | `200` | `X-Total-Count` and RFC 8288 `Link` headers; a page past the end is still `200` with empty `items` |
 | | `ValidationErrors` | `400` | Per-field `errors` (`PageNumber`, `PageSize`, `MinPrice`, `MaxPrice`, `NameContains`, `OwnerId`, `Sort`) |
 | | `Error` | `500` | |
-| `PUT /api/products/{id}` | `ProductDto` | `204` | No body; the new `ETag` header |
+| `PUT /api/v1/products/{id}` | `ProductDto` | `204` | No body; the new `ETag` header |
 | | `NotFound<ProductId>` | `404` | |
 | | `ValidationErrors` | `400` | Also a malformed `If-Match` (an error naming the header) |
 | | `NotAuthorized` | `403` | Caller is not the owner |
@@ -1085,7 +1086,7 @@ Request headers the API reads:
 | | `PreconditionFailed` | `412` | Stale `If-Match`, up front or at commit |
 | | absent `If-Match` (`MissingIfMatch`) | `428` | Answered before anything is sent to MediatR |
 | | `Error` | `500` | |
-| `PATCH /api/products/{id}` | `ProductDto` | `200` | The whole updated product and its new `ETag` |
+| `PATCH /api/v1/products/{id}` | `ProductDto` | `200` | The whole updated product and its new `ETag` |
 | | `NotFound<ProductId>` | `404` | |
 | | `ValidationErrors` | `400` | Nothing supplied, a supplied `null`, a bad value, or a malformed `If-Match` |
 | | `NotAuthorized` | `403` | |
@@ -1094,25 +1095,60 @@ Request headers the API reads:
 | | body not `application/merge-patch+json` | `415` | Rejected by `[Consumes]` |
 | | absent `If-Match` (`MissingIfMatch`) | `428` | |
 | | `Error` | `500` | |
-| `DELETE /api/products/{id}` | `Success` | `204` | No body, no `ETag` |
+| `DELETE /api/v1/products/{id}` | `Success` | `204` | No body, no `ETag` |
 | | `NotFound<ProductId>` | `404` | |
 | | `NotAuthorized` | `403` | Caller is not an administrator; checked before validation |
 | | `PreconditionFailed` | `412` | Only when `If-Match` was sent and is stale, up front or at commit |
 | | malformed `If-Match` | `400` | An absent `If-Match` is fine and deletes whatever version is stored |
 | | `Error` | `400` / `500` | `400` for `Error.ValidationFailureCode` (an empty GUID; this union has no `ValidationErrors` case), `500` otherwise |
-| `POST /api/impersonation/tokens` | `ImpersonationToken` | `200` | The token, its expiry and effective identity; `Cache-Control: no-store` on every response of this endpoint. See [Impersonation](#impersonation-acting-as-another-identity) |
+| `POST /api/v1/impersonation/tokens` | `ImpersonationToken` | `200` | The token, its expiry and effective identity; `Cache-Control: no-store` on every response of this endpoint. See [Impersonation](#impersonation-acting-as-another-identity) |
 | | `ValidationErrors` | `400` | Per-field `errors` (`Reason`, `TargetUserId`, `LifetimeMinutes`, `Roles`, `TicketReference`) |
 | | `NotAuthorized` | `403` | Neither `Administrator` nor `Support` (checked first); already impersonating; a role outside `AssignableRoles`; a role a non-administrator does not hold |
 | | `Error` (`IMPERSONATION_DISABLED`) | `404` | The feature is switched off; answered to every authenticated caller before the pipeline runs |
 | | `Error` | `500` | |
 
 Outside the union: the framework itself answers a body that cannot be bound (`400`), an unmatched
-route (`404`, including a non-GUID `{id}`; `401` first when the caller is anonymous, since the
-fallback policy covers unmatched requests too) and an unsupported media type (`415`) with the same
-problem shape and trace id, and `GlobalExceptionHandler` answers an unexpected exception with `500`.
+route (`404`, including a non-GUID `{id}` and an API version this host does not serve; `401` first
+when the caller is anonymous, since the fallback policy covers unmatched requests too) and an
+unsupported media type (`415`) with the same problem shape and trace id, and `GlobalExceptionHandler`
+answers an unexpected exception with `500`.
 The `Error` to status table is configurable (`HttpMappingOptions.ErrorStatusCodes`). The OpenAPI
 document at `/openapi/v1.json` declares these responses, the `ETag` and paging response headers,
 and example bodies.
+
+### API versioning
+
+The version is a URL segment: every product and impersonation route is
+`/api/v{version}/...` and this host serves version `1.0` (`[ApiVersion("1.0")]` on the controllers,
+`Asp.Versioning.Mvc`). Health checks, the OpenAPI documents and Scalar are not versioned. Versioning
+lives in the Api project only; commands, handlers and persistence know nothing of it.
+
+- **Reported versions.** Every response to a versioned route, whatever its status, carries
+  `api-supported-versions: 1.0` (`ReportApiVersions`).
+- **Generated URLs are versioned.** The `Location` of a `201` and every URL in the `Link` paging
+  header always use the canonical `/api/v1/...` form, whichever route the client used, so a client
+  never follows a link back onto the unversioned alias. (`/api/v1.0/...` is accepted too and is
+  served identically; the URLs it gets back use the `v1` spelling.)
+- **A version that is not served** (`/api/v9/products`, `/api/vabc/products`) is not a route: it is
+  answered like any other unmatched URL, a `404` `application/problem+json` with the `traceId` and
+  `X-Trace-Id` (`401` first when the caller is anonymous). With the version in the path there is no
+  separate "unsupported version" status.
+- **One OpenAPI document per version**, `/openapi/v1.json` for version 1, listing only the
+  versioned paths; Scalar's picker lists each document. Every transformer applies to every document.
+  `Asp.Versioning.OpenApi` is not used: it needs `Microsoft.OpenApi` 2.x, while
+  `Microsoft.AspNetCore.OpenApi` 11 needs 3.x, so the documents are registered by hand
+  (`AddVersionedOpenApi`) and grouped by the API explorer (`Asp.Versioning.Mvc.ApiExplorer`).
+- **Transitional unversioned alias.** `/api/products` and `/api/impersonation/tokens` still work,
+  with identical behaviour, as an alias for version 1 (`AssumeDefaultVersionWhenUnspecified` with
+  default `1.0`, and a second `[Route]` on each controller). The alias is not in the OpenAPI
+  document. It exists so existing callers can move; to retire it, delete the
+  `ApiVersions.UnversionedAliasPrefix` `[Route]` on `ProductsController` and
+  `ImpersonationController`, set `AssumeDefaultVersionWhenUnspecified` to `false`, and delete the
+  alias tests in `ApiVersioningTests` (the `Unversioned` members of `ApiRoutes`).
+- **Adding version 2.** Give the new controller (or actions) `[ApiVersion("2.0")]`, add the `V2`
+  values to `ApiVersions` (its `Location`/`Link` URLs are built from them, as version 1's are), and
+  register `AddVersionedOpenApi("v2")`; `api-supported-versions` then lists both, and
+  `/openapi/v2.json` and Scalar's picker include the new document.
 
 ## Trace id and unhandled exceptions
 
@@ -1164,7 +1200,7 @@ environment name), `MachineName`, `ProcessId`, `ThreadId` and whatever the log c
 request, once the caller is authenticated, it also carries `UserId` (the `NameIdentifier` claim),
 `IsImpersonated` and, for an impersonation token, `ImpersonatedBy` (the real caller from the `act`
 claim). An anonymous request has none of the three. `TraceId` comes from the `TraceIdMiddleware`
-scope. The request log line (`HTTP GET /api/products responded 200 in 12.3456 ms`, replacing the
+scope. The request log line (`HTTP GET /api/v1/products responded 200 in 12.3456 ms`, replacing the
 framework's multi-line request logs) adds `RequestMethod`, `RequestPath`, `StatusCode`, `Elapsed`,
 `TraceId` and the same user properties. Health probes are written at `Debug`, so they are silent at
 the default level. The request line sits outside the exception handler and logs a handled 500 at
@@ -1233,7 +1269,7 @@ a version that is no longer current is refused.
   `ConcurrencyConflict` (see [A commit can fail too](#a-commit-can-fail-too-icommitfailable)).
 - **On the wire it is a weak ETag.** `ProductVersion.ToETag()` renders `W/"3"` and
   `ProductVersion.ParseETag` reads it back (anything else, including a strong tag or `*`, is not
-  a version). `GET /api/products/{id}` and `POST /api/products` return it in the `ETag` header and
+  a version). `GET /api/v1/products/{id}` and `POST /api/v1/products` return it in the `ETag` header and
   `ProductDto` carries the same number in its `version` member; a successful `PUT` answers `204` (and
   a successful `PATCH` `200` with the product) with the *new* `ETag`.
 - **`If-Match` carries it back.** `PUT` and `PATCH` require it: absent is `428 Precondition Required`,
@@ -1285,23 +1321,23 @@ two layers that share one definition:
 
 ```bash
 # Create: 201 with ETag: W/"1"
-curl -i -X POST localhost:5233/api/products -H "Authorization: Bearer $ALICE" -H "Content-Type: application/json" \
+curl -i -X POST localhost:5233/api/v1/products -H "Authorization: Bearer $ALICE" -H "Content-Type: application/json" \
   -d '{"name":"Widget","price":9.99}'
 
 # No If-Match: 428.  Stale If-Match: 412.  Current If-Match: 204 with ETag: W/"2"
-curl -i -X PUT localhost:5233/api/products/$ID -H "Authorization: Bearer $ALICE" -H 'If-Match: W/"1"' \
+curl -i -X PUT localhost:5233/api/v1/products/$ID -H "Authorization: Bearer $ALICE" -H 'If-Match: W/"1"' \
   -H "Content-Type: application/json" -d '{"name":"Widget Pro","price":19.99}'
 ```
 
 ## Partial updates: `PATCH` as JSON Merge Patch
 
-`PUT` replaces a product's name and price in full; `PATCH /api/products/{id}` changes only the
+`PUT` replaces a product's name and price in full; `PATCH /api/v1/products/{id}` changes only the
 fields the request names. The body is a **JSON Merge Patch** ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)):
 each member is either *absent* (leave that field alone) or *present* (replace it).
 
 ```bash
 # Rename only; the price is untouched. 200 with the whole product and the new ETag: W/"2"
-curl -i -X PATCH localhost:5233/api/products/$ID -H "Authorization: Bearer $ALICE" -H 'If-Match: W/"1"' \
+curl -i -X PATCH localhost:5233/api/v1/products/$ID -H "Authorization: Bearer $ALICE" -H 'If-Match: W/"1"' \
   -H "Content-Type: application/merge-patch+json" -d '{"name":"Widget Pro"}'
 ```
 
@@ -1359,7 +1395,7 @@ curl -i -X PATCH localhost:5233/api/products/$ID -H "Authorization: Bearer $ALIC
 
 ## Listing products: filtering, sorting and paging
 
-`GET /api/products` returns one page of the products that match optional filters, in a requested
+`GET /api/v1/products` returns one page of the products that match optional filters, in a requested
 order. The request is bound from the query string, and every parameter is optional:
 
 | Parameter      | Meaning                                                                                       |
@@ -1375,7 +1411,7 @@ order. The request is bound from the query string, and every parameter is option
 Filters combine with AND. Names bind case-insensitively, so `PageNumber=2` works too.
 
 ```bash
-curl -i 'localhost:5233/api/products?nameContains=widget&minPrice=5&sort=name,-price&pageNumber=2&pageSize=2'
+curl -i 'localhost:5233/api/v1/products?nameContains=widget&minPrice=5&sort=name,-price&pageNumber=2&pageSize=2'
 ```
 
 **Database-agnostic by construction.** Domain and Application never see `IQueryable` or EF Core.
@@ -1434,12 +1470,13 @@ without reading the body:
 
 - `X-Total-Count`: the same number as `totalCount`.
 - `Link` (RFC 8288) with `rel` `first`, `prev`, `next` and `last`, omitting `prev` on the first page
-  and `next` on the last. Each URL is the request's own with every other query parameter kept in
+  and `next` on the last. Each URL is the canonical versioned one (`/api/v1/products`, even when the
+  request used the unversioned alias) with every query parameter of the request kept in
   its original order and only `pageNumber` replaced (or appended if it was not sent). For the request
   above (5 matching products, size 2, page 2):
 
   ```text
-  Link: <http://localhost:5233/api/products?nameContains=widget&minPrice=5&sort=name,-price&pageNumber=1&pageSize=2>; rel="first", <…pageNumber=1…>; rel="prev", <…pageNumber=3…>; rel="next", <…pageNumber=3…>; rel="last"
+  Link: <http://localhost:5233/api/v1/products?nameContains=widget&minPrice=5&sort=name,-price&pageNumber=1&pageSize=2>; rel="first", <…pageNumber=1…>; rel="prev", <…pageNumber=3…>; rel="next", <…pageNumber=3…>; rel="last"
   ```
 
 The OpenAPI document declares the query parameters (described from the XML docs on
@@ -1700,17 +1737,17 @@ Try both flows against a running instance (`dotnet run --project src/MediatrUnio
 # Resource-based (UpdateProductCommand, ProductOwner policy)
 
 # Create as alice — she becomes the product's owner (201, ETag: W/"1")
-curl -i -X POST http://localhost:5233/api/products \
+curl -i -X POST http://localhost:5233/api/v1/products \
   -H "Authorization: Bearer $ALICE" -H "Content-Type: application/json" \
   -d '{"name":"Widget","price":9.99}'
 
 # 403 Forbidden — bob didn't create this product
-curl -i -X PUT http://localhost:5233/api/products/<id> \
+curl -i -X PUT http://localhost:5233/api/v1/products/<id> \
   -H "Authorization: Bearer $BOB" -H 'If-Match: W/"1"' -H "Content-Type: application/json" \
   -d '{"name":"Widget v2","price":12.99}'
 
 # 204 No Content — alice owns this product
-curl -i -X PUT http://localhost:5233/api/products/<id> \
+curl -i -X PUT http://localhost:5233/api/v1/products/<id> \
   -H "Authorization: Bearer $ALICE" -H 'If-Match: W/"1"' -H "Content-Type: application/json" \
   -d '{"name":"Widget v2","price":12.99}'
 ```
@@ -1719,13 +1756,13 @@ curl -i -X PUT http://localhost:5233/api/products/<id> \
 # Role-based (DeleteProductCommand, Administrator policy)
 
 # 401 Unauthorized — no token at all
-curl -i -X DELETE http://localhost:5233/api/products/<id>
+curl -i -X DELETE http://localhost:5233/api/v1/products/<id>
 
 # 403 Forbidden — authenticated, but not an administrator
-curl -i -X DELETE http://localhost:5233/api/products/<id> -H "Authorization: Bearer $ALICE"
+curl -i -X DELETE http://localhost:5233/api/v1/products/<id> -H "Authorization: Bearer $ALICE"
 
 # 204 No Content — the token carries role Administrator
-curl -i -X DELETE http://localhost:5233/api/products/<id> -H "Authorization: Bearer $ADMIN"
+curl -i -X DELETE http://localhost:5233/api/v1/products/<id> -H "Authorization: Bearer $ADMIN"
 ```
 
 ### Configuring role-based authorization for a new command
@@ -1788,7 +1825,7 @@ endpoint-attribute-discovery step in this repo's authorization path for that fea
 
 ## Impersonation: acting as another identity
 
-`POST /api/impersonation/tokens` lets an `Administrator` or `Support` caller mint a short-lived
+`POST /api/v1/impersonation/tokens` (also served on the transitional unversioned alias, see [API versioning](#api-versioning)) lets an `Administrator` or `Support` caller mint a short-lived
 bearer token that acts as **another identity**, so a support engineer can reproduce what a user sees
 without knowing their credentials. It is available in every environment, and it is a **controlled
 authentication bypass**: whoever can call it can become anyone. Every safeguard below is a hard
@@ -1809,7 +1846,7 @@ requirement, not an extra.
 ### Requesting a token
 
 ```bash
-curl -i -X POST http://localhost:5233/api/impersonation/tokens \
+curl -i -X POST http://localhost:5233/api/v1/impersonation/tokens \
   -H "Authorization: Bearer $SUPPORT" -H "Content-Type: application/json" \
   -d '{"targetUserId":"alice","roles":["Support"],"reason":"Reproducing the checkout error alice reported","ticketReference":"SUP-1234","lifetimeMinutes":15}'
 ```
@@ -1927,7 +1964,7 @@ behind an abstraction that a database table can replace later.
 Reads (`GET`) and requests made with ordinary tokens are not audited, and health probes (anonymous) never
 appear. **Not audited:** an anonymous request or a failed authentication (a missing, expired or badly
 signed token) never reaches a principal to attribute, so the framework's `401` is only in the operational
-request log; and `POST /api/impersonation/tokens` answering `404` because impersonation is switched off
+request log; and `POST /api/v1/impersonation/tokens` answering `404` because impersonation is switched off
 happens before the pipeline.
 
 ### The event
@@ -2027,7 +2064,7 @@ tamper-resistance the files cannot. It is not built.
 ## Worked example: `UpdateProductCommand`, case by case
 
 The diagrams above show the pipeline shape in the abstract. This one traces a single, concrete
-request — `PUT /api/products/{id}` — all the way through, branching at every point where a
+request — `PUT /api/v1/products/{id}` — all the way through, branching at every point where a
 different case of [`UpdateProductResult`](src/MediatrUnionPoc.Application/Features/Products/Update/UpdateProductResult.cs)
 (`union(ProductDto, NotFound<ProductId>, ValidationErrors, Error, NotAuthorized, PreconditionFailed, Conflict)`)
 could come back. Each terminal branch is tagged with the case type it produces («ProductDto», «NotFound»,
@@ -2054,7 +2091,7 @@ flowchart TD
     classDef precondition fill:#d0ebff,stroke:#1971c2,stroke-width:2px;
     classDef conflict fill:#ffec99,stroke:#f08c00,stroke-width:2px;
 
-    Client(["PUT /api/products/{id}<br/>If-Match: W/&quot;n&quot;<br/>body: name, price"]) --> Ctrl["ProductsController.Update"]
+    Client(["PUT /api/v1/products/{id}<br/>If-Match: W/&quot;n&quot;<br/>body: name, price"]) --> Ctrl["ProductsController.Update"]
     Ctrl --> Build["new UpdateProductCommand(id, name, price, principal, expectedVersion)"]
     Build --> Send["sender.Send(command)"]
 
@@ -2294,12 +2331,12 @@ unique indexes and concurrency tokens behave as they would in production.
   deliberately don't follow the convention; they can't without breaking the interface.
 - **ASP.NET Core trims "Async" from controller action names by default.** `MvcOptions.SuppressAsyncSuffixInActionNames`
   defaults to `true`, which would register `ProductsController.GetByIdAsync` as action name
-  `"GetById"` — breaking `CreatedAtAction(nameof(GetByIdAsync), ...)`'s link generation, since
+  `"GetById"` — breaking `Url.Action(nameof(GetByIdAsync), ...)`'s link generation (how `Location` is built), since
   `nameof` gives the C# identifier, not the trimmed action name MVC would otherwise register it
   under. `Program.cs`'s `AddControllers(...)` call sets `SuppressAsyncSuffixInActionNames = false`
   so action names keep the `Async` suffix this repo's naming convention requires everywhere else.
   [`ProductsControllerTests`](tests/MediatrUnionPoc.Api.IntegrationTests/ProductsControllerTests.cs) exercises
-  the real ASP.NET Core host end to end, including following the `Location` header `CreatedAtAction`
+  the real ASP.NET Core host end to end, including following the `Location` header a create
   returns, specifically so a link-generation mismatch like this can't pass silently.
 - **Compile-time proof, not just documentation:** [`ExhaustivenessTests`](tests/MediatrUnionPoc.Application.Tests/Unions/ExhaustivenessTests.cs)
   shells out to `dotnet build` against four tiny scratch projects under `tests/CompileTimeChecks/`

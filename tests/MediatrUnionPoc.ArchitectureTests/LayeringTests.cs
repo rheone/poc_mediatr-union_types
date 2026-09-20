@@ -187,6 +187,26 @@ public class LayeringTests
         AssertNoViolations(result);
     }
 
+    /// <summary>
+    /// Verifies Domain, Application and Infrastructure know nothing of API versioning — a version is a
+    /// property of the HTTP address, so it lives in the Api project (controllers, routes, OpenAPI
+    /// documents) alone and never leaks into commands, handlers or persistence.
+    /// </summary>
+    [Fact]
+    public void DomainApplicationAndInfrastructure_DependsOnApiVersioning_HasNone_Test()
+    {
+        // Arrange
+        // Act
+        var result = Types
+            .InAssemblies([DomainAssembly, ApplicationAssembly, InfrastructureAssembly])
+            .ShouldNot()
+            .HaveDependencyOn("Asp.Versioning")
+            .GetResult();
+
+        // Assert
+        AssertNoViolations(result);
+    }
+
     // Names the offending types so a failure identifies the violated boundary directly.
     private static void AssertNoViolations(NetArchTest.Rules.TestResult result) =>
         Assert.True(
