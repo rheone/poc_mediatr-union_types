@@ -30,11 +30,16 @@ public static class DbContextMother
     /// <summary>Saves the given products into the named database through a throwaway context.</summary>
     /// <param name="databaseName">The InMemory database name.</param>
     /// <param name="products">The products to persist.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous seeding.</param>
     /// <returns>A task representing the asynchronous seeding.</returns>
-    public static async Task SeedAsync(string databaseName, params Domain.Product[] products)
+    public static async Task SeedAsync(
+        string databaseName,
+        IReadOnlyCollection<Domain.Product> products,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var seedContext = Create(databaseName);
-        await seedContext.Products.AddRangeAsync(products);
-        await seedContext.SaveChangesAsync();
+        await seedContext.Products.AddRangeAsync(products, cancellationToken);
+        await seedContext.SaveChangesAsync(cancellationToken);
     }
 }

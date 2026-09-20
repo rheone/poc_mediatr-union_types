@@ -10,7 +10,7 @@ namespace MediatrUnionPoc.Application.Tests.Authorization;
 /// <summary>
 /// Evaluates the policies exactly as <see cref="DependencyInjection.AddApplication"/> registers
 /// them, through a real <see cref="IAuthorizationService"/>, so the documented rules (Update is
-/// owner-only; Delete accepts the owner or an administrator) are enforced end to end rather than
+/// owner-only; the <c>Administrator</c> policy is role-only) are enforced end to end rather than
 /// asserted only through the <see cref="AuthorizationPolicies"/> XML docs.
 /// </summary>
 public sealed class ProductionAuthorizationPolicyMatrixTests : IDisposable
@@ -35,9 +35,8 @@ public sealed class ProductionAuthorizationPolicyMatrixTests : IDisposable
     }
 
     /// <summary>
-    /// Rows: every caller kind against the <c>ProductOwner</c> (Update, owner-only),
-    /// <c>ProductOwnerOrAdministrator</c> (Delete, owner or administrator) and <c>Administrator</c>
-    /// (role-only) policies.
+    /// Rows: every caller kind against the <c>ProductOwner</c> (Update, owner-only) and
+    /// <c>Administrator</c> (role-only) policies.
     /// </summary>
     public static TheoryData<
         CallerKind,
@@ -50,18 +49,6 @@ public sealed class ProductionAuthorizationPolicyMatrixTests : IDisposable
             { CallerKind.NonOwnerAdministrator, AuthorizationPolicies.ProductOwner, false },
             { CallerKind.NonOwnerNonAdministrator, AuthorizationPolicies.ProductOwner, false },
             { CallerKind.NoClaims, AuthorizationPolicies.ProductOwner, false },
-            { CallerKind.Owner, AuthorizationPolicies.ProductOwnerOrAdministrator, true },
-            {
-                CallerKind.NonOwnerAdministrator,
-                AuthorizationPolicies.ProductOwnerOrAdministrator,
-                true
-            },
-            {
-                CallerKind.NonOwnerNonAdministrator,
-                AuthorizationPolicies.ProductOwnerOrAdministrator,
-                false
-            },
-            { CallerKind.NoClaims, AuthorizationPolicies.ProductOwnerOrAdministrator, false },
             { CallerKind.Owner, AuthorizationPolicies.Administrator, false },
             { CallerKind.NonOwnerAdministrator, AuthorizationPolicies.Administrator, true },
             { CallerKind.NonOwnerNonAdministrator, AuthorizationPolicies.Administrator, false },
@@ -76,7 +63,7 @@ public sealed class ProductionAuthorizationPolicyMatrixTests : IDisposable
     /// <param name="policyName">The production policy to evaluate.</param>
     /// <param name="expectedSucceeded">Whether the policy is expected to succeed.</param>
     /// <returns>A task that completes when the assertion runs.</returns>
-    // Auto Generated, verify expected behavior: owner-only Update, owner-or-administrator Delete, role-only Administrator.
+    // Auto Generated, verify expected behavior: owner-only Update, role-only Administrator.
     [Theory]
     [MemberData(nameof(AuthorizeAsync_CallerKindAndPolicy_DeterminesOutcome_Test_Data))]
     public async Task AuthorizeAsync_CallerKindAndPolicy_DeterminesOutcome_Test(
@@ -115,28 +102,8 @@ public sealed class ProductionAuthorizationPolicyMatrixTests : IDisposable
         Assert.False(result.Succeeded);
     }
 
-    /// <summary>Verifies an administrator who does not own the product may delete it through the allowlisted Delete operation.</summary>
+    /// <summary>Verifies the service the handlers call denies a non-owner administrator on the owner-only Update policy.</summary>
     /// <returns>A task that completes when the assertion runs.</returns>
-    // Auto Generated, verify expected behavior: administrators bypass ownership for Delete only.
-    [Fact]
-    public async Task AuthorizeAsync_NonOwnerAdministratorDeletingProduct_IsAllowed_Test()
-    {
-        // Arrange
-        var principal = BuildPrincipal(CallerKind.NonOwnerAdministrator);
-
-        // Act
-        var result = await _authorizationService.AuthorizeAsync(
-            principal,
-            _resource,
-            AuthorizationPolicies.ProductOwnerOrAdministrator
-        );
-
-        // Assert
-        Assert.True(result.Succeeded);
-    }
-
-    /// <summary>Verifies the service handlers call denies a non-owner administrator on Update and allows them on Delete.</summary>
-    /// <returns>A task that completes when the assertions run.</returns>
     // Auto Generated, verify expected behavior: ResourceAuthorizationService reflects the real policy set.
     [Fact]
     public async Task AuthorizeAsync_ResourceAuthorizationServiceWithProductionPolicies_ReflectsDocumentedRules_Test()
@@ -153,16 +120,9 @@ public sealed class ProductionAuthorizationPolicyMatrixTests : IDisposable
             AuthorizationPolicies.ProductOwner,
             TestContext.Current.CancellationToken
         );
-        var deleteByAdministrator = await sut.AuthorizeAsync(
-            administrator,
-            _resource,
-            AuthorizationPolicies.ProductOwnerOrAdministrator,
-            TestContext.Current.CancellationToken
-        );
 
         // Assert
         Assert.NotNull(updateByAdministrator);
-        Assert.Null(deleteByAdministrator);
     }
 
     private static ClaimsPrincipal BuildPrincipal(CallerKind callerKind) =>

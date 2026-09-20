@@ -26,7 +26,7 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
     {
         var totalCount = await _dbContext.Products.CountAsync(cancellationToken);
 
-        var items = await dbContext
+        var items = await _dbContext
             .Products.AsNoTracking()
             .OrderBy(p => p.Name)
             .Skip((pageNumber - 1) * pageSize)

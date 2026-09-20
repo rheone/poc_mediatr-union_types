@@ -132,7 +132,7 @@ public class EfCoreUnitOfWorkTests
         // Arrange
         await using var database = await CreateDatabaseAsync(provider);
         var product = ProductMother.Widget();
-        await database.SeedAsync(product);
+        await database.SeedAsync([product], TestContext.Current.CancellationToken);
         await using var dbContext = database.CreateContext();
         await new ProductRepository(dbContext).GetByIdAsync(product.Id, CancellationToken.None);
         await using var unitOfWork = new EfCoreUnitOfWork(dbContext);
@@ -156,7 +156,7 @@ public class EfCoreUnitOfWorkTests
         // Arrange
         await using var database = await CreateDatabaseAsync(provider);
         var product = ProductMother.Widget();
-        await database.SeedAsync(product);
+        await database.SeedAsync([product], TestContext.Current.CancellationToken);
         await using var dbContext = database.CreateContext();
         var tracked = await new ProductRepository(dbContext).GetByIdAsync(
             product.Id,
@@ -190,7 +190,7 @@ public class EfCoreUnitOfWorkTests
         // Arrange
         await using var database = await CreateDatabaseAsync(provider);
         var product = ProductMother.Widget();
-        await database.SeedAsync(product);
+        await database.SeedAsync([product], TestContext.Current.CancellationToken);
         await using var dbContext = database.CreateContext();
         var tracked = await new ProductRepository(dbContext).GetByIdAsync(
             product.Id,

@@ -43,19 +43,17 @@ Details below.
 - [Request lifecycle](#request-lifecycle)
 - [Authorization](#authorization)
   - [Why two different points in the request lifetime](#why-two-different-points-in-the-request-lifetime)
-  - [How the three flows fit together](#how-the-three-flows-fit-together)
+  - [How the two flows fit together](#how-the-two-flows-fit-together)
   - [Role-based: `IRequiresAuthorization` + `AuthorizationBehavior`](#role-based-irequiresauthorization-authorizationbehavior)
   - [Resource-based: `ResourceAuthorizationService` + `OwnerAuthorizationHandler<TResource>`](#resource-based-resourceauthorizationservice-ownerauthorizationhandlertresource)
-  - [Resource-based with a role bypass: `ProductOwnerOrAdministrator`](#resource-based-with-a-role-bypass-productowneroradministrator)
   - [Zero-to-many handlers, and multiple requirements](#zero-to-many-handlers-and-multiple-requirements)
   - [Where the identity comes from](#where-the-identity-comes-from)
   - [Configuring role-based authorization for a new command](#configuring-role-based-authorization-for-a-new-command)
   - [Configuring resource-based authorization for a new command](#configuring-resource-based-authorization-for-a-new-command)
-  - [Configuring a role bypass for a resource-based command](#configuring-a-role-bypass-for-a-resource-based-command)
   - [Why not `IAuthorizationRequirementData` attributes](#why-not-iauthorizationrequirementdata-attributes)
 - [Worked example: `UpdateProductCommand`, case by case](#worked-example-updateproductcommand-case-by-case)
-- [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
 - [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index)
+- [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
 - [Notes and gotchas](#notes-and-gotchas)
 - [Glossary](#glossary)
 - [Footnotes](#footnotes)
@@ -772,23 +770,20 @@ the handler returned.
 
 ## Authorization
 
-This POC demonstrates three authorization shapes side by side, all built from **standard ASP.NET
+This POC demonstrates two authorization shapes side by side, both built from **standard ASP.NET
 Core authorization primitives** (`IAuthorizationService`, `IAuthorizationRequirement`,
-`IAuthorizationHandler`, named policies) and all converging on the same union-based outcome —
+`IAuthorizationHandler`, named policies) and both converging on the same union-based outcome —
 `NotAuthorized` as just another case, never an exception:
 
 - **Role/policy-based**, checked *before* a handler runs, by a MediatR pipeline behavior — nothing
-  about the request's payload matters, only who's calling.
+  about the request's payload matters, only who's calling. Demoed by `DeleteProductCommand`'s
+  `Administrator` policy: only an administrator may delete a product.
 - **Resource-based**, checked *inside* a handler, once it has loaded the specific resource being
   acted on. Demoed by `UpdateProductCommand`'s `ProductOwner` policy: only the product's owner may
   update it.
-- **Resource-based with a role bypass**, also checked inside a handler, but backed by *two*
-  independently-registered handlers answering the same policy instead of one. Demoed by
-  `DeleteProductCommand`'s `ProductOwnerOrAdministrator` policy: the product's owner **or** an
-  administrator may delete it — with no `||` anywhere in application code expressing that "or".
 
 > [!NOTE]
-> All three are *example configurations* of a general mechanism, not the only valid way to wire
+> Both are *example configurations* of a general mechanism, not the only valid way to wire
 > authorization and not a prescription that every command needs one of them — a different project
 > might gate different operations, use different policies, combine styles differently, or skip
 > authorization entirely for commands that don't need it.
@@ -806,15 +801,13 @@ are necessarily imperative, called from inside the code that already has the res
 rather than declared ahead of time the way `[Authorize]` or a pipeline behavior can. This isn't a
 gap in this repo's pipeline; it's why `ResourceAuthorizationService` exists as something a handler
 calls explicitly instead of something wired into `AddTransient(typeof(IPipelineBehavior<,>), ...)`
-alongside the other behaviors. It's also why the third pattern below — "owner OR administrator" —
-has to live at the same in-handler point as ownership alone: the moment *either* half of an "or"
-needs the loaded resource, the whole check has to wait for it.
+alongside the other behaviors.
 
-### How the three flows fit together
+### How the two flows fit together
 
 ```mermaid
 flowchart TD
-    subgraph RoleBased["Role-based — pre-handler (the mechanism; no production command uses it alone today, see note below)"]
+    subgraph RoleBased["Role-based — pre-handler (DeleteProductCommand)"]
         direction LR
         C1["Controller"] -->|"sender.Send(request)"| L1[LoggingBehavior]
         L1 --> A1{"AuthorizationBehavior:\nnamed policy?"}
@@ -832,26 +825,15 @@ flowchart TD
         R2 -->|Yes| U2["product.UpdateDetails(...)"]
     end
 
-    subgraph ResourceBypass["Resource-based with a role bypass — inside the handler"]
-        direction LR
-        C3["Controller"] -->|"sender.Send(DeleteProductCommand)"| L3[LoggingBehavior]
-        L3 --> V3[ValidationBehavior] --> T3[TransactionBehavior] --> H3["DeleteProductHandler"]
-        H3 --> G3{"repository.GetByIdAsync(id)"}
-        G3 -->|"found"| R3{"ResourceAuthorizationService.AuthorizeAsync:\nProductOwnerOrAdministrator policy?"}
-        R3 -->|"owner handler OR admin-bypass handler succeeds"| D3["repository.Remove(product)"]
-        R3 -->|"neither handler succeeds"| N3["DeleteProductResult.FromNotAuthorized(...)"]
-    end
-
     N1 --> Conv(["IAuthorizable&lt;TSelf&gt;.FromNotAuthorized(NotAuthorized)"])
     N2 --> Conv
-    N3 --> Conv
     Conv --> Map{"Controller switches on\nthe union result"}
     Map -->|NotAuthorized| Forbidden403[403 Forbidden]
 ```
 
 Every path calls `IAuthorizationService` under the hood and ends up asking the response union's
 `IAuthorizable<TSelf>.FromNotAuthorized(...)` to build the same shared `NotAuthorized` case — only
-*where* in the request's lifetime that call happens, and *how many handlers* get a vote, differs.
+*where* in the request's lifetime that call happens differs.
 
 ### Role-based: `IRequiresAuthorization` + `AuthorizationBehavior`
 
@@ -863,7 +845,7 @@ Every path calls `IAuthorizationService` under the hood and ends up asking the r
 2. **[`IAuthorizable<TSelf>`](src/MediatrUnionPoc.Application/Common/Abstractions/IAuthorizable.cs)**
    — a response union implements this (`static abstract TSelf FromNotAuthorized(NotAuthorized)`)
    so the behavior can build the union's `NotAuthorized` case generically, the same role
-   `IValidatable<TSelf>` plays for `ValidationErrors`. All three authorization patterns here rely
+   `IValidatable<TSelf>` plays for `ValidationErrors`. Both authorization patterns here rely
    on this same interface.
 3. **[`AuthorizationBehavior<TRequest,TResponse>`](src/MediatrUnionPoc.Application/Common/Behaviors/AuthorizationBehavior.cs)**
    — calls `IAuthorizationService.AuthorizeAsync(request.Principal, request.PolicyName)` (the
@@ -883,7 +865,7 @@ Every path calls `IAuthorizationService` under the hood and ends up asking the r
    services.AddAuthorizationCore(options =>
        options.AddPolicy(
            AuthorizationPolicies.Administrator,
-           policy => policy.Requirements.Add(new AdministratorRequirement("Administrator"))));
+           policy => policy.Requirements.Add(new AdministratorRequirement(AuthorizationRoles.Administrator))));
    services.AddSingleton<IAuthorizationHandler, AdministratorAuthorizationHandler>();
    ```
 
@@ -893,13 +875,12 @@ Every path calls `IAuthorizationService` under the hood and ends up asking the r
    `IAuthorizationService` directly instead of relying on an HTTP-pipeline gate.
 
 > [!NOTE]
-> This policy and its handler are fully wired and tested (see
+> `DeleteProductCommand` is this pattern's production consumer: it implements
+> `IRequiresAuthorization` with `PolicyName => AuthorizationPolicies.Administrator`, so
+> `AuthorizationBehavior` rejects a non-administrator before `DeleteProductHandler` ever runs. The
+> mechanism is also covered independently of that command by
 > [`AuthorizationBehaviorTests`](tests/MediatrUnionPoc.Application.Tests/Behaviors/AuthorizationBehaviorTests.cs)'s
-> `ArbitraryAdminCommand` fixture), but as of this writing no *production* command uses this pure
-> pre-handler path on its own — `DeleteProductCommand` moved to the resource-based-with-bypass
-> pattern below once "owner OR administrator" required the resource to be loaded for the ownership
-> half. The mechanism remains ready for a future command that needs a role check with no resource
-> dimension at all.
+> `ArbitraryAdminCommand` fixture.
 
 ### Resource-based: `ResourceAuthorizationService` + `OwnerAuthorizationHandler<TResource>`
 
@@ -936,7 +917,7 @@ Every path calls `IAuthorizationService` under the hood and ends up asking the r
    ```csharp
    options.AddPolicy(
        AuthorizationPolicies.ProductOwner,
-       policy => policy.Requirements.Add(new OperationAuthorizationRequirement { Name = "Update" }));
+       policy => policy.Requirements.Add(AuthorizationOperations.Update));
    services.AddSingleton<IAuthorizationHandler, OwnerAuthorizationHandler<OwnedProductResource>>();
    services.AddScoped<ResourceAuthorizationService>();
    ```
@@ -950,55 +931,6 @@ Every path calls `IAuthorizationService` under the hood and ends up asking the r
 > scoped EF Core services aren't safe to share across requests the way a singleton would; register
 > a handler like that scoped or transient instead.
 
-### Resource-based with a role bypass: `ProductOwnerOrAdministrator`
-
-`DeleteProductCommand` needs a check the previous two patterns can't express alone: **either** the
-caller owns the product **or** they're an administrator. The owner half needs the loaded resource
-(so it can't run pre-handler, as [above](#why-two-different-points-in-the-request-lifetime)); the
-"or an administrator" half doesn't need the resource at all. Rather than writing that `||` in
-application code, this is expressed as **two independently-registered handlers competing for the
-same requirement** — a mechanism ASP.NET Core's own `IAuthorizationService` already provides (see
-[Zero-to-many handlers, and multiple requirements](#zero-to-many-handlers-and-multiple-requirements)
-below).
-
-1. **A distinct policy**, [`AuthorizationPolicies.ProductOwnerOrAdministrator`](src/MediatrUnionPoc.Application/Common/Authorization/AuthorizationPolicies.cs),
-   backed by its own `OperationAuthorizationRequirement { Name = "Delete" }` — a *different*
-   requirement instance from `ProductOwner`'s `Name = "Update"`, even though both share the same
-   requirement *type*. That distinction in `Name` is what lets the next handler apply to Delete
-   without also silently loosening Update.
-2. **[`OwnerAuthorizationHandler<OwnedProductResource>`](src/MediatrUnionPoc.Application/Common/Authorization/OwnerAuthorizationHandler.cs)**
-   — the exact same registered singleton `ProductOwner` already uses. It ignores `Name`, so it
-   answers *both* policies without any special-casing of its own.
-3. **[`AdministratorResourceOverrideAuthorizationHandler<TResource>`](src/MediatrUnionPoc.Application/Common/Authorization/AdministratorResourceOverrideAuthorizationHandler.cs)**
-   — a second handler registered only for this requirement type, constructed with `"Delete"` as its
-   one allowed operation name. It succeeds when the caller is in the `Administrator` role **and**
-   `requirement.Name == "Delete"` — so it never fires for `ProductOwner`'s `"Update"` requirement,
-   leaving `UpdateProductCommand` exactly as ownership-only as before. It's intentionally
-   unconstrained on `TResource` — it never inspects the resource itself, only the caller's role and
-   the requirement's `Name` — so the same handler type can back a bypass for any future
-   resource-based policy, not just products.
-4. **[`DeleteProductHandler`](src/MediatrUnionPoc.Application/Features/Products/Delete/DeleteProductHandler.cs)**
-   — loads the product, then calls
-   `resourceAuthorizationService.AuthorizeAsync(request.Principal, OwnedProductResource.FromDomain(product), AuthorizationPolicies.ProductOwnerOrAdministrator, cancellationToken)`,
-   returning `DeleteProductResult.FromNotAuthorized(notAuthorized)` on failure — structurally
-   identical to `UpdateProductHandler`'s call, just naming a different policy. Like
-   `UpdateProductCommand`, `DeleteProductCommand` does **not** implement `IRequiresAuthorization` —
-   the ownership half of this check can't run pre-handler, so neither can the whole check.
-5. **Registration**, in the same `AddApplication()`:
-
-   ```csharp
-   options.AddPolicy(
-       AuthorizationPolicies.ProductOwnerOrAdministrator,
-       policy => policy.Requirements.Add(new OperationAuthorizationRequirement { Name = "Delete" }));
-   services.AddSingleton<IAuthorizationHandler, OwnerAuthorizationHandler<OwnedProductResource>>();
-   services.AddSingleton<IAuthorizationHandler>(
-       _ => new AdministratorResourceOverrideAuthorizationHandler<OwnedProductResource>("Delete"));
-   ```
-
-Nowhere in `DeleteProductHandler`, `ResourceAuthorizationService`, or either registered handler is
-there an `if`/`else` or `||` weighing "is owner" against "is administrator" — the OR is entirely
-ASP.NET Core's own per-requirement evaluation, described next.
-
 ### Zero-to-many handlers, and multiple requirements
 
 None of the policies above are special-cased by this repo — every behavior described here is
@@ -1010,9 +942,7 @@ native `IAuthorizationService` behavior:
   1:1 requirement-to-handler constraint); a requirement succeeds if *any one* of its handlers
   calls `context.Succeed(requirement)` (OR across handlers) — the same "any match is enough"
   shape `AdministratorAuthorizationHandler` already applies *within* a single handler across
-  multiple allowed roles, just one level up, across handlers. This is exactly the mechanism
-  [`ProductOwnerOrAdministrator`](#resource-based-with-a-role-bypass-productowneroradministrator)
-  relies on.
+  multiple allowed roles, just one level up, across handlers..
 
 [`ResourceAuthorizationOrAcrossHandlersTests`](tests/MediatrUnionPoc.Application.Tests/Authorization/ResourceAuthorizationOrAcrossHandlersTests.cs)
 exercises this generically (multiple handlers registered for the same requirement type, only one
@@ -1026,11 +956,9 @@ This POC has no real authentication — no login, no JWTs, no cookies. Instead,
 `ClaimsPrincipal` from two request headers:
 
 - **`X-Admin`** — a value of `"true"` (case-insensitive) adds an `Administrator` role claim, read
-  by `DeleteAsync` as one of the two ways to satisfy the `ProductOwnerOrAdministrator` policy.
+  by `DeleteAsync` to satisfy the `Administrator` policy.
 - **`X-Caller-Id`** — its value becomes the caller's `ClaimTypes.NameIdentifier` claim, read by
-  `CreateAsync` (to set the new product's owner), `UpdateAsync` (to prove ownership), and
-  `DeleteAsync` (the other way to satisfy `ProductOwnerOrAdministrator`, by proving ownership
-  instead of an administrator role).
+  `CreateAsync` (to set the new product's owner) and `UpdateAsync` (to prove ownership).
 
 ```csharp
 private static ClaimsPrincipal CallerPrincipal(string? adminHeader, string? callerIdHeader)
@@ -1039,7 +967,7 @@ private static ClaimsPrincipal CallerPrincipal(string? adminHeader, string? call
 
     if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
     {
-        identity.AddClaim(new Claim(ClaimTypes.Role, "Administrator"));
+        identity.AddClaim(new Claim(ClaimTypes.Role, AuthorizationRoles.Administrator));
     }
 
     if (!string.IsNullOrEmpty(callerIdHeader))
@@ -1073,17 +1001,13 @@ curl -i -X PUT https://localhost:<port>/api/products/<id> \
 ```
 
 ```bash
-# Resource-based with a role bypass (DeleteProductCommand, ProductOwnerOrAdministrator policy)
+# Role-based (DeleteProductCommand, Administrator policy)
 
-# 403 Forbidden — no proof of ownership or administrator identity
+# 403 Forbidden — no administrator identity
 curl -i -X DELETE https://localhost:<port>/api/products/<id>
 
-# 204 No Content — "alice" owns this product
-curl -i -X DELETE https://localhost:<port>/api/products/<id> -H "X-Caller-Id: alice"
-
-# 204 No Content — "bob" doesn't own it, but claims Administrator
-curl -i -X DELETE https://localhost:<port>/api/products/<id> \
-  -H "X-Caller-Id: bob" -H "X-Admin: true"
+# 204 No Content — claims Administrator
+curl -i -X DELETE https://localhost:<port>/api/products/<id> -H "X-Admin: true"
 ```
 
 > [!WARNING]
@@ -1096,9 +1020,7 @@ curl -i -X DELETE https://localhost:<port>/api/products/<id> \
 
 ### Configuring role-based authorization for a new command
 
-To gate another command purely by role, the way `AuthorizationBehavior` supports today (see the
-note in [Role-based](#role-based-irequiresauthorization-authorizationbehavior) above about no
-current production command using it alone):
+To gate another command purely by role, the way `DeleteProductCommand` is gated:
 
 1. Add `ClaimsPrincipal Principal` to the command and implement `IRequiresAuthorization`,
    returning the name of whichever registered policy should gate it from `PolicyName`
@@ -1122,7 +1044,7 @@ any-one-matches check, so a single policy can also gate on more than one role
 
 ### Configuring resource-based authorization for a new command
 
-To gate another command the way `UpdateProductCommand` is gated (ownership-only, no bypass):
+To gate another command the way `UpdateProductCommand` is gated (ownership-only):
 
 1. Add `ClaimsPrincipal Principal` to the command, but do **not** implement `IRequiresAuthorization`
    on it — the check happens inside the handler, not the pipeline.
@@ -1138,34 +1060,6 @@ To gate another command the way `UpdateProductCommand` is gated (ownership-only,
 5. Add `NotAuthorized` to the response union's case list and implement `IAuthorizable<TSelf>`, the
    same as the role-based case above — both patterns converge on this same interface.
 6. Add a `NotAuthorized` arm to the controller's `switch`, mapping it to `403 Forbidden`.
-
-For an owner-*or*-role variant instead of ownership-only, see the next section.
-
-### Configuring a role bypass for a resource-based command
-
-To let a role (like `Administrator`) bypass an existing resource-based check the way
-`DeleteProductCommand` does, without loosening a *different* resource-based command
-(`UpdateProductCommand`) that should stay ownership-only:
-
-1. Register a **new** named policy backed by an `OperationAuthorizationRequirement` with its own
-   `Name` (e.g. `"Delete"`) distinct from the one the ownership-only policy uses (e.g. `"Update"`) —
-   the `Name` is what lets a role-bypass handler apply to one operation and not the other, since both
-   policies otherwise share the same requirement *type*.
-2. Register `OwnerAuthorizationHandler<TResource>` for it, the same as any ownership-only policy —
-   it ignores `Name` entirely, so it participates in every policy using this requirement type
-   regardless.
-3. Register a new `AdministratorResourceOverrideAuthorizationHandler<TResource>`, constructed with
-   the operation name(s) it should bypass for (`"Delete"` here) — it succeeds when the caller is an
-   `Administrator` *and* the requirement's `Name` is one it was configured for, leaving every other
-   policy using the same requirement type (like `ProductOwner`'s `"Update"`) untouched.
-4. From the handler, call `ResourceAuthorizationService.AuthorizeAsync(...)` against the new policy
-   name, exactly as for an ownership-only check — the handler itself contains **no `||`, no
-   if/else between "is admin" and "is owner."** ASP.NET Core's own per-requirement evaluation
-   already succeeds as soon as either registered handler does (see
-   [Zero-to-many handlers, and multiple requirements](#zero-to-many-handlers-and-multiple-requirements)).
-5. Add a `NotAuthorized` arm to the controller's `switch`, mapping it to `403 Forbidden`, same as
-   any other authorization pattern.
-
 ### Why not `IAuthorizationRequirementData` attributes
 
 .NET 11 widens `IAuthorizationRequirementData`-backed attribute authorization (declaring
@@ -1264,31 +1158,6 @@ Reading the diagram:
 - Every branch still passes back through `LoggingBehavior` on the way out, so every outcome —
   success or not — gets logged exactly once, symmetrically.
 
-## Speculative shared case types for a larger API
-
-Not implemented here, but worth having in your vocabulary for a real project — none of these map
-1:1 onto an HTTP status, deliberately. Like the shared case types actually used in this repo, each
-one below is meant to be a meaning-free record reused across many unions, not tied to any single
-operation:
-
-| Case                                    | Meaning                                                                 |
-| ----------------------------------------- | -------------------------------------------------------------------------- |
-| `Accepted(jobId)`                        | Work was queued/deferred, not completed synchronously                     |
-| `Conflict(currentVersion)`               | [Optimistic-concurrency](#cross-cutting-concepts) version mismatch on update |
-| `Locked(heldBy)`                         | Resource is [pessimistically locked](#cross-cutting-concepts) by another process |
-| `RateLimited(retryAfter)`                | Caller hit a throttling limit                                             |
-| `Timeout(dependency)`                    | A downstream dependency didn't respond in time                           |
-| `QuotaExceeded(limit, current)`          | A business quota (not a rate limit) was exceeded                          |
-| `PartialSuccess(succeeded, failed)`      | A batch operation partially completed                                     |
-| `AlreadyProcessed(idempotencyKey)`       | A duplicate request was detected and safely [ignored](#cross-cutting-concepts) — see **Idempotency** |
-| `RequiresConfirmation(prompt)`           | The action needs an explicit second confirmation before proceeding        |
-| `Stale(asOf)`                            | Data was served from a cache/read-replica and may be out of date          |
-| `Deprecated(replacement)`                | The operation still works but callers should migrate                      |
-
-A queue consumer, a scheduled job, and an HTTP controller could all share the exact same
-`Conflict`/`Locked`/`AlreadyProcessed` cases and each map them to something completely different
-in their own boundary code.
-
 ## Extending the pattern: syncing a search index
 
 Not implemented in this repo, but a natural extension once every command already reports its
@@ -1349,6 +1218,31 @@ checkout flow depends on.
 > This same shape generalizes to any side effect that shouldn't block or influence a command's own
 > result — an audit log, a cache invalidation, an outbound webhook, an email notification. Add a
 > notification, publish it after commit, and let as many independent handlers subscribe as needed.
+
+## Speculative shared case types for a larger API
+
+Not implemented here, but worth having in your vocabulary for a real project — none of these map
+1:1 onto an HTTP status, deliberately. Like the shared case types actually used in this repo, each
+one below is meant to be a meaning-free record reused across many unions, not tied to any single
+operation:
+
+| Case                                    | Meaning                                                                 |
+| ----------------------------------------- | -------------------------------------------------------------------------- |
+| `Accepted(jobId)`                        | Work was queued/deferred, not completed synchronously                     |
+| `Conflict(currentVersion)`               | [Optimistic-concurrency](#cross-cutting-concepts) version mismatch on update |
+| `Locked(heldBy)`                         | Resource is [pessimistically locked](#cross-cutting-concepts) by another process |
+| `RateLimited(retryAfter)`                | Caller hit a throttling limit                                             |
+| `Timeout(dependency)`                    | A downstream dependency didn't respond in time                           |
+| `QuotaExceeded(limit, current)`          | A business quota (not a rate limit) was exceeded                          |
+| `PartialSuccess(succeeded, failed)`      | A batch operation partially completed                                     |
+| `AlreadyProcessed(idempotencyKey)`       | A duplicate request was detected and safely [ignored](#cross-cutting-concepts) — see **Idempotency** |
+| `RequiresConfirmation(prompt)`           | The action needs an explicit second confirmation before proceeding        |
+| `Stale(asOf)`                            | Data was served from a cache/read-replica and may be out of date          |
+| `Deprecated(replacement)`                | The operation still works but callers should migrate                      |
+
+A queue consumer, a scheduled job, and an HTTP controller could all share the exact same
+`Conflict`/`Locked`/`AlreadyProcessed` cases and each map them to something completely different
+in their own boundary code.
 
 ## Notes and gotchas
 

@@ -34,17 +34,19 @@ public sealed class UnitOfWorkTestDatabase : IAsyncDisposable
     /// <summary>Creates a fresh database on the given provider.</summary>
     /// <param name="provider">The provider to back it with.</param>
     /// <param name="name">A name unique to the calling test; only used by the InMemory provider.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous setup.</param>
     /// <returns>A task producing the ready-to-use database.</returns>
     public static async Task<UnitOfWorkTestDatabase> CreateAsync(
         UnitOfWorkProvider provider,
-        string name
+        string name,
+        CancellationToken cancellationToken = default
     ) =>
         provider switch
         {
             UnitOfWorkProvider.InMemory => new UnitOfWorkTestDatabase(name, null),
             UnitOfWorkProvider.Sqlite => new UnitOfWorkTestDatabase(
                 name,
-                await SqliteDatabaseMother.CreateAsync()
+                await SqliteDatabaseMother.CreateAsync(cancellationToken)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(provider)),
         };
@@ -56,12 +58,16 @@ public sealed class UnitOfWorkTestDatabase : IAsyncDisposable
 
     /// <summary>Saves the given products into the database through a throwaway context.</summary>
     /// <param name="products">The products to persist.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous seeding.</param>
     /// <returns>A task representing the asynchronous seeding.</returns>
-    public async Task SeedAsync(params Product[] products)
+    public async Task SeedAsync(
+        IReadOnlyCollection<Product> products,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var seedContext = CreateContext();
-        await seedContext.Products.AddRangeAsync(products);
-        await seedContext.SaveChangesAsync();
+        await seedContext.Products.AddRangeAsync(products, cancellationToken);
+        await seedContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc/>

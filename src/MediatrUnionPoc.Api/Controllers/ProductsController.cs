@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MediatR;
 using MediatrUnionPoc.Api.Contracts;
+using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.Create;
@@ -47,7 +48,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// claim — the identity <see cref="Application.Common.Authorization.OwnerAuthorizationHandler{TResource}"/>
     /// compares against a resource's owner, e.g. <see cref="Domain.Product.OwnerId"/>. A caller
     /// who created a product with a given <see cref="CallerIdHeaderName"/> value must present the
-    /// same value to update or delete it.
+    /// same value to update it.
     /// </summary>
     public const string CallerIdHeaderName = "X-Caller-Id";
 
@@ -97,9 +98,10 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// <summary>Looks up a single product by id.</summary>
     /// <param name="id">The product's identity.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
-    /// <returns>200 with the <see cref="ProductDto"/>; 404 if it doesn't exist; 500 for any other <see cref="Error"/> case.</returns>
+    /// <returns>200 with the <see cref="ProductDto"/>; 400 if the id fails validation (an <see cref="Error"/> coded <see cref="Error.ValidationFailureCode"/>); 404 if it doesn't exist; 500 for any other <see cref="Error"/> case.</returns>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemPayload), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetByIdAsync(
@@ -114,6 +116,11 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             ProductDto dto => Ok(dto),
             NotFoundCase notFound => NotFound(
                 new ProblemPayload($"Product '{notFound.Id}' was not found.", "NOT_FOUND")
+            ),
+            Error { Code: Error.ValidationFailureCode } error => Problem(
+                detail: error.Message,
+                statusCode: StatusCodes.Status400BadRequest,
+                title: error.Code
             ),
             Error error => Problem(
                 detail: error.Message,
@@ -221,34 +228,32 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     }
 
     /// <summary>
-    /// Deletes a product. Either the product's owner or an administrator may delete it — this POC
-    /// has no real authentication, so the caller proves owner identity via the
-    /// <see cref="CallerIdHeaderName"/> header (the same one <see cref="UpdateAsync"/> uses) and/or
-    /// administrator identity via an <c>X-Admin: true</c> header; see
-    /// <see cref="AdminHeaderName"/>.
+    /// Deletes a product. Only an administrator may delete — this POC has no real
+    /// authentication, so the caller proves administrator identity by sending an
+    /// <c>X-Admin: true</c> request header; see <see cref="AdminHeaderName"/>.
     /// </summary>
     /// <param name="id">The product's identity.</param>
     /// <param name="adminHeader">The <see cref="AdminHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
-    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
-    /// 204 on success; 403 if the caller neither owns the product nor is an administrator; 404 if
+    /// 204 on success; 400 if the id fails validation (an <see cref="Error"/> coded
+    /// <see cref="Error.ValidationFailureCode"/>); 403 if the caller isn't an administrator; 404 if
     /// the product doesn't exist; 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemPayload), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteAsync(
         Guid id,
         [FromHeader(Name = AdminHeaderName)] string? adminHeader,
-        [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
         CancellationToken cancellationToken = default
     )
     {
         var result = await _sender.Send(
-            new DeleteProductCommand(id, CallerPrincipal(adminHeader, callerIdHeader)),
+            new DeleteProductCommand(id, CallerPrincipal(adminHeader, callerIdHeader: null)),
             cancellationToken
         );
 
@@ -262,6 +267,11 @@ public sealed class ProductsController(ISender sender) : ControllerBase
                 detail: string.Join("; ", notAuthorized.Reasons),
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Forbidden"
+            ),
+            Error { Code: Error.ValidationFailureCode } error => Problem(
+                detail: error.Message,
+                statusCode: StatusCodes.Status400BadRequest,
+                title: error.Code
             ),
             Error error => Problem(
                 detail: error.Message,
@@ -300,7 +310,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
 
         if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
         {
-            identity.AddClaim(new Claim(ClaimTypes.Role, "Administrator"));
+            identity.AddClaim(new Claim(ClaimTypes.Role, AuthorizationRoles.Administrator));
         }
 
         if (!string.IsNullOrEmpty(callerIdHeader))

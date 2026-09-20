@@ -18,14 +18,17 @@ public sealed class SqliteDatabaseMother : IAsyncDisposable
     public SqliteConnection Connection { get; }
 
     /// <summary>Opens a fresh in-memory database and creates the production schema in it.</summary>
+    /// <param name="cancellationToken">Token to cancel the asynchronous setup.</param>
     /// <returns>A task producing the ready-to-use database.</returns>
-    public static async Task<SqliteDatabaseMother> CreateAsync()
+    public static async Task<SqliteDatabaseMother> CreateAsync(
+        CancellationToken cancellationToken = default
+    )
     {
         var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         var database = new SqliteDatabaseMother(connection);
         await using var context = database.CreateContext();
-        await context.Database.EnsureCreatedAsync();
+        await context.Database.EnsureCreatedAsync(cancellationToken);
         return database;
     }
 

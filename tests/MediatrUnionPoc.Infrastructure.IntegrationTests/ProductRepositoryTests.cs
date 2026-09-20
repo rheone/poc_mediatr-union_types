@@ -88,7 +88,11 @@ public class ProductRepositoryTests
         // Arrange
         var databaseName = DatabaseName();
         var product = ProductMother.Widget();
-        await DbContextMother.SeedAsync(databaseName, product);
+        await DbContextMother.SeedAsync(
+            databaseName,
+            [product],
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = DbContextMother.Create(databaseName);
         var repository = new ProductRepository(dbContext);
 
@@ -112,7 +116,11 @@ public class ProductRepositoryTests
         // Arrange
         var databaseName = DatabaseName();
         var product = ProductMother.Widget();
-        await DbContextMother.SeedAsync(databaseName, product);
+        await DbContextMother.SeedAsync(
+            databaseName,
+            [product],
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = DbContextMother.Create(databaseName);
         var repository = new ProductRepository(dbContext);
 
@@ -194,7 +202,11 @@ public class ProductRepositoryTests
         // Arrange
         var databaseName = DatabaseName();
         var product = ProductMother.Widget();
-        await DbContextMother.SeedAsync(databaseName, product);
+        await DbContextMother.SeedAsync(
+            databaseName,
+            [product],
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = DbContextMother.Create(databaseName);
         var repository = new ProductRepository(dbContext);
         var tracked = await repository.GetByIdAsync(product.Id, CancellationToken.None);
@@ -274,7 +286,8 @@ public class ProductRepositoryTests
         var databaseName = $"{DatabaseName()}.{pageNumber}";
         await DbContextMother.SeedAsync(
             databaseName,
-            [.. new[] { "A", "B", "C", "D", "E" }.Select(ProductMother.Named)]
+            [.. new[] { "A", "B", "C", "D", "E" }.Select(ProductMother.Named)],
+            TestContext.Current.CancellationToken
         );
         await using var dbContext = DbContextMother.Create(databaseName);
         var repository = new ProductRepository(dbContext);
@@ -319,7 +332,11 @@ public class ProductRepositoryTests
     {
         // Arrange
         var databaseName = DatabaseName();
-        await DbContextMother.SeedAsync(databaseName, ProductMother.Widget());
+        await DbContextMother.SeedAsync(
+            databaseName,
+            [ProductMother.Widget()],
+            TestContext.Current.CancellationToken
+        );
         await using var dbContext = DbContextMother.Create(databaseName);
         var repository = new ProductRepository(dbContext);
 

@@ -258,6 +258,36 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    /// <summary>Verifies an empty-guid id fails validation and returns 400 rather than 500.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task GetByIdAsync_EmptyGuid_Returns400_Test()
+    {
+        // Arrange
+        var uri = $"{ProductsUri}/{Guid.Empty}";
+
+        // Act
+        using var response = await _client.GetAsync(uri, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>Verifies an administrator deleting with an empty-guid id fails validation and returns 400 rather than 500.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task DeleteAsync_EmptyGuid_Returns400_Test()
+    {
+        // Arrange
+        var uri = $"{ProductsUri}/{Guid.Empty}";
+
+        // Act
+        using var response = await SendAsync(HttpMethod.Delete, uri, adminHeader: "true");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     /// <summary>Verifies an existing product returns 200 with that product.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     // Auto Generated, verify expected behavior:
@@ -545,10 +575,10 @@ public sealed class ProductsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Verifies a delete without the X-Admin header or a matching X-Caller-Id returns 403, and the product is left untouched.</summary>
+    /// <summary>Verifies a delete without the X-Admin header returns 403, and the product is left untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task DeleteAsync_NoAdminOrOwnerHeaders_Returns403AndLeavesProductUntouched_Test()
+    public async Task DeleteAsync_NoAdminHeader_Returns403AndLeavesProductUntouched_Test()
     {
         // Arrange
         var created = await CreateProductAsync(ProductRequestMother.Widget());
@@ -556,60 +586,6 @@ public sealed class ProductsControllerTests : IDisposable
 
         // Act
         using var response = await _client.DeleteAsync(uri, CancellationToken.None);
-
-        // Assert
-        using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);
-        Assert.Multiple(
-            () => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode),
-            () => Assert.Equal(HttpStatusCode.OK, afterDelete.StatusCode)
-        );
-    }
-
-    /// <summary>Verifies the product's owner can delete it without the X-Admin header, via the X-Caller-Id header alone.</summary>
-    /// <returns>A task representing the asynchronous test.</returns>
-    [Fact]
-    public async Task DeleteAsync_OwnerWithoutAdminHeader_Returns204AndProductIsGone_Test()
-    {
-        // Arrange
-        var created = await CreateProductAsync(
-            ProductRequestMother.Widget(),
-            ProductRequestMother.OwnerId
-        );
-        var uri = $"{ProductsUri}/{created.Id.Value}";
-
-        // Act
-        using var response = await SendAsync(
-            HttpMethod.Delete,
-            uri,
-            callerId: ProductRequestMother.OwnerId
-        );
-
-        // Assert
-        using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);
-        Assert.Multiple(
-            () => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode),
-            () => Assert.Equal(HttpStatusCode.NotFound, afterDelete.StatusCode)
-        );
-    }
-
-    /// <summary>Verifies a caller who neither owns the product nor presents the X-Admin header gets 403, and the product is left untouched.</summary>
-    /// <returns>A task representing the asynchronous test.</returns>
-    [Fact]
-    public async Task DeleteAsync_NonOwnerNonAdministrator_Returns403AndLeavesProductUntouched_Test()
-    {
-        // Arrange
-        var created = await CreateProductAsync(
-            ProductRequestMother.Widget(),
-            ProductRequestMother.OwnerId
-        );
-        var uri = $"{ProductsUri}/{created.Id.Value}";
-
-        // Act
-        using var response = await SendAsync(
-            HttpMethod.Delete,
-            uri,
-            callerId: ProductRequestMother.OtherCallerId
-        );
 
         // Assert
         using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);

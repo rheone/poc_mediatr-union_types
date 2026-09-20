@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using MediatrUnionPoc.Application.Common.Authorization;
+using MediatrUnionPoc.Application.Common.Behaviors;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Application.Features.Products.Update;
@@ -8,6 +9,7 @@ using MediatrUnionPoc.Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace MediatrUnionPoc.Application.Tests.Handlers;
@@ -120,6 +122,38 @@ public sealed class UpdateProductHandlerTests : IDisposable
             () => Assert.Equal(OriginalPrice, product.Price.Value)
         );
         await _repository.Received(1).GetByIdAsync(product.Id, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Verifies a NotAuthorized short-circuit from inside the handler, run through the real <see cref="TransactionBehavior{TRequest,TResponse}"/>, rolls back and never commits.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task Handle_NotAuthorizedThroughTransactionBehavior_RollsBackAndDoesNotCommit_Test()
+    {
+        // Arrange
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        var behavior = new TransactionBehavior<UpdateProductCommand, UpdateProductResult>(
+            unitOfWork,
+            NullLogger<TransactionBehavior<UpdateProductCommand, UpdateProductResult>>.Instance
+        );
+        var product = StoredProduct();
+        var command = new UpdateProductCommand(
+            product.Id.Value,
+            NewName,
+            NewPrice,
+            PrincipalMother.WithId(OtherUserId)
+        );
+
+        // Act
+        var result = await behavior.Handle(
+            command,
+            _ => _sut.Handle(command, CancellationToken.None),
+            CancellationToken.None
+        );
+
+        // Assert
+        Assert.IsType<NotAuthorized>(((IUnion)result).Value);
+        await unitOfWork.Received(1).RollbackAsync(Arg.Any<CancellationToken>());
+        await unitOfWork.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
     }
 
     /// <summary>Verifies a missing product returns NotFound, before any ownership check runs.</summary>
