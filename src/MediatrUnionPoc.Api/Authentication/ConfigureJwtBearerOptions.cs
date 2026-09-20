@@ -1,4 +1,5 @@
 using System.Text;
+using MediatrUnionPoc.Api.Impersonation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -27,14 +28,27 @@ namespace MediatrUnionPoc.Api.Authentication;
 /// Development a <c>dotnet user-jwts</c> token is therefore accepted alongside tokens signed with
 /// <see cref="JwtAuthOptions.SigningKey"/>; a host with no such configuration accepts only the latter.
 /// </para>
+/// <para>
+/// <b>Two signing keys.</b> While impersonation is enabled the impersonation key is accepted as well
+/// as the ordinary one, so tokens minted by the impersonation endpoint authenticate; everything else
+/// (HS256 only, issuer, audience, lifetime, signature) is judged identically for both. Switching
+/// impersonation off drops the key, ending the acceptance of impersonation tokens already issued.
+/// </para>
 /// </remarks>
 /// <param name="options">The validated JWT settings.</param>
-/// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
-public sealed class ConfigureJwtBearerOptions(IOptions<JwtAuthOptions> options)
-    : IConfigureNamedOptions<JwtBearerOptions>
+/// <param name="impersonation">The validated impersonation settings.</param>
+/// <exception cref="ArgumentNullException"><paramref name="options"/> or <paramref name="impersonation"/> is <see langword="null"/>.</exception>
+public sealed class ConfigureJwtBearerOptions(
+    IOptions<JwtAuthOptions> options,
+    IOptions<ImpersonationOptions> impersonation
+) : IConfigureNamedOptions<JwtBearerOptions>
 {
     private readonly JwtAuthOptions _options = (
         options ?? throw new ArgumentNullException(nameof(options))
+    ).Value;
+
+    private readonly ImpersonationOptions _impersonation = (
+        impersonation ?? throw new ArgumentNullException(nameof(impersonation))
     ).Value;
 
     /// <inheritdoc/>
@@ -65,8 +79,16 @@ public sealed class ConfigureJwtBearerOptions(IOptions<JwtAuthOptions> options)
         parameters.ClockSkew = TimeSpan.FromSeconds(_options.ClockSkewSeconds);
         parameters.ValidIssuers = (parameters.ValidIssuers ?? []).Append(_options.Issuer);
         parameters.ValidAudiences = (parameters.ValidAudiences ?? []).Append(_options.Audience);
-        parameters.IssuerSigningKeys = (parameters.IssuerSigningKeys ?? []).Append(
+        var keys = (parameters.IssuerSigningKeys ?? []).Append(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey))
         );
+        if (_impersonation.Enabled && _impersonation.SigningKey.Length > 0)
+        {
+            keys = keys.Append(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_impersonation.SigningKey))
+            );
+        }
+
+        parameters.IssuerSigningKeys = keys;
     }
 }

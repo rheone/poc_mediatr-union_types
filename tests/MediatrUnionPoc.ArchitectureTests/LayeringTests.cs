@@ -147,6 +147,26 @@ public class LayeringTests
         AssertNoViolations(result);
     }
 
+    /// <summary>
+    /// Verifies neither Domain nor Application references a JWT or identity-token library — the
+    /// Application layer decides whether an impersonation token may be issued through an abstraction,
+    /// and signing lives in the Api project alone.
+    /// </summary>
+    [Fact]
+    public void DomainAndApplication_DependsOnJwtLibraries_HasNone_Test()
+    {
+        // Arrange
+        // Act
+        var result = Types
+            .InAssemblies([DomainAssembly, ApplicationAssembly])
+            .ShouldNot()
+            .HaveDependencyOnAny("Microsoft.IdentityModel", "System.IdentityModel.Tokens")
+            .GetResult();
+
+        // Assert
+        AssertNoViolations(result);
+    }
+
     // Names the offending types so a failure identifies the violated boundary directly.
     private static void AssertNoViolations(NetArchTest.Rules.TestResult result) =>
         Assert.True(

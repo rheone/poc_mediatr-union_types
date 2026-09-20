@@ -6,6 +6,8 @@
 # and paste the printed tokens here. The token's "sub" is the caller (the owner of what it creates);
 # a "role" of Administrator is needed to delete.
 @token = <alice's token>
+# Impersonation needs a token whose role is Administrator or Support (see the request below).
+@supportToken = <a support user's token>
 @adminToken = <the administrator's token>
 
 GET {{MediatrUnionPoc.Api_HostAddress}}/openapi/v1.json
@@ -61,5 +63,23 @@ Content-Type: application/merge-patch+json
 # Delete: 204. Administrator only; If-Match is optional here.
 DELETE {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
 Authorization: Bearer {{adminToken}}
+
+###
+
+# Impersonation: 200 with a short-lived token acting as "alice" (its act claim names the caller).
+# Needs the Administrator or Support role; reason is required (10 to 500 characters). 403 when the
+# caller is already using an impersonation token, or asks for a role it may not grant (a Support user
+# cannot grant Administrator); 404 when Impersonation:Enabled is false. The response is never cached.
+POST {{MediatrUnionPoc.Api_HostAddress}}/api/impersonation/tokens
+Authorization: Bearer {{supportToken}}
+Content-Type: application/json
+
+{
+  "targetUserId": "alice",
+  "roles": ["Support"],
+  "reason": "Reproducing the checkout error alice reported",
+  "ticketReference": "SUP-1234",
+  "lifetimeMinutes": 15
+}
 
 ###

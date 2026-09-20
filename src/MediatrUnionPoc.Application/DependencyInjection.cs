@@ -19,7 +19,7 @@ public static class DependencyInjection
 
     /// <summary>
     /// Registers MediatR, all FluentValidation validators, the role-based <c>Administrator</c> and
-    /// resource-based <c>ProductOwner</c> authorization policies (plus the
+    /// <c>Impersonator</c> (Administrator or Support) and resource-based <c>ProductOwner</c> authorization policies (plus the
     /// <see cref="ResourceAuthorizationService"/> the latter is checked through from inside a
     /// handler), the system <see cref="TimeProvider"/> (unless one is already registered), and the <see cref="LoggingBehavior{TRequest,TResponse}"/> →
     /// <see cref="AuthorizationBehavior{TRequest,TResponse}"/> → <see cref="ValidationBehavior{TRequest,TResponse}"/>
@@ -45,6 +45,16 @@ public static class DependencyInjection
                 policy =>
                     policy.Requirements.Add(
                         new AdministratorRequirement(AuthorizationRoles.Administrator)
+                    )
+            );
+            options.AddPolicy(
+                AuthorizationPolicies.Impersonator,
+                policy =>
+                    policy.Requirements.Add(
+                        new AdministratorRequirement(
+                            AuthorizationRoles.Administrator,
+                            AuthorizationRoles.Support
+                        )
                     )
             );
             options.AddPolicy(

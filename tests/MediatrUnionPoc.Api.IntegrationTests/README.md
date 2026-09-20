@@ -20,6 +20,17 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
 - `JwtBearerAuthenticationTests.cs` (with `TestData/JwtTestTokens.cs`) — real signed tokens: expired,
   wrongly signed, wrongly addressed and malformed ones are `401`; `sub` becomes the owner and a `role`
   claim of `Administrator` passes `DELETE`; a token with no `sub` cannot create.
+- `ImpersonationEndpointTests.cs`, `ImpersonationTokenTests.cs`, `ImpersonationOptionsTests.cs` (with
+  `TestData/ImpersonationTestSupport.cs`), all on the real JWT scheme — `POST /api/impersonation/tokens`:
+  `401` anonymous, `403` for a plain user, Support can mint a plain or `Support` token but not an
+  `Administrator` one, an administrator can, mandatory reason and lifetime cap as per-field `400`s, the
+  `404` off switch (and `401` still for anonymous), `Cache-Control: no-store`, the audit log line with
+  no token in any log, and the OpenAPI declaration. The token tests validate a minted token with the
+  host's own bearer handler and read `act`, the marker and the reason back on the principal, use it
+  against protected endpoints (it owns what it creates, its roles apply), check the two accepted signing
+  keys against a random one, expiry (crafted and minted on a past clock), chained impersonation, and that
+  switching impersonation off stops the impersonation key being trusted. The options tests cover
+  start-up validation (key required outside Development while enabled, not the ordinary key, lifetimes).
 - `ProductsControllerTests.cs` — exercises the union-to-HTTP-status mapping each controller
   action's `switch` performs, end to end through routing and the real MediatR pipeline behaviors.
   A fresh `ProductsApiFactory` per test gives each test its own isolated database.

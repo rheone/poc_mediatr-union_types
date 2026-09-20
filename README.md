@@ -61,6 +61,7 @@ Details below.
   - [Configuring role-based authorization for a new command](#configuring-role-based-authorization-for-a-new-command)
   - [Configuring resource-based authorization for a new command](#configuring-resource-based-authorization-for-a-new-command)
   - [Why not `IAuthorizationRequirementData` attributes](#why-not-iauthorizationrequirementdata-attributes)
+- [Impersonation: acting as another identity](#impersonation-acting-as-another-identity)
 - [Worked example: `UpdateProductCommand`, case by case](#worked-example-updateproductcommand-case-by-case)
 - [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index)
 - [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
@@ -108,7 +109,7 @@ reopen the solution so it re-resolves.
 | `MediatrUnionPoc.Domain`          | Entities, [Vogen](#vogen-avoiding-primitive-obsession) [value objects](#vogen-vocabulary) (`ProductId`, `Money`, `ProductVersion`), the listing vocabulary (`ProductCriteria`, `ProductSort`, `PagedResult`), `CommitResult`, repository/UoW interfaces |
 | `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors, authorization |
 | `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext` over SQLite, repository + unit-of-work implementations; the only place criteria and sort become a database query |
-| `MediatrUnionPoc.Api`             | The controller that maps each union to an `IActionResult`, the `Http/` extension members, trace id middleware, exception handler and OpenAPI transformers |
+| `MediatrUnionPoc.Api`             | The controllers that map each union to an `IActionResult`, the `Http/` extension members, JWT authentication, impersonation token signing, trace id middleware, exception handler and OpenAPI transformers |
 | `MediatrUnionPoc.Domain.Tests`    | Unit tests for the value objects, `Product`, `ProductNames`, `PagedResult` and the sort vocabulary |
 | `MediatrUnionPoc.Application.Tests` | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators, authorization |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core SQLite provider (in-memory database), end to end |
@@ -119,7 +120,8 @@ Four one-file probe projects under `tests/CompileTimeChecks/` are deliberately n
 see [Testing](#testing).
 
 Application code is organized as **[vertical slices](#architectural-patterns)** under
-`Features/Products/<Operation>/` (`Create`, `Update`, `Patch`, `Delete`, `GetById`, `GetPaged`) — everything
+`Features/Products/<Operation>/` (`Create`, `Update`, `Patch`, `Delete`, `GetById`, `GetPaged`) and
+`Features/Impersonation/IssueToken/` — everything
 for one operation (command/query, validator, handler, result union) lives together, rather than
 being split across horizontal "Commands/Handlers/Validators" folders.
 
@@ -1084,6 +1086,11 @@ Request headers the API reads:
 | | `PreconditionFailed` | `412` | Only when `If-Match` was sent and is stale, up front or at commit |
 | | malformed `If-Match` | `400` | An absent `If-Match` is fine and deletes whatever version is stored |
 | | `Error` | `400` / `500` | `400` for `Error.ValidationFailureCode` (an empty GUID; this union has no `ValidationErrors` case), `500` otherwise |
+| `POST /api/impersonation/tokens` | `ImpersonationToken` | `200` | The token, its expiry and effective identity; `Cache-Control: no-store` on every response of this endpoint. See [Impersonation](#impersonation-acting-as-another-identity) |
+| | `ValidationErrors` | `400` | Per-field `errors` (`Reason`, `TargetUserId`, `LifetimeMinutes`, `Roles`, `TicketReference`) |
+| | `NotAuthorized` | `403` | Neither `Administrator` nor `Support` (checked first); already impersonating; a role outside `AssignableRoles`; a role a non-administrator does not hold |
+| | `Error` (`IMPERSONATION_DISABLED`) | `404` | The feature is switched off; answered to every authenticated caller before the pipeline runs |
+| | `Error` | `500` | |
 
 Outside the union: the framework itself answers a body that cannot be bound (`400`), an unmatched
 route (`404`, including a non-GUID `{id}`; `401` first when the caller is anonymous, since the
@@ -1136,8 +1143,11 @@ trivially healthy; it only says something with a real `ConnectionStrings:Product
 `AddOptions<T>().BindConfiguration("Section").ValidateOnStart()` and validated by an
 `[OptionsValidator]` source-generated `IValidateOptions<T>` built from DataAnnotations on the class
 (compile-time, no reflection), so a bad value stops the host at start. `HealthEndpointsOptions`
-(`Api/Health/`) is the reference implementation. `HttpMappingOptions` predates it and is
-configured in code only.
+(`Api/Health/`) is the reference implementation; `JwtAuthOptions` (`Authentication:Jwt`) and
+`ImpersonationOptions` (`Impersonation`) follow it, the latter adding a second, hand-written
+`IValidateOptions` (`ImpersonationOptionsRules`) for rules that span members or another options class
+(key required while enabled and different from the ordinary key, default lifetime not above the
+maximum). `HttpMappingOptions` predates the convention and is configured in code only.
 
 ## Optimistic concurrency: `ProductVersion`, `ETag` and `If-Match`
 
@@ -1556,7 +1566,8 @@ something reimplemented here.
 
 ### Where the identity comes from
 
-The API authenticates callers with **JWT bearer tokens** and issues none itself. The registration is
+The API authenticates callers with **JWT bearer tokens** and, apart from the
+[impersonation](#impersonation-acting-as-another-identity) endpoint, issues none itself. The registration is
 `AddJwtAuthentication()` (`Api/Authentication/`), with `UseAuthentication()` ahead of
 `UseAuthorization()` in `Program.cs`. There is no header-based identity any more: the controller
 passes `User` (the token's principal) straight into each command, so the Application layer only ever
@@ -1594,6 +1605,10 @@ integration test with a real signed token proves both directions (`sub` becomes 
 - A validly signed token **without** `sub` is authenticated but has no identity to own anything: `POST`
   answers `403` (the shared `NotAuthorized` case, no exception) and creates nothing; `PUT`/`PATCH`
   fail the ownership check as before.
+- Besides the ordinary key, the bearer scheme accepts tokens signed with the
+  [impersonation](#impersonation-acting-as-another-identity) key (while impersonation is enabled);
+  those carry `act`, `impersonated` and `imp_reason` claims in addition to `sub` and `role`. A `role`
+  of `Support` satisfies only the `Impersonator` policy, not `Administrator`.
 
 **Minting a token for local use.** Any HS256 JWT signed with the configured key, with the right
 `iss` and `aud`, works. In Development, `dotnet user-jwts` works too, with no extra configuration:
@@ -1668,7 +1683,10 @@ return that policy's name from the new command's `PolicyName` — `Authorization
 care which policy a request names, only that one is registered under that name. The
 requirement/handler pair already supports multiple allowed roles per policy and an
 any-one-matches check, so a single policy can also gate on more than one role
-(`new AdministratorRequirement("Administrator", "SuperUser")`) without a new handler.
+(`new AdministratorRequirement("Administrator", "SuperUser")`) without a new handler. The
+`Impersonator` policy is exactly that: `AdministratorRequirement("Administrator", "Support")`,
+answered by the same `AdministratorAuthorizationHandler`, gating the
+[impersonation](#impersonation-acting-as-another-identity) command.
 
 ### Configuring resource-based authorization for a new command
 
@@ -1700,6 +1718,125 @@ one layer down, in the Application layer: `AuthorizationBehavior` is a MediatR p
 keyed off the request type, and `ResourceAuthorizationService` is called directly from inside a
 handler. Neither has an HTTP action to attach a discoverable attribute to — there's no
 endpoint-attribute-discovery step in this repo's authorization path for that feature to plug into.
+
+## Impersonation: acting as another identity
+
+`POST /api/impersonation/tokens` lets an `Administrator` or `Support` caller mint a short-lived
+bearer token that acts as **another identity**, so a support engineer can reproduce what a user sees
+without knowing their credentials. It is available in every environment, and it is a **controlled
+authentication bypass**: whoever can call it can become anyone. Every safeguard below is a hard
+requirement, not an extra.
+
+| Safeguard | What it does | Why |
+| --- | --- | --- |
+| Role gate | The `Impersonator` policy (`AdministratorRequirement("Administrator", "Support")`, answered by the existing `AdministratorAuthorizationHandler`) is checked by `AuthorizationBehavior` before validation or the handler run | Only staff who already hold an elevated role may attempt it; never anonymous |
+| Mandatory reason | `reason` is required (10 to 500 characters after trimming, no control characters) and is written into the token and the log line | An impersonation without a stated purpose cannot be reviewed afterwards |
+| Separate signing key | Tokens are signed with `Impersonation:SigningKey`, which must differ from `Authentication:Jwt:SigningKey` (checked on start) | The two kinds of token stay distinguishable by who can sign them; leaking one key does not leak the other |
+| No chaining | A caller already using an impersonation token is refused (`403`), even one that carries `Administrator` or `Support` | A minted token cannot be used to renew or widen itself |
+| Assignable roles | A requested role must be in `Impersonation:AssignableRoles` | A role outside the list can never be granted, whoever asks |
+| No escalation | Unless the caller is an `Administrator`, every requested role must be one the caller holds | A `Support` user cannot mint an `Administrator` token |
+| Lifetime cap | The lifetime defaults to `DefaultLifetimeMinutes` and a request above `MaxLifetimeMinutes` is a `400` | The window a stolen token is useful is bounded |
+| Off switch | `Impersonation:Enabled=false` turns the endpoint into a `404` and stops the bearer scheme accepting impersonation-key tokens | A deployment that does not want the feature has none of it |
+
+### Requesting a token
+
+```bash
+curl -i -X POST http://localhost:5233/api/impersonation/tokens \
+  -H "Authorization: Bearer $SUPPORT" -H "Content-Type: application/json" \
+  -d '{"targetUserId":"alice","roles":["Support"],"reason":"Reproducing the checkout error alice reported","ticketReference":"SUP-1234","lifetimeMinutes":15}'
+```
+
+`targetUserId` and `reason` are required; `roles` (default none), `ticketReference` (at most 100
+characters) and `lifetimeMinutes` (default `DefaultLifetimeMinutes`) are optional. Impersonating
+yourself is a validation error (`targetUserId` must differ from the caller's own id). The `200`
+response carries `Cache-Control: no-store` (so does every response of this endpoint) and:
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "expiresAt": "2026-03-02T14:20:00+00:00",
+  "userId": "alice",
+  "roles": ["Support"],
+  "actorId": "sam",
+  "tokenType": "Bearer"
+}
+```
+
+Present it like any other token (`Authorization: Bearer <token>`). The roles granted are exactly the
+ones requested: there is no user directory, so the target's real roles are not looked up.
+
+| Status | When |
+| --- | --- |
+| `200` | The token was issued |
+| `400` | Per-field errors: missing or short `reason`, missing or self `targetUserId`, lifetime not between 1 and the maximum, over-long or control-character text, more than 10 roles |
+| `401` | No or invalid token (the fallback policy, before anything else, and also when the feature is switched off) |
+| `403` | The caller lacks both roles; is already using an impersonation token; asked for a role outside `AssignableRoles`; or (as a non-administrator) asked for a role they do not hold. The problem `detail` names which |
+| `404` | `Enabled` is `false`, for every authenticated caller (an unqualified caller is not told the endpoint exists) |
+
+### How it is built
+
+It is a normal vertical slice, `Application/Features/Impersonation/IssueToken/`, following
+[Adding a new command or query](#adding-a-new-command-or-query) and
+[Configuring role-based authorization for a new command](#configuring-role-based-authorization-for-a-new-command):
+
+- `IssueImpersonationTokenCommand` is an `ICommand<IssueImpersonationTokenResult>` (not
+  transactional) and an `IRequiresAuthorization` request for the `Impersonator` policy.
+- `IssueImpersonationTokenResult` is `union(ImpersonationToken, ValidationErrors, NotAuthorized, Error)`
+  implementing `IValidatable` and `IAuthorizable`. `Error` (code `IMPERSONATION_DISABLED`, mapped to
+  `404`) is the handler's own refusal when the switch is off; the controller checks the switch first
+  so that an unqualified caller sees a `404` and not a `403`.
+- `IssueImpersonationTokenValidator` holds the input rules; `IssueImpersonationTokenHandler` holds the
+  decisions (no chaining, assignable roles, no escalation) and returns `NotAuthorized`, never throws.
+- The Application layer references no JWT library (an architecture test enforces it). It calls
+  `IImpersonationTokenIssuer`; `JwtImpersonationTokenIssuer` in `Api/Impersonation/` signs the token.
+  The rules it needs (`IImpersonationSettings`) are implemented by `ImpersonationOptions`.
+
+### The token
+
+An HS256 JWT with the same issuer and audience as ordinary tokens, signed with the impersonation key.
+The bearer scheme accepts tokens signed with either key (`TokenValidationParameters.IssuerSigningKeys`)
+and judges both identically: HS256 only, issuer, audience, lifetime and signature all validated.
+
+| Claim | Value |
+| --- | --- |
+| `sub` | The target user id; becomes `ClaimTypes.NameIdentifier`, so the token owns what it creates |
+| `role` | One per granted role; becomes `ClaimTypes.Role` |
+| `act` | The RFC 8693 actor claim: a JSON object naming the real caller, `{"sub":"<caller id>"}` |
+| `impersonated` | The marker, `true` |
+| `imp_reason`, `imp_ticket` | The recorded reason, and the ticket reference when one was given |
+| `jti`, `iat`, `nbf`, `exp` | Unique id and whole-second times; `exp` is exactly the returned `expiresAt` |
+
+`act` is written as a nested JSON object and validated by the same `JsonWebTokenHandler` the bearer
+scheme uses; on the resulting `ClaimsPrincipal` it is a single claim of type `act` whose value is the
+JSON text `{"sub":"..."}` (`impersonated`, `imp_reason` and `imp_ticket` arrive under their own names,
+untouched by inbound claim mapping). The application reads them through `ImpersonationClaims`
+(`Application/Common/Authorization/`): `principal.IsImpersonated()` (the marker or an `act` claim) and
+`principal.GetActorId()` (the `sub` of `act`, or `null`). An integration test proves the round trip
+from signing through validation to those helpers.
+
+### Configuration
+
+`Impersonation` section, `ImpersonationOptions`, validated on start (DataAnnotations by the
+source-generated `ImpersonationOptionsValidator`, the cross-field rules by `ImpersonationOptionsRules`):
+
+| Setting | Meaning |
+| --- | --- |
+| `Enabled` | Default `true`. When `false`: the endpoint is `404`, the impersonation key is not trusted, no key is required |
+| `SigningKey` | Required while enabled: at least 32 characters, different from the ordinary key. Only `appsettings.Development.json` carries one, labelled development-only; any other environment supplies it through user secrets, `Impersonation__SigningKey` or a secret store, and an enabled host without one **refuses to start** |
+| `DefaultLifetimeMinutes` | Default 15; 1 to 1440 and not above the maximum |
+| `MaxLifetimeMinutes` | Default 60; 1 to 1440 |
+| `AssignableRoles` | Roles a token may carry; `appsettings.json` lists `Support` and `Administrator`. An empty list means plain identities only |
+
+### Recording attempts
+
+Every attempt that reaches the handler (issued, refused, or disabled) is written through `ILogger`
+in one method, `IssueImpersonationTokenHandler.Audit`, with structured properties: actor, target,
+roles, outcome, reason, ticket and the refusal detail; `Information` when issued, `Warning`
+otherwise. The token is never logged (`ImpersonationToken.ToString()` omits it too). Attempts
+refused earlier in the pipeline (`AuthorizationBehavior`'s role check, `ValidationBehavior`) are logged
+only by those behaviors' own generic lines, without the actor's reason. A separate append-only
+audit stream behind an `IAuditLog` abstraction is planned in
+[`docs/Hardening-Plan.md`](docs/Hardening-Plan.md) and will replace that one method.
 
 ## Worked example: `UpdateProductCommand`, case by case
 
@@ -1923,7 +2060,7 @@ has its own README.
 | `MediatrUnionPoc.Domain.Tests` | `Money`, `ProductId`, `ProductVersion`, `Product`, `ProductNames`, `PagedResult`, `ProductSort`; no other project referenced | none |
 | `MediatrUnionPoc.Application.Tests` | Union mechanics, the pipeline behaviors and their registration order, every handler, validators, authorization | `IProductRepository` and `IUnitOfWork` substituted with NSubstitute |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | `EfCoreUnitOfWork` (commit, rollback, concurrency and unique-violation translation), `ProductRepository` including listing, converters, the EF model | real SQLite, an in-memory database on one kept-open connection per test |
-| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
+| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), impersonation (roles, escalation, chaining, keys, expiry, off switch, no token in logs), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
 | `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions on the compiled assemblies (layering, only Infrastructure sees EF Core, only Api sees MVC) | none |
 
 There is no EF Core InMemory provider anywhere: runtime and tests both use SQLite, so transactions,

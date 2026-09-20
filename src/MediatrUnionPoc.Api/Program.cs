@@ -1,6 +1,7 @@
 using MediatrUnionPoc.Api.Authentication;
 using MediatrUnionPoc.Api.Health;
 using MediatrUnionPoc.Api.Http;
+using MediatrUnionPoc.Api.Impersonation;
 using MediatrUnionPoc.Api.OpenApi;
 using MediatrUnionPoc.Application;
 using MediatrUnionPoc.Infrastructure;
@@ -37,6 +38,7 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 builder.Services.AddHealthEndpoints();
 builder.Services.AddJwtAuthentication();
+builder.Services.AddImpersonation();
 
 var app = builder.Build();
 

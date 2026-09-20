@@ -21,4 +21,12 @@ public static class AuthorizationPolicies
     /// behavior runs before any resource is loaded.
     /// </summary>
     public const string ProductOwner = "ProductOwner";
+
+    /// <summary>
+    /// Requires the caller to hold the <c>Administrator</c> or the <c>Support</c> role, checked by
+    /// <see cref="Behaviors.AuthorizationBehavior{TRequest,TResponse}"/> for the request that mints an
+    /// impersonation token. Holding the role only lets a caller <em>attempt</em> to impersonate;
+    /// which identities and roles they may then grant is decided by the request's handler.
+    /// </summary>
+    public const string Impersonator = "Impersonator";
 }

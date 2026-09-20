@@ -29,6 +29,10 @@ public sealed class UnhandledExceptionTests
                 "Authentication:Jwt:SigningKey",
                 JwtTestTokens.NonDevelopmentSigningKey
             );
+            builder.UseSetting(
+                "Impersonation:SigningKey",
+                JwtTestTokens.NonDevelopmentImpersonationKey
+            );
             if (logs is not null)
             {
                 builder.ConfigureLogging(logging =>

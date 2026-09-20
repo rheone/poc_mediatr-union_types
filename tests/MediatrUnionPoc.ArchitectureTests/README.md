@@ -10,6 +10,8 @@ happen to still look correct. `LayeringTests.cs` currently checks:
 - Infrastructure has no dependency on Api.
 - Only Infrastructure references `Microsoft.EntityFrameworkCore` — not Domain, not Application.
 - Domain does not reference MediatR.
+- Neither Domain nor Application references a JWT or identity-token library (`Microsoft.IdentityModel`,
+  `System.IdentityModel.Tokens`): impersonation tokens are signed in Api behind an Application abstraction.
 - Only Api references ASP.NET Core MVC (`Microsoft.AspNetCore.Mvc`) — union-to-HTTP translation stays in the controller.
 
 ## Dependencies

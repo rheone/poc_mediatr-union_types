@@ -10,7 +10,7 @@ passing.
 | Topic | Decision |
 | --- | --- |
 | Identity | Real JWT bearer authentication; the header stand-ins (`X-Caller-Id`, `X-Admin`) are removed |
-| Anonymous access | Only health checks, the impersonation-token endpoint's own credential flow, and (Development only) the OpenAPI and Scalar documents. Every `GET` requires authentication |
+| Anonymous access | Only health checks and (Development only) the OpenAPI and Scalar documents. Every `GET` requires authentication, and so does the impersonation-token endpoint |
 | Impersonation | Available to `Administrator` and `Support` roles, in **every** environment; a non-empty **reason** is mandatory and is recorded |
 | Audit | A separate, simple audit stream (see step 5); a database table and Seq are deferred |
 | Logging | Serilog with enrichment. Seq is **not** part of this plan (a new deployment is overkill for a POC) |
@@ -67,7 +67,9 @@ Status: implemented.
 
 ## Step 3: Impersonation (user switching)
 
-An endpoint (for example `POST /api/v1/dev/tokens`) that mints a short-lived JWT for a target identity.
+Status: implemented.
+
+An endpoint, `POST /api/impersonation/tokens` (unversioned until step 6), that mints a short-lived JWT for a target identity.
 
 - **Who:** callers with the `Administrator` or `Support` role. Nobody else, and never anonymously.
 - **Request:** target user id, roles to grant, lifetime (capped by `ImpersonationOptions`), and a
@@ -82,6 +84,15 @@ An endpoint (for example `POST /api/v1/dev/tokens`) that mints a short-lived JWT
   repo's own pattern and gets validation, authorization and logging for free.
 - For manual testing without the endpoint, `dotnet user-jwts` can mint local tokens against the same
   validation settings.
+
+**As built.** The command lives in `Application/Features/Impersonation/IssueToken/` (union
+`ImpersonationToken | ValidationErrors | NotAuthorized | Error`, policy `Impersonator` = Administrator or
+Support). Signing is behind `IImpersonationTokenIssuer`, implemented in Api, so Application references no JWT
+library. The handler refuses chained impersonation, roles outside `Impersonation:AssignableRoles`, and (for a
+non-administrator) roles the caller does not hold. Every attempt that reaches the handler is logged through
+`ILogger` in one method (`Audit`) so step 5 can replace it with `IAuditLog`; attempts refused earlier in the
+pipeline (the policy check, validation) are not yet audited, and step 5 must cover them. The README's
+"Impersonation" section is the reference.
 
 **Tests:** minting requires the role; reason is mandatory; token carries `act` and the marker; a
 minted token is accepted by the API; expiry cap enforced; disabled switch returns `404`.

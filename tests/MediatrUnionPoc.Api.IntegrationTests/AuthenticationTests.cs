@@ -289,7 +289,12 @@ public sealed class AuthenticationTests : IDisposable
     {
         // Arrange
         using var factory = _factory.WithWebHostBuilder(builder =>
-            builder.UseEnvironment("Production")
+            builder
+                .UseEnvironment("Production")
+                .UseSetting(
+                    "Impersonation:SigningKey",
+                    JwtTestTokens.NonDevelopmentImpersonationKey
+                )
         );
 
         // Act
@@ -312,6 +317,10 @@ public sealed class AuthenticationTests : IDisposable
             builder
                 .UseEnvironment("Production")
                 .UseSetting("Authentication:Jwt:SigningKey", JwtTestTokens.NonDevelopmentSigningKey)
+                .UseSetting(
+                    "Impersonation:SigningKey",
+                    JwtTestTokens.NonDevelopmentImpersonationKey
+                )
         );
 
         // Act

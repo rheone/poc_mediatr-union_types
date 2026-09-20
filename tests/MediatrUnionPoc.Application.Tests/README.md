@@ -15,16 +15,21 @@ Unit tests for `MediatrUnionPoc.Application`, organized by what's under test:
   `TransactionBehavior`. `LoggingBehaviorTests.cs`
   proves the behavior is purely observational: it always calls `next` exactly once, returns its
   result unchanged, and propagates rather than swallows an exception `next` throws.
-- `Authorization/` — the requirement/handler pairs, `ResourceAuthorizationService`, and the
-  production policy matrix.
+- `Authorization/` — the requirement/handler pairs, `ResourceAuthorizationService`, the
+  production policy matrix, the `Impersonator` policy (Administrator or Support, and `Support` does not
+  satisfy `Administrator`) and `ImpersonationClaims` (the marker and `act` readers, including
+  malformed actor claims).
 - `Handlers/` — every command/query handler (`Create`, `Update`, `Patch`, `Delete`, `GetById`,
-  `GetPaged`), with `IProductRepository` substituted via NSubstitute rather than hitting
+  `GetPaged`, plus `IssueImpersonationTokenHandler`: every outcome, role escalation, chained
+  impersonation and the audit log line, against a substituted `IImpersonationTokenIssuer`), with
+  `IProductRepository` substituted via NSubstitute rather than hitting
   `MediatrUnionPoc.Infrastructure`'s real EF Core provider. (The tests that *do* exercise the real
   EF Core SQLite provider — `EfCoreUnitOfWorkTests` and `ProductRepositoryTests` — live in
   `MediatrUnionPoc.Infrastructure.IntegrationTests` instead, since they're database tests, not
   handler tests.)
 - `Validators/` — the FluentValidation validators for each command/query, including the per-field
-  errors of `GetPagedProductsValidator`.
+  errors of `GetPagedProductsValidator` and every rule of `IssueImpersonationTokenValidator` (reason,
+  target, self-impersonation, roles, ticket, lifetime cap, control characters).
 - `Features/` — `ProductSortParser` (the `sort` text grammar and its errors), `ProductDto`,
   `Optional<T>`, `OwnedProductResource` and the command shapes.
 

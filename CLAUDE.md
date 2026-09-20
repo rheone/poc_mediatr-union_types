@@ -36,7 +36,7 @@ machine and fail with `NETSDK1045`.
   a `CommitResult` union (`Committed | ConcurrencyConflict | UniqueViolation`). Has no dependency on any other project here.
 - `src/MediatrUnionPoc.Application` — commands, queries, handlers, validators, organized as
   **vertical slices** under `Features/Products/<Operation>/` (Create, Update, Patch, Delete, GetById,
-  GetPaged) rather than by technical layer. `Common/` holds the shared pipeline machinery (below).
+  GetPaged) and `Features/Impersonation/IssueToken/` rather than by technical layer. `Common/` holds the shared pipeline machinery (below).
   `Patch` is a JSON Merge Patch (RFC 7396) partial update: its command carries `Optional<string?>` /
   `Optional<decimal?>` (`Common/Optional.cs`, absent at `default`, present via `Optional<T>.Of`,
   serializer-free), and its handler shares the load/ownership/version steps with Update
@@ -45,7 +45,7 @@ machine and fail with `NETSDK1045`.
 - `src/MediatrUnionPoc.Infrastructure` — EF Core (`EfCoreUnitOfWork`, `ProductRepository`,
   hand-written `ValueConverter`s for the Vogen types — not Vogen's own generated converter, to
   keep Domain free of an EF Core reference).
-- `src/MediatrUnionPoc.Api` — one controller (`ProductsController`); every action's only job is to
+- `src/MediatrUnionPoc.Api` — two controllers (`ProductsController`, `ImpersonationController`); every action's only job is to
   `switch` on the union MediatR returns and produce an `IActionResult`. The repeated failure arms
   are one-line calls to C# 14 extension members in `Api/Http/` (`error.ToProblemResult(HttpContext)`
   etc., all RFC 7807 `application/problem+json`, the 404 with a `code: "NOT_FOUND"` member) whose
@@ -93,6 +93,7 @@ returns its `ProductDto` case as `204` (with the new `ETag`), `PATCH` returns it
 `DELETE`'s `Success` is `204`.
 
 Unions and their cases: `CreateProductResult` (ProductDto, ValidationErrors, Error, Conflict);
+`IssueImpersonationTokenResult` (ImpersonationToken, ValidationErrors, NotAuthorized, Error);
 `GetProductByIdResult` (ProductDto, NotFound, Error); `GetPagedProductsResult` (PagedResult, ValidationErrors,
 Error); `UpdateProductResult` and `PatchProductResult` (ProductDto, NotFound, ValidationErrors, Error,
 NotAuthorized, PreconditionFailed, Conflict); `DeleteProductResult` (Success, NotFound, Error,
@@ -125,7 +126,8 @@ calling is checked before whether their input is well-formed. When `CommitAsync`
   custom `IAuthorizationHandler`). Requires the response union to implement
   `IAuthorizable<TResponse>` (a `static abstract TSelf FromNotAuthorized(NotAuthorized)`), the
   same generic short-circuit pattern `IValidatable` uses for validation. Only `DeleteProductCommand`
-  uses it; `Update`/`Patch` check ownership inside the handler instead (`LoadForChangeAsync` →
+  (`Administrator` policy) and `IssueImpersonationTokenCommand` (`Impersonator` policy: Administrator
+  or Support, the same `AdministratorRequirement`/handler with two roles) use it; `Update`/`Patch` check ownership inside the handler instead (`LoadForChangeAsync` →
   `ResourceAuthorizationService`), since that needs the loaded product. See README's
   "Authorization" section for how to configure it and gate a new command behind it.
 
@@ -184,6 +186,20 @@ the default private in-memory SQLite database readiness is trivially healthy. **
 convention for every new setting:** `AddOptions<T>().BindConfiguration("Section").ValidateOnStart()`
 plus an `[OptionsValidator]` source-generated `IValidateOptions<T>` (DataAnnotations on the class);
 `HealthEndpointsOptions` is the reference. The health-check package is pinned to EF Core's `10.0.12`.
+
+**Impersonation** (`POST /api/impersonation/tokens`, README "Impersonation"): a controlled
+authentication bypass available in every environment. The command slice
+(`Application/Features/Impersonation/IssueToken/`) is a non-transactional `ICommand` gated by the
+`Impersonator` policy; its handler refuses chained impersonation, roles outside
+`Impersonation:AssignableRoles` and (for non-administrators) roles the caller lacks, and logs each
+attempt in one `Audit` method (never the token). Application has no JWT dependency (architecture test):
+it calls `IImpersonationTokenIssuer`, implemented by `JwtImpersonationTokenIssuer` in
+`Api/Impersonation/`, signing with the separate `Impersonation:SigningKey` that
+`ConfigureJwtBearerOptions` also trusts (only while `Impersonation:Enabled`). Tokens carry `act`
+(RFC 8693 JSON object), `impersonated` and `imp_reason`; read them with `ImpersonationClaims`
+(`IsImpersonated()`, `GetActorId()`). `ImpersonationOptions` (`Impersonation`) is validated on start,
+including that the key differs from `Authentication:Jwt:SigningKey`; the disabled outcome is an
+`Error` coded `IMPERSONATION_DISABLED` mapped to 404.
 
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It

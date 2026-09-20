@@ -1,7 +1,7 @@
 # MediatrUnionPoc.Api
 
-The ASP.NET Core host. One controller, `ProductsController`, whose every action does exactly one
-thing: send a command/query via MediatR, then `switch` on the returned union to produce an
+The ASP.NET Core host. Two controllers, `ProductsController` and `ImpersonationController`, whose
+every action does exactly one thing: send a command/query via MediatR, then `switch` on the returned union to produce an
 `IActionResult`. That `switch` is the only place in the whole solution where a union outcome gets
 translated into an HTTP status — handlers and validators never touch `IActionResult` or any other
 web concern. See the repo root README's
@@ -98,6 +98,38 @@ example paged body (`ProductContractExampleTransformer`). See the repo root READ
 - `POST` with a valid token that has no `sub` is a `403` (`NotAuthorized` through the usual extension
   member, decided in the controller before any command is sent); see the repo root README's
   [Where the identity comes from](../../README.md#where-the-identity-comes-from).
+
+## Impersonation (`Impersonation/`, `Controllers/ImpersonationController.cs`)
+
+`POST /api/impersonation/tokens` mints a short-lived token acting as another identity, for
+`Administrator` and `Support` callers, in every environment. The decisions (role gate, no chaining,
+assignable roles, no escalation, mandatory reason) live in the Application layer's
+`Features/Impersonation/IssueToken/` slice; this project supplies the parts that need a JWT library:
+
+- `AddImpersonation()` (called from `Program.cs`) registers `ImpersonationOptions` (`Impersonation`:
+  `Enabled`, `SigningKey`, `DefaultLifetimeMinutes`, `MaxLifetimeMinutes`, `AssignableRoles`),
+  validated on start by the source-generated `ImpersonationOptionsValidator` (ranges) and the
+  hand-written `ImpersonationOptionsRules` (key of at least 32 characters, different from the
+  ordinary key, required while enabled; default lifetime not above the maximum). The options class also
+  implements the Application layer's `IImpersonationSettings`. It also maps the disabled outcome
+  (`Error` code `IMPERSONATION_DISABLED`) to `404` in `HttpMappingOptions`.
+- `JwtImpersonationTokenIssuer` implements `IImpersonationTokenIssuer`: an HS256 token signed with the
+  impersonation key, same issuer and audience as ordinary tokens, carrying `sub`, `role`, the RFC 8693
+  `act` object naming the real caller, the `impersonated` marker, `imp_reason` (and `imp_ticket`),
+  `jti`, `iat`, `nbf`, `exp`. The application reads the actor and marker back through
+  `ImpersonationClaims` (`IsImpersonated()`, `GetActorId()`, in Application).
+- `ConfigureJwtBearerOptions` adds the impersonation key to `IssuerSigningKeys` while impersonation is
+  enabled, so both kinds of token authenticate under identical validation (HS256 only, issuer,
+  audience, lifetime, signature). Switching impersonation off stops accepting the key.
+- `ImpersonationController.IssueTokenAsync` answers `404` (the disabled `Error`) to every authenticated
+  caller when the switch is off, otherwise sends the command and `switch`es exhaustively over its union
+  (`ImpersonationToken` 200, `ValidationErrors` 400, `NotAuthorized` 403, `Error`). Every response carries
+  `Cache-Control: no-store`. The request contract's members are nullable so a missing `reason` is a
+  per-field validator error, not a model-binding one; the OpenAPI document carries request and response
+  examples (`ProductContractExampleTransformer`).
+
+See the repo root README's [Impersonation](../../README.md#impersonation-acting-as-another-identity)
+for the rules, the claims, the options table and the operational warning.
 
 ## Trace id and unhandled exceptions (`Http/`)
 

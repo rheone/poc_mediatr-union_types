@@ -1,8 +1,10 @@
 using MediatR;
 using MediatrUnionPoc.Application;
 using MediatrUnionPoc.Application.Common.Behaviors;
+using MediatrUnionPoc.Application.Features.Impersonation.IssueToken;
 using MediatrUnionPoc.Application.Features.Products.Create;
 using MediatrUnionPoc.Application.Features.Products.Delete;
+using MediatrUnionPoc.Application.Tests.TestData;
 using MediatrUnionPoc.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -79,6 +81,52 @@ public class PipelineRegistrationTests
             b => Assert.IsType<AuthorizationBehavior<DeleteProductCommand, DeleteProductResult>>(b),
             b => Assert.IsType<ValidationBehavior<DeleteProductCommand, DeleteProductResult>>(b),
             b => Assert.IsType<TransactionBehavior<DeleteProductCommand, DeleteProductResult>>(b)
+        );
+    }
+
+    /// <summary>
+    /// Verifies the impersonation command, which opts into authorization and is not transactional,
+    /// resolves Logging, then Authorization, then Validation, and no Transaction behavior.
+    /// </summary>
+    [Fact]
+    public void GetServices_ImpersonationCommand_ResolvesLoggingThenAuthorizationThenValidation_Test()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddApplication();
+        services.AddSingleton(ImpersonationMother.Settings());
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        // Act
+        var behaviors = scope
+            .ServiceProvider.GetServices<
+                IPipelineBehavior<IssueImpersonationTokenCommand, IssueImpersonationTokenResult>
+            >()
+            .ToList();
+
+        // Assert
+        Assert.Collection(
+            behaviors,
+            b =>
+                Assert.IsType<
+                    LoggingBehavior<IssueImpersonationTokenCommand, IssueImpersonationTokenResult>
+                >(b),
+            b =>
+                Assert.IsType<
+                    AuthorizationBehavior<
+                        IssueImpersonationTokenCommand,
+                        IssueImpersonationTokenResult
+                    >
+                >(b),
+            b =>
+                Assert.IsType<
+                    ValidationBehavior<
+                        IssueImpersonationTokenCommand,
+                        IssueImpersonationTokenResult
+                    >
+                >(b)
         );
     }
 }

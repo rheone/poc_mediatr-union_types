@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using MediatrUnionPoc.Api.Contracts;
+using MediatrUnionPoc.Application.Features.Impersonation.IssueToken;
 using MediatrUnionPoc.Application.Features.Products.Common;
 using MediatrUnionPoc.Domain;
 using Microsoft.AspNetCore.OpenApi;
@@ -8,8 +9,8 @@ using Microsoft.OpenApi;
 namespace MediatrUnionPoc.Api.OpenApi;
 
 /// <summary>
-/// Attaches examples to the OpenAPI schemas for this API's <c>Contracts</c> request records and for the
-/// paged list response (<c>PagedResult&lt;ProductDto&gt;</c>).
+/// Attaches examples to the OpenAPI schemas for this API's <c>Contracts</c> request records, for the
+/// paged list response (<c>PagedResult&lt;ProductDto&gt;</c>) and for the impersonation token response.
 /// The built-in <c>Microsoft.AspNetCore.OpenApi</c> generator has no attribute-based equivalent of
 /// Swashbuckle's <c>SwaggerRequestExample</c> — a schema transformer registered via
 /// <c>OpenApiOptions.AddSchemaTransformer</c> is the documented extension point instead.
@@ -44,6 +45,23 @@ public sealed class ProductContractExampleTransformer : IOpenApiSchemaTransforme
                 ["name"] = "Wireless Mouse (v3)",
             },
             var t when t == typeof(PagedResult<ProductDto>) => PagedProductsExample(),
+            var t when t == typeof(IssueImpersonationTokenRequest) => new JsonObject
+            {
+                ["targetUserId"] = "alice",
+                ["roles"] = new JsonArray("Support"),
+                ["reason"] = "Reproducing the checkout error alice reported",
+                ["ticketReference"] = "SUP-1234",
+                ["lifetimeMinutes"] = 15,
+            },
+            var t when t == typeof(ImpersonationToken) => new JsonObject
+            {
+                ["token"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<payload>.<signature>",
+                ["expiresAt"] = "2026-03-02T14:20:00+00:00",
+                ["userId"] = "alice",
+                ["roles"] = new JsonArray("Support"),
+                ["actorId"] = "root",
+                ["tokenType"] = "Bearer",
+            },
             _ => null,
         };
 

@@ -14,6 +14,10 @@ public static class JwtTestTokens
     public const string NonDevelopmentSigningKey =
         "test-only-signing-key-for-non-development-hosts";
 
+    /// <summary>A valid-length impersonation signing key (different from <see cref="NonDevelopmentSigningKey"/>) for non-Development hosts.</summary>
+    public const string NonDevelopmentImpersonationKey =
+        "test-only-impersonation-key-for-non-development-hosts";
+
     /// <summary>Creates a signed token.</summary>
     /// <param name="factory">The host whose configured <see cref="JwtAuthOptions"/> the token is minted for.</param>
     /// <param name="subject">The <c>sub</c> claim, or <see langword="null"/> for a token with none.</param>
