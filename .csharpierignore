@@ -9,6 +9,8 @@ obj/
 # can come back.
 src/MediatrUnionPoc.Application/Features/**/*Result.cs
 tests/CompileTimeChecks/**/ShouldCommitProbe.cs
+tests/CompileTimeChecks/Exhaustive/ExhaustiveSwitch.cs
+tests/CompileTimeChecks/NonExhaustive/NonExhaustiveSwitch.cs
 tests/MediatrUnionPoc.Application.Tests/Behaviors/TransactionBehaviorTests.cs
 tests/MediatrUnionPoc.Application.Tests/Behaviors/NonTransactionalCommandTests.cs
 tests/MediatrUnionPoc.Application.Tests/Unions/FailureAndNotAuthorizedCaseTypeTests.cs

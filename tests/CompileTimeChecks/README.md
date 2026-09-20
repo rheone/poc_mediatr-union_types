@@ -20,8 +20,8 @@ fail to reproduce this behavior) against each project below and asserts on the e
 
 | Project | Proves |
 |---|---|
-| `Exhaustive` | A `switch` covering every case of a union compiles cleanly (positive control). |
-| `NonExhaustive` | The same union, missing one case, fails with `CS8509`. |
+| `Exhaustive` | A `switch` covering every case of a probe-local union compiles cleanly (positive control). |
+| `NonExhaustive` | The same shape of union, missing one case, fails with `CS8509`. |
 | `ShouldCommitExhaustive` | Same proof, for a `static abstract bool ShouldCommit(TSelf)` implementation (`ITransactionOutcome<TSelf>`) that covers every case. |
 | `ShouldCommitNonExhaustive` | The same `ShouldCommit` switch, missing one case, fails with `CS8509`. |
 
@@ -39,8 +39,8 @@ directly — never as a side effect of building the solution.
 
 This is also why `Directory.Build.props` special-cases them out of `GenerateDocumentationFile`
 (they're one-file compiler probes, not part of the documented codebase — and one of them is
-meant not to build at all), and why `.csharpierignore` excludes the two `ShouldCommitProbe.cs`
-files (CSharpier 1.3.0 can't parse `union` declarations at all — see the comment there and in
+meant not to build at all), and why `.csharpierignore` excludes every probe file that declares a `union`
+(the four probe sources) (CSharpier 1.3.0 can't parse `union` declarations at all — see the comment there and in
 `.editorconfig`'s `SA1649` override for the same gap in other tooling).
 
 ## How it's managed
@@ -56,6 +56,9 @@ files (CSharpier 1.3.0 can't parse `union` declarations at all — see the comme
 - **If a new probe's source file declares a `union`**, add its path to `.csharpierignore` up
   front (same pattern as the existing `ShouldCommitProbe.cs` entries) — otherwise `dotnet
   csharpier check .` fails CI with a parser crash, not a formatting diff.
+- **Probes declare their own unions.** Never switch over a production result union in a probe:
+  the positive control would then break whenever that union gains a case, and an incremental
+  local build hides the warning until CI's clean build.
 - **Don't add `<GenerateDocumentationFile>`/XML-doc requirements here.** `Directory.Build.props`
   already excludes anything under `CompileTimeChecks` from that repo-wide rule; these are
   intentionally undocumented, minimal probes.
