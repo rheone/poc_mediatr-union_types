@@ -22,9 +22,9 @@ public sealed class ProductListingTests : IDisposable
 {
     private const string ProductsUri = "/api/products";
 
-    private readonly ManualTimeProvider _clock = new(
-        new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)
-    );
+    private static readonly DateTimeOffset ClockStart = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private readonly ManualTimeProvider _clock = new(ClockStart);
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
