@@ -18,6 +18,12 @@ self-explanatory.
 (`Committed`, `ConcurrencyConflict`, `UniqueViolation`; `CommitFailure` is the two failing cases) so
 an expected commit refusal is a value, not an exception.
 
+`Product` has two mutation entry points besides `Create`: `UpdateDetails(name, price)` replaces both
+fields, and `ApplyChanges(name, price)` applies a partial update (a `null` argument means "leave
+that field alone", so it stays free of any Application type such as `Optional<T>`; supplying
+neither throws). Each advances `Version` exactly once per call, and neither touches `Id`,
+`OwnerId` or `CreatedAt`.
+
 `ProductNames.Normalize` (trim, then upper-case with the invariant culture) is the single definition
 of when two product names are duplicates; `Product.NormalizedName` carries the key and
 `IProductRepository.ExistsWithNameAsync` compares by it. Persistence puts its unique index on the

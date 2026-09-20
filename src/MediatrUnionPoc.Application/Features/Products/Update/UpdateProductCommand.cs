@@ -5,7 +5,7 @@ using MediatrUnionPoc.Domain;
 
 namespace MediatrUnionPoc.Application.Features.Products.Update;
 
-/// <summary>Replaces a product's name and price in full — there is no partial-update support.</summary>
+/// <summary>Replaces a product's name and price in full; changing only some fields is <see cref="Patch.PatchProductCommand"/>.</summary>
 /// <param name="Id">The product's identity.</param>
 /// <param name="Name">The product's new display name. Must be non-empty, at most 200 characters.</param>
 /// <param name="Price">The product's new price. Must be zero or greater.</param>

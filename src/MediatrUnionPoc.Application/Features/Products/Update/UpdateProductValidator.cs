@@ -1,4 +1,5 @@
 using FluentValidation;
+using MediatrUnionPoc.Application.Features.Products.Common;
 
 namespace MediatrUnionPoc.Application.Features.Products.Update;
 
@@ -18,7 +19,7 @@ public sealed class UpdateProductValidator : AbstractValidator<UpdateProductComm
     public UpdateProductValidator()
     {
         RuleFor(x => x.Id).NotEqual(Guid.Empty);
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Price).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Name).MustBeValidProductName();
+        RuleFor(x => x.Price).MustBeValidProductPrice();
     }
 }

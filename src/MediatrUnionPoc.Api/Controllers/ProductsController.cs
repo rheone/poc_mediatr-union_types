@@ -10,6 +10,7 @@ using MediatrUnionPoc.Application.Features.Products.Create;
 using MediatrUnionPoc.Application.Features.Products.Delete;
 using MediatrUnionPoc.Application.Features.Products.GetById;
 using MediatrUnionPoc.Application.Features.Products.GetPaged;
+using MediatrUnionPoc.Application.Features.Products.Patch;
 using MediatrUnionPoc.Application.Features.Products.Update;
 using MediatrUnionPoc.Domain;
 using Microsoft.AspNetCore.Mvc;
@@ -26,6 +27,7 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// <item><term>GetByIdAsync</term><description>ProductDto 200 (with <c>ETag</c>); NotFound 404; Error 500.</description></item>
 /// <item><term>GetPagedAsync</term><description>PagedResult 200 (with <c>X-Total-Count</c> and <c>Link</c>); ValidationErrors 400 (per-field); Error 500.</description></item>
 /// <item><term>UpdateAsync</term><description>ProductDto 204 (with the new <c>ETag</c>); NotFound 404; ValidationErrors 400 (also a malformed <c>If-Match</c>); NotAuthorized 403; Conflict 409 (duplicate product name); PreconditionFailed 412; missing <c>If-Match</c> 428; Error 500.</description></item>
+/// <item><term>PatchAsync</term><description>ProductDto 200 (with the new <c>ETag</c>); NotFound 404; ValidationErrors 400 (also a malformed <c>If-Match</c>); NotAuthorized 403; Conflict 409 (duplicate product name); PreconditionFailed 412; a body that is not <c>application/merge-patch+json</c> 415; missing <c>If-Match</c> 428; Error 500.</description></item>
 /// <item><term>DeleteAsync</term><description>Success 204; NotFound 404; NotAuthorized 403; PreconditionFailed 412; malformed <c>If-Match</c> 400; Error 500.</description></item>
 /// </list>
 /// </summary>
@@ -194,7 +196,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> UpdateAsync(
+    public Task<IActionResult> UpdateAsync(
         Guid id,
         UpdateProductRequest request,
         [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
@@ -202,17 +204,99 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         CancellationToken cancellationToken = default
     )
     {
+        return WithRequiredVersionAsync(
+            ifMatchHeader,
+            expectedVersion =>
+                SendUpdateAsync(id, request, callerIdHeader, expectedVersion, cancellationToken)
+        );
+    }
+
+    /// <summary>
+    /// Changes only the fields of a product the caller supplies (JSON Merge Patch, RFC 7396). Same
+    /// ownership rule, <c>If-Match</c> requirement and duplicate-name rule as
+    /// <see cref="UpdateAsync"/>; the body must be sent as <c>application/merge-patch+json</c>.
+    /// </summary>
+    /// <param name="id">The product's identity.</param>
+    /// <param name="request">The members to change; absent members are left alone, a <c>null</c> member or an empty patch is a 400.</param>
+    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
+    /// <param name="ifMatchHeader">The <c>If-Match</c> request header: the ETag of the version being changed. Required.</param>
+    /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
+    /// <returns>
+    /// 200 with the patched <see cref="ProductDto"/> and its new <c>ETag</c>; 400 on validation failure
+    /// or a malformed <c>If-Match</c>; 403 if the caller does not own the product; 404 if it does not
+    /// exist; 409 if the new name duplicates another product's; 412 if <c>If-Match</c> no longer
+    /// names the product's version; 415 for any other media type; 428 if <c>If-Match</c> is absent;
+    /// 500 for any other <see cref="Error"/> case.
+    /// </returns>
+    [HttpPatch("{id:guid}")]
+    [Consumes(MediaTypes.MergePatchJson)]
+    [ReturnsETag]
+    [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status415UnsupportedMediaType)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public Task<IActionResult> PatchAsync(
+        Guid id,
+        PatchProductRequest request,
+        [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
+        [FromHeader(Name = IfMatchHeader.HeaderName)] string? ifMatchHeader,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return WithRequiredVersionAsync(
+            ifMatchHeader,
+            expectedVersion =>
+                SendPatchAsync(id, request, callerIdHeader, expectedVersion, cancellationToken)
+        );
+    }
+
+    /// <summary>Runs <paramref name="send"/> with the version a <em>required</em> <c>If-Match</c> header names, or answers 428 (absent) or 400 (malformed) without sending anything.</summary>
+    private async Task<IActionResult> WithRequiredVersionAsync(
+        string? ifMatchHeader,
+        Func<ProductVersion, Task<IActionResult>> send
+    )
+    {
         return IfMatchHeader.Parse(ifMatchHeader) switch
         {
-            ProductVersion expectedVersion => await SendUpdateAsync(
-                id,
-                request,
-                callerIdHeader,
-                expectedVersion,
-                cancellationToken
-            ),
+            ProductVersion expectedVersion => await send(expectedVersion),
             MissingIfMatch missing => missing.ToProblemResult(HttpContext),
             ValidationErrors errors => errors.ToProblemResult(HttpContext),
+        };
+    }
+
+    private async Task<IActionResult> SendPatchAsync(
+        Guid id,
+        PatchProductRequest request,
+        string? callerIdHeader,
+        ProductVersion expectedVersion,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = await _sender.Send(
+            new PatchProductCommand(
+                id,
+                request.Name,
+                request.Price,
+                ClaimsPrincipal.FromCallerHeaders(adminHeader: null, callerIdHeader),
+                expectedVersion
+            ),
+            cancellationToken
+        );
+
+        return result switch
+        {
+            ProductDto patched => WithETag(patched, Ok(patched)),
+            NotFoundCase notFound => notFound.ToProblemResult(HttpContext, resource: "Product"),
+            ValidationErrors errors => errors.ToProblemResult(HttpContext),
+            NotAuthorized notAuthorized => notAuthorized.ToProblemResult(HttpContext),
+            PreconditionFailed stale => stale.ToProblemResult(HttpContext),
+            Conflict conflict => conflict.ToProblemResult(HttpContext),
+            Error error => error.ToProblemResult(HttpContext),
         };
     }
 

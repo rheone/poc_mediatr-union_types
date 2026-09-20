@@ -1,4 +1,5 @@
 using FluentValidation;
+using MediatrUnionPoc.Application.Features.Products.Common;
 
 namespace MediatrUnionPoc.Application.Features.Products.Create;
 
@@ -13,7 +14,7 @@ public sealed class CreateProductValidator : AbstractValidator<CreateProductComm
     /// </summary>
     public CreateProductValidator()
     {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Price).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Name).MustBeValidProductName();
+        RuleFor(x => x.Price).MustBeValidProductPrice();
     }
 }

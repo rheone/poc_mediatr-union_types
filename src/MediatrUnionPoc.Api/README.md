@@ -41,6 +41,24 @@ with example bodies (`PreconditionProblemExampleTransformer`) and the `ETag` res
 actions marked `[ReturnsETag]` (`ETagResponseHeaderTransformer`). See the repo root README's
 [Optimistic concurrency](../../README.md#optimistic-concurrency-productversion-etag-and-if-match).
 
+## PATCH: JSON Merge Patch (`Contracts/`, `Http/`, `OpenApi/`)
+
+`PATCH /api/products/{id}` binds a `PatchProductRequest(Optional<string?> Name, Optional<decimal?> Price)`
+and sends a `PatchProductCommand`. `[Consumes("application/merge-patch+json")]` makes any other body
+media type (plain `application/json` included) a `415` problem; the default JSON input formatter
+already accepts `application/*+json`, so the body binds without a custom formatter.
+`OptionalJsonConverterFactory` (`Http/`), registered once through `AddJsonOptions` in `Program.cs`,
+binds any `Optional<T>`: a missing member stays absent, anything else (an explicit `null` included)
+is present, which is how the application tells "leave it alone" from "null is not allowed". Members
+the contract does not know are ignored (RFC 7396). `If-Match` is required exactly as for `PUT`
+(shared by the controller's `WithRequiredVersionAsync`); success is `200` with the updated
+`ProductDto` and the new `ETag`. The OpenAPI document lists the request body as
+`application/merge-patch+json` (`ConsumesMediaTypeTransformer`), inlines `Optional<T>` as the
+wrapped type with the member not `required` (`OptionalSchemaTransformer`, wired with
+`OpenApiOptions.CreateSchemaReferenceId`) and carries a one-field example
+(`ProductContractExampleTransformer`). See the repo root README's
+[Partial updates](../../README.md#partial-updates-patch-as-json-merge-patch).
+
 ## Listing: filters, sort, paging headers (`Contracts/`, `Http/`, `OpenApi/`)
 
 `GET /api/products` binds a `ListProductsRequest` (`Contracts/ProductContracts.cs`) from the query

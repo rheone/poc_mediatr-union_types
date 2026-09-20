@@ -31,8 +31,13 @@ machine and fail with `NETSDK1045`.
   `ProductVersion`), `IProductRepository`/`IUnitOfWork` interfaces. `IUnitOfWork.CommitAsync` returns
   a `CommitResult` union (`Committed | ConcurrencyConflict | UniqueViolation`). Has no dependency on any other project here.
 - `src/MediatrUnionPoc.Application` — commands, queries, handlers, validators, organized as
-  **vertical slices** under `Features/Products/<Operation>/` (Create, Update, Delete, GetById,
+  **vertical slices** under `Features/Products/<Operation>/` (Create, Update, Patch, Delete, GetById,
   GetPaged) rather than by technical layer. `Common/` holds the shared pipeline machinery (below).
+  `Patch` is a JSON Merge Patch (RFC 7396) partial update: its command carries `Optional<string?>` /
+  `Optional<decimal?>` (`Common/Optional.cs`, absent at `default`, present via `Optional<T>.Of`,
+  serializer-free), and its handler shares the load/ownership/version steps with Update
+  (`Features/Products/Common/ProductChangeExtensions.LoadForChangeAsync`) and the name/price rules
+  with Create/Update (`ProductRuleExtensions`).
 - `src/MediatrUnionPoc.Infrastructure` — EF Core (`EfCoreUnitOfWork`, `ProductRepository`,
   hand-written `ValueConverter`s for the Vogen types — not Vogen's own generated converter, to
   keep Domain free of an EF Core reference).
@@ -43,6 +48,11 @@ machine and fail with `NETSDK1045`.
   shared policy is a DI-registered `HttpMappingOptions` (`AddResultHttpMapping(...)` in
   `Program.cs`: `Error.Code` to status table, `type` URI switch); each extension also takes per-call
   overrides, and the controller keeps its own `switch` so `CS8509` exhaustiveness still applies.
+  `PATCH /api/products/{id}` requires `Content-Type: application/merge-patch+json` (`[Consumes]`,
+  else 415) and binds `Optional<T>` members through `OptionalJsonConverterFactory` (registered in
+  `Program.cs` via `AddJsonOptions`); unknown members are ignored, a present `null` or an empty
+  patch is a 400. The OpenAPI schema/media-type shaping for it lives in `Api/OpenApi/`
+  (`OptionalSchemaTransformer`, `ConsumesMediaTypeTransformer`).
 
 Each `src/` project has its own unit test project, named after it, plus a separate integration test
 project wherever tests need a real database, a real HTTP host, or both:

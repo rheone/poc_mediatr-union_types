@@ -26,6 +26,10 @@ index, and `CommitAsync` reports a violation of it (SQLite extended error 2067 n
 collision, is not translated and propagates. `ProductRepository.ExistsWithNameAsync` is the
 up-front check the handlers use; the index is the backstop for races between two such checks.
 
+Nothing in Infrastructure knows about partial updates: `Product.ApplyChanges` changes only the
+properties a `PATCH` named and advances `Version` once, so EF's change tracking issues one
+version-conditioned `UPDATE`, exactly as for a full `PUT`.
+
 `ProductRepository.GetPagedAsync` is the only place the Domain's `ProductCriteria` and
 `ProductSort` become a query. The name filter matches the normalised search text against
 `NormalizedName` (case-insensitive with no provider-specific collation), price bounds compare

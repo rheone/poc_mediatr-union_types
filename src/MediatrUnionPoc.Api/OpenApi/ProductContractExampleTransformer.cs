@@ -39,6 +39,10 @@ public sealed class ProductContractExampleTransformer : IOpenApiSchemaTransforme
                 ["name"] = "Wireless Mouse (v2)",
                 ["price"] = 27.99,
             },
+            var t when t == typeof(PatchProductRequest) => new JsonObject
+            {
+                ["name"] = "Wireless Mouse (v3)",
+            },
             var t when t == typeof(PagedResult<ProductDto>) => PagedProductsExample(),
             _ => null,
         };

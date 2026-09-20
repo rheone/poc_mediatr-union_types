@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace MediatrUnionPoc.Domain;
 
 /// <summary>
-/// The aggregate root for this POC. Deliberately anemic beyond identity and mutation guards —
+/// The aggregate root for this POC. Deliberately anemic beyond identity and mutation guards â€”
 /// the interesting behavior here lives in the Application layer's handlers and pipeline
 /// behaviors, not in the entity itself.
 /// </summary>
@@ -34,7 +34,7 @@ public sealed class Product
     /// The identifier of the caller who owns this product, checked against the caller's
     /// identity by the resource-based authorization mechanism in
     /// <c>MediatrUnionPoc.Application.Common.Authorization</c> (see that namespace's
-    /// <c>IOwnedResource</c> and <c>OwnerAuthorizationHandler{TResource}</c>) — this entity does
+    /// <c>IOwnedResource</c> and <c>OwnerAuthorizationHandler{TResource}</c>) â€” this entity does
     /// not implement <c>IOwnedResource</c> directly, since Domain must not depend on Application;
     /// callers instead adapt a loaded <see cref="Product"/> to that interface.
     /// </summary>
@@ -70,9 +70,9 @@ public sealed class Product
     /// <param name="id">The product's identity.</param>
     /// <param name="name">The product's display name.</param>
     /// <param name="price">The product's price.</param>
-    /// <param name="ownerId">The identifier of the owning caller — see <see cref="OwnerId"/>.</param>
-    /// <param name="version">The concurrency version — see <see cref="Version"/>.</param>
-    /// <param name="createdAt">The creation instant — see <see cref="CreatedAt"/>.</param>
+    /// <param name="ownerId">The identifier of the owning caller â€” see <see cref="OwnerId"/>.</param>
+    /// <param name="version">The concurrency version â€” see <see cref="Version"/>.</param>
+    /// <param name="createdAt">The creation instant â€” see <see cref="CreatedAt"/>.</param>
     private Product(
         ProductId id,
         string name,
@@ -94,9 +94,9 @@ public sealed class Product
     /// <summary>Creates a brand-new product with a freshly generated <see cref="ProductId"/>.</summary>
     /// <param name="name">The product's display name.</param>
     /// <param name="price">The product's price.</param>
-    /// <param name="createdAt">The instant of creation — see <see cref="CreatedAt"/>.</param>
+    /// <param name="createdAt">The instant of creation â€” see <see cref="CreatedAt"/>.</param>
     /// <param name="ownerId">
-    /// The identifier of the caller who owns this product — see <see cref="OwnerId"/>. Defaults to
+    /// The identifier of the caller who owns this product â€” see <see cref="OwnerId"/>. Defaults to
     /// an empty string (no asserted owner) so callers that don't care about ownership don't need
     /// to supply one.
     /// </param>
@@ -114,7 +114,7 @@ public sealed class Product
         return new(ProductId.New(), name, price, ownerId, ProductVersion.Initial, createdAt);
     }
 
-    /// <summary>Replaces this product's name and price in place and advances <see cref="Version"/>. There is no partial-update overload.</summary>
+    /// <summary>Replaces this product's name and price in place and advances <see cref="Version"/>. For a partial update see <see cref="ApplyChanges"/>.</summary>
     /// <param name="name">The product's new display name.</param>
     /// <param name="price">The product's new price.</param>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
@@ -124,6 +124,38 @@ public sealed class Product
         Name = name;
         NormalizedName = ProductNames.Normalize(name);
         Price = price;
+        Version = Version.Next();
+    }
+
+    /// <summary>
+    /// Applies a partial update: each supplied field replaces the current one, each <see langword="null"/>
+    /// field is left exactly as it is, and <see cref="Version"/> advances exactly once for the whole
+    /// change. <see cref="CreatedAt"/>, <see cref="OwnerId"/> and <see cref="Id"/> are never touched.
+    /// </summary>
+    /// <param name="name">The new display name, or <see langword="null"/> to keep the current one.</param>
+    /// <param name="price">The new price, or <see langword="null"/> to keep the current one.</param>
+    /// <exception cref="ArgumentException">Neither <paramref name="name"/> nor <paramref name="price"/> was supplied — a change that changes nothing must not advance the version.</exception>
+    public void ApplyChanges(string? name, Money? price)
+    {
+        if (name is null && price is null)
+        {
+            throw new ArgumentException(
+                "At least one of name or price must be supplied.",
+                nameof(name)
+            );
+        }
+
+        if (name is not null)
+        {
+            Name = name;
+            NormalizedName = ProductNames.Normalize(name);
+        }
+
+        if (price is { } newPrice)
+        {
+            Price = newPrice;
+        }
+
         Version = Version.Next();
     }
 }

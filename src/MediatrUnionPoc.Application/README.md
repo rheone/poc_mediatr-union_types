@@ -1,8 +1,13 @@
 # MediatrUnionPoc.Application
 
 The core of the proof of concept. Commands, queries, handlers, and validators, organized as
-**[vertical slices](../../README.md#architectural-patterns)** under `Features/Products/<Operation>/` (Create, Update, Delete, GetById,
+**[vertical slices](../../README.md#architectural-patterns)** under `Features/Products/<Operation>/` (Create, Update, Patch, Delete, GetById,
 GetPaged) rather than by technical layer — everything one operation needs lives in one folder.
+`Patch` is the partial update (JSON Merge Patch): its command carries `Optional<string?>` /
+`Optional<decimal?>` (`Common/Optional.cs`, a serializer-free "absent or present" struct, present
+values may be `null` so an explicit JSON `null` reaches the validator and fails it), and it shares
+the load / ownership / version steps with Update (`Features/Products/Common/ProductChangeExtensions`)
+and the name and price rules with Create and Update (`ProductRuleExtensions`).
 `Common/` holds the shared pipeline machinery: marker interfaces (`ICommand<TResponse>`,
 `ITransactionalCommand<TResponse>`, `IQuery<TResponse>`, `IValidatable<TSelf>`,
 `ICommitFailable<TSelf>`), the MediatR pipeline behaviors (`LoggingBehavior`, `ValidationBehavior`,
@@ -103,7 +108,7 @@ interface based on what it does:
   ShouldCommit(TResponse)`, exhaustively switching over that union's own cases) and
   `ICommitFailable<TResponse>` (a `static abstract TSelf FromCommitFailure(CommitFailure)`,
   exhaustively switching over the ways a commit can be refused — a stale write, a uniqueness
-  violation — and deciding what each means for this operation; for Create and Update a uniqueness
+  violation — and deciding what each means for this operation; for Create, Update and Patch a uniqueness
   violation on the product name is a `Conflict`). `TransactionBehavior` rolls back and
   returns `FromCommitFailure(...)` when `IUnitOfWork.CommitAsync` reports a failure.
 - Needs `ValidationBehavior` to short-circuit before the handler runs → the response union also

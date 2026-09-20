@@ -10,11 +10,18 @@ var builder = WebApplication.CreateBuilder(args);
 // (SuppressAsyncSuffixInActionNames = true) would otherwise register CreateAsync/GetByIdAsync/etc.
 // as action names with the suffix trimmed (e.g. "GetById"), silently breaking any nameof(...)
 // reference — such as CreatedAtAction(nameof(GetByIdAsync), ...) — used for link generation.
-builder.Services.AddControllers(options => options.SuppressAsyncSuffixInActionNames = false);
+builder
+    .Services.AddControllers(options => options.SuppressAsyncSuffixInActionNames = false)
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new OptionalJsonConverterFactory())
+    );
 
 builder.Services.AddOpenApi(options =>
 {
+    options.CreateSchemaReferenceId = OptionalSchemaTransformer.CreateSchemaReferenceId;
+    options.AddSchemaTransformer<OptionalSchemaTransformer>();
     options.AddSchemaTransformer<ProductContractExampleTransformer>();
+    options.AddOperationTransformer<ConsumesMediaTypeTransformer>();
     options.AddOperationTransformer<ETagResponseHeaderTransformer>();
     options.AddOperationTransformer<PagingResponseHeaderTransformer>();
     options.AddOperationTransformer<PreconditionProblemExampleTransformer>();

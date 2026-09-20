@@ -1,3 +1,5 @@
+using MediatrUnionPoc.Application.Common;
+
 namespace MediatrUnionPoc.Api.Contracts;
 
 /// <summary>Request body for <see cref="Controllers.ProductsController.CreateAsync"/>.</summary>
@@ -5,6 +7,19 @@ public sealed record CreateProductRequest(string Name, decimal Price);
 
 /// <summary>Request body for <see cref="Controllers.ProductsController.UpdateAsync"/>.</summary>
 public sealed record UpdateProductRequest(string Name, decimal Price);
+
+/// <summary>
+/// A JSON Merge Patch (RFC 7396, <c>application/merge-patch+json</c>) for a product. Each member is
+/// either absent (leave that field alone) or present (replace it). A member present as <c>null</c>
+/// is rejected — name and price are required, so there is nothing to clear — as is a body that names
+/// neither. Members this contract does not know are ignored, as RFC 7396 leaves unrecognised members
+/// to the recipient. Binding the <see cref="Optional{T}"/> members is the job of
+/// <c>OptionalJsonConverterFactory</c>; every rule on their values belongs to the application's
+/// validator.
+/// </summary>
+/// <param name="Name">The new display name, when present.</param>
+/// <param name="Price">The new price, when present.</param>
+public sealed record PatchProductRequest(Optional<string?> Name, Optional<decimal?> Price);
 
 /// <summary>
 /// The query string of <see cref="Controllers.ProductsController.GetPagedAsync"/>: which products to
