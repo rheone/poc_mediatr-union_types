@@ -186,6 +186,23 @@ tools all target Linux, and Windows base images are very large. The container ru
 Desktop with the WSL 2 backend and is opened from VS Code (Dev Containers) or the CLI. If a Windows
 container is genuinely required it should be raised as a separate decision.
 
+- **Isolated from the host OS.** The container must not be able to read or change the host beyond
+  what is deliberately shared:
+  - The repository is cloned into a **named Docker volume** (the Dev Containers "clone repository in
+    container volume" flow), not bind-mounted from the Windows file system. This also avoids the slow
+    Windows-to-WSL file bridge and CRLF surprises.
+  - No other host mounts: no home directory, no `.ssh`, no `.aws`, no browser profiles. Git access is
+    by a scoped, revocable token entered inside the container (or agent forwarding of a single
+    deploy-scoped key), never by mounting host credentials.
+  - No Docker socket and no `--privileged`; a non-root user with no sudo; dropped capabilities and
+    `no-new-privileges`.
+  - Host clipboard, GPU, USB and device pass-through off; ports forwarded only for the API's own
+    port.
+  - Network egress limited by the allow-list below, so an agent cannot exfiltrate to arbitrary hosts.
+  - Claude's `~/.claude` lives on its own named volume and is separate from the host's.
+  - Data leaves the container only through git (push to a branch) and explicit file export.
+  The smoke test includes negative checks: the host's drive is not visible, the Docker socket is
+  absent, and an off-list host is unreachable.
 - `.devcontainer/devcontainer.json` + `Dockerfile` (or a base image plus Features): the exact SDK
   from `global.json` (.NET 11 preview, `allowPrerelease`), `git`, `gh`, **ripgrep** (the repo
   instructions require `rg` over `grep`), Node (Claude Code and Husky), and the repo's local dotnet
