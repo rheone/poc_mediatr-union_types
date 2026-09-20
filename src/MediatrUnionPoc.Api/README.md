@@ -100,6 +100,21 @@ example paged body (`ProductContractExampleTransformer`). See the repo root READ
 Uses the `Microsoft.NET.Sdk.Web` SDK (not the plain `Microsoft.NET.Sdk` the other projects use),
 since it's the one project that's actually a runnable web application.
 
+## Health checks and options (`Health/`)
+
+- `AddHealthEndpoints()` registers `HealthEndpointsOptions` and the health checks;
+  `MapHealthEndpoints()` maps the endpoints. Both are called from `Program.cs`.
+- `GET /health/live` runs no checks (proves the process answers). `GET /health/ready` runs the
+  checks tagged `ready`: a `SELECT 1` round trip on `AppDbContext` (`AddDbContextCheck`, from
+  `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore`). Both are
+  `.AllowAnonymous()` and return the default plain-text status only (`503` when unhealthy).
+- Caveat: with the default private in-memory SQLite database the readiness check is trivially
+  healthy; it is only meaningful with a real `ConnectionStrings:Products`.
+- **Options convention for new settings:** `AddOptions<T>().BindConfiguration("Section")
+  .ValidateOnStart()` plus an `[OptionsValidator]` source-generated `IValidateOptions<T>`
+  (`HealthEndpointsOptionsValidator`) driven by DataAnnotations on the options class. Configure the
+  paths with `HealthEndpoints:LivePath` / `HealthEndpoints:ReadyPath` (must start with `/`).
+
 ## Dependencies
 
 **Project references:**
@@ -111,6 +126,8 @@ since it's the one project that's actually a runnable web application.
 
 - `Microsoft.AspNetCore.OpenApi` — generates the OpenAPI document (`/openapi/v1.json`), including
   the request examples described in the repo root `README.md`.
+- `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` — the readiness database
+  check. Pinned to `10.0.12` to match EF Core (the 11.x line requires EF Core 11).
 
 Also carries the repo-wide analyzer package set (`AsyncFixer`, `IDisposableAnalyzers`,
 `Microsoft.VisualStudio.Threading.Analyzers`, `SonarAnalyzer.CSharp`, `StyleCop.Analyzers`).

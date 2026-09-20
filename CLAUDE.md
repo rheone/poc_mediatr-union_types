@@ -162,6 +162,14 @@ a weak `ETag` (`W/"n"`). `PUT` and `PATCH` require `If-Match` (absent 428, malfo
 `DELETE` treats it as optional. `IfMatchHeader.Parse` (Api) classifies the header before any command is
 sent.
 
+**Health checks and options** (`Api/Health/`): `GET /health/live` (no checks) and `GET /health/ready`
+(a `SELECT 1` round trip on `AppDbContext`, tag `ready`) are anonymous, plain-text, registered by
+`AddHealthEndpoints()` / `MapHealthEndpoints()`; paths come from the `HealthEndpoints` section. With
+the default private in-memory SQLite database readiness is trivially healthy. **Options
+convention for every new setting:** `AddOptions<T>().BindConfiguration("Section").ValidateOnStart()`
+plus an `[OptionsValidator]` source-generated `IValidateOptions<T>` (DataAnnotations on the class);
+`HealthEndpointsOptions` is the reference. The health-check package is pinned to EF Core's `10.0.12`.
+
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It
 is stamped as the `traceId` member on every ProblemDetails body (`AddApiProblemDetails()` +

@@ -1,6 +1,6 @@
 # Hardening plan: .NET 11 features, real identity and operational concerns
 
-Status: **proposed, nothing implemented yet.** This plan takes the POC from a stand-in identity
+Status: **in progress; steps marked "Status: implemented" are done.** This plan takes the POC from a stand-in identity
 model to something a team could build on, using the platform features that arrived between .NET 8
 and .NET 11. Each step is independently shippable and ends with the solution building and every test
 passing.
@@ -20,6 +20,8 @@ passing.
 | Language | No `field` keyword or primary-constructor work; only touch a file for other reasons |
 
 ## Step 1: Options plumbing and health checks
+
+Status: implemented.
 
 **Options.** One convention for every new setting, extending the existing `HttpMappingOptions`:
 `AddOptions<T>().BindConfiguration("Section").ValidateOnStart()`, validated by an `[OptionsValidator]`

@@ -55,6 +55,8 @@ null.
 | **JSON Merge Patch** | `PATCH` updates only supplied members, distinguishing absent from null | `Optional<T>`, `OptionalJsonConverterFactory`, `[Consumes(application/merge-patch+json)]` | `Application/Common/Optional.cs`, `Api/Http/` | Partial updates without hand-written null-versus-missing logic |
 | **Trace id everywhere** | One id on every problem body, an `X-Trace-Id` header on every response, and a logging scope | `TraceIdMiddleware`, `HttpContext.TraceId` | `Api/Http/TraceIdMiddleware.cs`, `HttpContextTraceExtensions.cs` | A client-reported id finds the matching log lines and trace |
 | **Global exception handling** | Unexpected exceptions become a `500` problem body; details shown only in Development; client aborts are swallowed | `IExceptionHandler` | `Api/Http/GlobalExceptionHandler.cs` | No stack traces leak, no noisy logs for cancelled requests |
+| **Health checks** | Anonymous `/health/live` (no checks) and `/health/ready` (database round trip), plain-text status only | `AddHealthChecks`, `AddDbContextCheck` tagged `ready`, `MapHealthChecks(...).AllowAnonymous()` | `Api/Health/` | Orchestrators and load balancers can tell alive from ready |
+| **Validated options convention** | Settings bind from configuration and are validated when the host starts | `AddOptions<T>().BindConfiguration().ValidateOnStart()` with an `[OptionsValidator]` source-generated validator | `Api/Health/HealthEndpointsOptions.cs` | A bad setting stops startup instead of failing at runtime; one pattern for every future setting |
 | **OpenAPI and Scalar UI** | Generated OpenAPI with `ETag`, paging and precondition headers and example bodies; Scalar reference UI in Development | `Microsoft.AspNetCore.OpenApi` transformers, Scalar | `Api/OpenApi/` | The documented contract includes the conditional-request behaviour |
 
 ### Authorization
@@ -84,7 +86,6 @@ See [Hardening-Plan.md](Hardening-Plan.md) for scope, order and tests.
 | Impersonation with a mandatory recorded reason | Role-gated token endpoint, `act` and marker claims | Support and admins can act as a user for testing, accountably, in every environment |
 | Separate audit stream | `IAuditLog` writing to its own Serilog JSON file | Who did what, and why, kept apart from diagnostic logs |
 | Serilog with enrichment | `Serilog.AspNetCore` with configured sinks and enrichers | Structured, searchable logs joined by `traceId` (Seq is deferred) |
-| Health checks | Liveness and readiness endpoints with a database check | Orchestrators and load balancers can tell alive from ready |
 | URL-segment API versioning | `Asp.Versioning.Mvc` | `/api/v1/…` lets the contract evolve without breaking clients |
 | CORS stub | Named policy from options, exposing the headers a browser needs | Ready for a browser client |
 | Rate limiting | Built-in rate limiter, per-user partitions | Protects the API and the impersonation endpoint |

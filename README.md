@@ -47,6 +47,7 @@ Details below.
   - [Commit vs. rollback, message by message](#commit-vs-rollback-message-by-message)
 - [The HTTP contract: every endpoint and outcome](#the-http-contract-every-endpoint-and-outcome)
 - [Trace id and unhandled exceptions](#trace-id-and-unhandled-exceptions)
+- [Health checks and options](#health-checks-and-options)
 - [Optimistic concurrency: `ProductVersion`, `ETag` and `If-Match`](#optimistic-concurrency-productversion-etag-and-if-match)
 - [Partial updates: `PATCH` as JSON Merge Patch](#partial-updates-patch-as-json-merge-patch)
 - [Listing products: filtering, sorting and paging](#listing-products-filtering-sorting-and-paging)
@@ -190,7 +191,8 @@ pipeline throws for an outcome it expected to see.
 
 - **Real authentication.** `X-Admin` and `X-Caller-Id` request headers stand in for an identity;
   see [Where the identity comes from](#where-the-identity-comes-from).
-- **Health checks, API versioning, rate limiting, CORS.** None are configured.
+- **API versioning, rate limiting, CORS.** None are configured. (Health checks are; see
+  [Health checks and options](#health-checks-and-options).)
 - **Migrations and a production database.** The schema is created with `EnsureCreated` on SQLite.
   There is no migration history, and the unique-violation detection reads SQLite's error message,
   so another provider needs its own check (see
@@ -1121,6 +1123,27 @@ is swallowed with no body and no error-level log.
 No exception-tracking library is bundled; the trace id is the join key for whichever is added:
 OpenTelemetry (vendor-neutral exception events on spans), Serilog with Seq (`TraceId` becomes a
 searchable property), or Sentry.
+
+## Health checks and options
+
+Two anonymous probe endpoints, mapped with `.AllowAnonymous()` and answering the framework's default
+plain-text status only (`Healthy`, `Degraded` or `Unhealthy`; never a JSON body of check details):
+
+| Endpoint | Runs | Answers |
+| --- | --- | --- |
+| `GET /health/live` | no checks; proves the process responds | `200` |
+| `GET /health/ready` | the checks tagged `ready`: a database round trip through `AppDbContext` (`AddDbContextCheck`, `SELECT 1`) | `200`, or `503` when the database cannot be reached |
+
+The paths come from the `HealthEndpoints` configuration section (`LivePath`, `ReadyPath`; both must
+start with `/`). Caveat: with the default private in-memory SQLite database the readiness check is
+trivially healthy; it only says something with a real `ConnectionStrings:Products`.
+
+**The options convention.** Every settings class is registered as
+`AddOptions<T>().BindConfiguration("Section").ValidateOnStart()` and validated by an
+`[OptionsValidator]` source-generated `IValidateOptions<T>` built from DataAnnotations on the class
+(compile-time, no reflection), so a bad value stops the host at start. `HealthEndpointsOptions`
+(`Api/Health/`) is the reference implementation. `HttpMappingOptions` predates it and is
+configured in code only.
 
 ## Optimistic concurrency: `ProductVersion`, `ETag` and `If-Match`
 

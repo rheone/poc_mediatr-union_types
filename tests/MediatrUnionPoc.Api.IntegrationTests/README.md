@@ -27,6 +27,10 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
 - `GlobalExceptionHandlerTests.cs`, `UnhandledExceptionTests.cs` — the `500` problem for an
   unexpected exception, Development-only `detail`, and client aborts (using `ThrowingSender` and
   `BlockingSender`).
+- `HealthEndpointTests.cs` — `/health/live` and `/health/ready`: `200` plain-text `Healthy`,
+  readiness `503` when a `DbConnectionInterceptor` makes the database connection fail, liveness
+  unaffected, no identity headers needed, no JSON check details, configurable paths, and a
+  malformed path failing options validation at host start.
 - `OptionalJsonConverterTests.cs` — `Optional<T>` binding.
 - `ListingOpenApiTests.cs`, `ConcurrencyOpenApiTests.cs`, `PatchOpenApiTests.cs`,
   `ProductContractExampleTransformerTests.cs` — what the generated OpenAPI document declares:

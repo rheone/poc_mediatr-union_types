@@ -22,6 +22,11 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
     <!-- SQLite: the relational provider for runtime and tests, so transactions, constraints and concurrency behave for real -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
+    <!-- Readiness probe (AddDbContextCheck). Tracks EF Core: the 11.x line depends on EF Core 11, which would conflict with the 10.0.12 pin above -->
+    <PackageVersion
+      Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"
+      Version="10.0.12"
+    />
     <!-- DI / logging (explicit pins so non-Web projects get a consistent version, not whatever the framework happens to carry) -->
     <PackageVersion
       Include="Microsoft.Extensions.DependencyInjection"

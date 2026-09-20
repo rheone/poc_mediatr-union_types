@@ -1,3 +1,4 @@
+using MediatrUnionPoc.Api.Health;
 using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Api.OpenApi;
 using MediatrUnionPoc.Application;
@@ -32,6 +33,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddResultHttpMapping();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
+builder.Services.AddHealthEndpoints();
 
 var app = builder.Build();
 
@@ -54,6 +56,8 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapHealthEndpoints();
 
 await app.RunAsync();
 
