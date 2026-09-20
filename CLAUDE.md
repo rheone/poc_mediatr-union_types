@@ -102,6 +102,16 @@ a case type's identity never implies what it means for commit/rollback or anythi
 the union that declares it decides that. That's why `ITransactionOutcome.ShouldCommit` exists
 instead of `TransactionBehavior` pattern-matching a fixed list of known case types.
 
+**Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
+`Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It
+is stamped as the `traceId` member on every ProblemDetails body (`AddApiProblemDetails()` +
+`UseStatusCodePages()`, so framework 400/404/415/500 too), as an `X-Trace-Id` header on every
+response, and as a `TraceId` logging scope from `TraceIdMiddleware` (registered outermost, before
+`UseExceptionHandler`, so the handler's log line is still inside the scope).
+`GlobalExceptionHandler` maps any unhandled exception to a 500 problem (exception text in `detail`
+only in Development), logs it at Error, and swallows client aborts. No exception-tracking library is
+bundled; the docs name OpenTelemetry, Serilog + Seq and Sentry as plug-ins joined by the trace id.
+
 ## Conventions specific to this repo
 
 - Every async method this repo owns the signature of ends in `Async` and takes

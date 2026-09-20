@@ -26,6 +26,28 @@ C# 14 extension members in `MediatrUnionPoc.Api.Http` (`ResultHttpExtensions`):
   case differently, and everything is public: write a hand-rolled arm or your own extension members
   whenever the built-ins do not fit.
 
+## Trace id and unhandled exceptions (`Http/`)
+
+- **Trace id.** `HttpContext.TraceId` (extension member in `HttpContextTraceExtensions`) is the
+  single accessor: the W3C trace id of `Activity.Current` when there is one (so it joins to
+  distributed traces), otherwise `HttpContext.TraceIdentifier`; never empty. It appears in three
+  places, always with the same value: the `traceId` member of **every** `application/problem+json`
+  body (including framework-generated ones: model-binding 400, routing 404, 415, unhandled 500,
+  via `AddApiProblemDetails()` + `UseStatusCodePages()`), an `X-Trace-Id` header on **every**
+  response (success included; success bodies are unchanged), and a `TraceId` logging scope opened
+  by `TraceIdMiddleware` so every log line written during the request carries it.
+- **Global exception handler.** `GlobalExceptionHandler` (`IExceptionHandler`, wired with
+  `AddExceptionHandler` + `UseExceptionHandler`) turns any exception nothing else caught into a 500
+  problem body. There is no per-exception-type status mapping: expected outcomes are unions and
+  everything else is a 500 (an `Error` case still maps through `HttpMappingOptions`). The title is
+  generic; `detail` (the exception text) is written only when the environment is Development. The
+  exception is logged at Error with structured properties (the trace id comes from the scope).
+  A client abort (`OperationCanceledException` while `RequestAborted` is cancelled) is swallowed:
+  no body, Debug log only.
+- **Exception-tracking plug-in points.** No tracker is bundled. The trace id is the join key to
+  whichever you add: OpenTelemetry (vendor-neutral exception events on spans), Serilog with Seq
+  (the `TraceId` scope property becomes a searchable field), or Sentry.
+
 Uses the `Microsoft.NET.Sdk.Web` SDK (not the plain `Microsoft.NET.Sdk` the other projects use),
 since it's the one project that's actually a runnable web application.
 

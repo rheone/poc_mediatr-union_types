@@ -41,6 +41,7 @@ Details below.
   - [Vogen: avoiding primitive obsession](#vogen-avoiding-primitive-obsession)
 - [Adding a new command or query](#adding-a-new-command-or-query)
 - [Request lifecycle](#request-lifecycle)
+- [Trace id and unhandled exceptions](#trace-id-and-unhandled-exceptions)
 - [Authorization](#authorization)
   - [Why two different points in the request lifetime](#why-two-different-points-in-the-request-lifetime)
   - [How the two flows fit together](#how-the-two-flows-fit-together)
@@ -791,6 +792,31 @@ sequenceDiagram
 
 No `catch` block appears anywhere in this flow — the branch is decided entirely by which case type
 the handler returned.
+
+## Trace id and unhandled exceptions
+
+Every request has one trace id: the W3C trace id of `Activity.Current` when present (so it joins
+to distributed traces), otherwise `HttpContext.TraceIdentifier`, read through the single
+`HttpContext.TraceId` extension member. It is exposed three ways, always with the same value:
+
+- the `traceId` member of every `application/problem+json` body, including the framework's own
+  (model-binding 400, routing 404, 415, unhandled 500), through `AddProblemDetails` +
+  `CustomizeProblemDetails` and `UseStatusCodePages`;
+- an `X-Trace-Id` response header on every response, success included (success bodies are
+  unchanged);
+- a `TraceId` logging scope opened by `TraceIdMiddleware`, so `LoggingBehavior` and every other
+  log line in the request carry it.
+
+Expected outcomes are union cases; anything else is a bug or an outage, and `GlobalExceptionHandler`
+(`IExceptionHandler` + `UseExceptionHandler`) answers it with a 500 problem body: generic title,
+`traceId`, and `detail` (the exception text) **only in the Development environment**. The exception
+is logged once at Error with structured properties. There is deliberately no per-exception-type
+status mapping. A client abort (`OperationCanceledException` while `RequestAborted` is cancelled)
+is swallowed with no body and no error-level log.
+
+No exception-tracking library is bundled; the trace id is the join key for whichever is added:
+OpenTelemetry (vendor-neutral exception events on spans), Serilog with Seq (`TraceId` becomes a
+searchable property), or Sentry.
 
 ## Authorization
 

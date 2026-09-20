@@ -16,6 +16,8 @@ builder.Services.AddOpenApi(options =>
     options.AddSchemaTransformer<ProductContractExampleTransformer>()
 );
 
+builder.Services.AddApiProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddResultHttpMapping();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
@@ -29,6 +31,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
+
+app.UseMiddleware<TraceIdMiddleware>();
+
+app.UseExceptionHandler();
+
+app.UseStatusCodePages();
 
 app.UseHttpsRedirection();
 
