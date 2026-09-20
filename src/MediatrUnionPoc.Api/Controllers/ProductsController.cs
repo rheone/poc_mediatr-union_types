@@ -19,11 +19,13 @@ namespace MediatrUnionPoc.Api.Controllers;
 
 /// <summary>
 /// Product CRUD. Each action sends one request and <c>switch</c>es exhaustively over the union it
-/// returns; no expected outcome is signalled by an exception. Case-to-status mapping (also declared
+/// returns; no expected outcome is signalled by an exception. Every action requires an authenticated
+/// caller (the host's fallback policy); a missing or invalid token is answered 401 by the
+/// authentication middleware before an action runs. Case-to-status mapping (also declared
 /// via <c>ProducesResponseType</c> on each action):
 /// <list type="table">
 /// <listheader><term>Action</term><description>Cases</description></listheader>
-/// <item><term>CreateAsync</term><description>ProductDto 201 (with <c>ETag</c>); ValidationErrors 400; Conflict 409 (duplicate product name); Error 500.</description></item>
+/// <item><term>CreateAsync</term><description>ProductDto 201 (with <c>ETag</c>); ValidationErrors 400; NotAuthorized 403 (a token with no <c>sub</c>); Conflict 409 (duplicate product name); Error 500.</description></item>
 /// <item><term>GetByIdAsync</term><description>ProductDto 200 (with <c>ETag</c>); NotFound 404; Error 500.</description></item>
 /// <item><term>GetPagedAsync</term><description>PagedResult 200 (with <c>X-Total-Count</c> and <c>Link</c>); ValidationErrors 400 (per-field); Error 500.</description></item>
 /// <item><term>UpdateAsync</term><description>ProductDto 204 (with the new <c>ETag</c>); NotFound 404; ValidationErrors 400 (also a malformed <c>If-Match</c>); NotAuthorized 403; Conflict 409 (duplicate product name); PreconditionFailed 412; missing <c>If-Match</c> 428; Error 500.</description></item>
@@ -37,55 +39,44 @@ namespace MediatrUnionPoc.Api.Controllers;
 [Route("api/products")]
 public sealed class ProductsController(ISender sender) : ControllerBase
 {
+    private const string NoSubjectReason =
+        "The token carries no subject (sub) claim, so the caller has no identity to own a product with.";
+
     private readonly ISender _sender = sender ?? throw new ArgumentNullException(nameof(sender));
 
     /// <summary>
-    /// The request header this POC accepts as proof of administrator identity, in place of real
-    /// authentication. A value of <c>"true"</c> (case-insensitive) grants the caller the
-    /// <c>Administrator</c> role for the duration of the request.
-    /// </summary>
-    public const string AdminHeaderName = "X-Admin";
-
-    /// <summary>
-    /// The request header this POC accepts as proof of caller identity, in place of real
-    /// authentication. Its value becomes the caller's <see cref="ClaimTypes.NameIdentifier"/>
-    /// claim — the identity <see cref="Application.Common.Authorization.OwnerAuthorizationHandler{TResource}"/>
-    /// compares against a resource's owner, e.g. <see cref="Domain.Product.OwnerId"/>. A caller
-    /// who created a product with a given <see cref="CallerIdHeaderName"/> value must present the
-    /// same value to update it.
-    /// </summary>
-    public const string CallerIdHeaderName = "X-Caller-Id";
-
-    /// <summary>
-    /// Creates a product. The caller becomes the product's owner by presenting the
-    /// <see cref="CallerIdHeaderName"/> header — see that constant, and
-    /// <see cref="Domain.Product.OwnerId"/> for what ownership then gates.
+    /// Creates a product. The authenticated caller becomes its owner: the value of their
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim (the token's <c>sub</c>) is recorded as
+    /// <see cref="Domain.Product.OwnerId"/>, which is what later updates are checked against. A caller
+    /// whose token has no <c>sub</c> is authenticated but has no identity to own anything with, so the
+    /// request is refused with a <see cref="NotAuthorized"/> outcome (403) before anything is sent.
     /// </summary>
     /// <param name="request">The product to create.</param>
-    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
     /// 201 with the created <see cref="ProductDto"/> and its <c>ETag</c>; 400 with per-field errors if <paramref name="request"/>
-    /// fails validation; 409 if another product already has an equivalent name (ignoring case and surrounding whitespace); 500 for any other <see cref="Error"/> case.
+    /// fails validation; 403 if the token carries no subject; 409 if another product already has an equivalent name (ignoring case and surrounding whitespace); 500 for any other <see cref="Error"/> case.
     /// </returns>
     [HttpPost]
     [ReturnsETag]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> CreateAsync(
         CreateProductRequest request,
-        [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
         CancellationToken cancellationToken = default
     )
     {
+        if (string.IsNullOrEmpty(User.FindFirstValue(ClaimTypes.NameIdentifier)))
+        {
+            return new NotAuthorized([NoSubjectReason]).ToProblemResult(HttpContext);
+        }
+
         var result = await _sender.Send(
-            new CreateProductCommand(
-                request.Name,
-                request.Price,
-                ClaimsPrincipal.FromCallerHeaders(adminHeader: null, callerIdHeader)
-            ),
+            new CreateProductCommand(request.Name, request.Price, User),
             cancellationToken
         );
 
@@ -110,6 +101,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetByIdAsync(
         Guid id,
@@ -142,6 +134,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ReturnsPagingHeaders]
     [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetPagedAsync(
         [FromQuery] ListProductsRequest request,
@@ -170,14 +163,12 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     }
 
     /// <summary>
-    /// Replaces a product's name and price. Only the product's owner may update it — this POC has
-    /// no real authentication, so the caller proves identity by sending an
-    /// <see cref="CallerIdHeaderName"/> header whose value must match the value presented when the
-    /// product was created; see <see cref="CallerIdHeaderName"/>.
+    /// Replaces a product's name and price. Only the product's owner may update it: the caller's
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim (the token's <c>sub</c>) must equal the
+    /// <see cref="Domain.Product.OwnerId"/> recorded when the product was created.
     /// </summary>
     /// <param name="id">The product's identity.</param>
     /// <param name="request">The new name and price.</param>
-    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="ifMatchHeader">The <c>If-Match</c> request header: the ETag of the version being replaced. Required.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
@@ -195,19 +186,18 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public Task<IActionResult> UpdateAsync(
         Guid id,
         UpdateProductRequest request,
-        [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
         [FromHeader(Name = IfMatchHeader.HeaderName)] string? ifMatchHeader,
         CancellationToken cancellationToken = default
     )
     {
         return WithRequiredVersionAsync(
             ifMatchHeader,
-            expectedVersion =>
-                SendUpdateAsync(id, request, callerIdHeader, expectedVersion, cancellationToken)
+            expectedVersion => SendUpdateAsync(id, request, expectedVersion, cancellationToken)
         );
     }
 
@@ -218,7 +208,6 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// </summary>
     /// <param name="id">The product's identity.</param>
     /// <param name="request">The members to change; absent members are left alone, a <c>null</c> member or an empty patch is a 400.</param>
-    /// <param name="callerIdHeader">The <see cref="CallerIdHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="ifMatchHeader">The <c>If-Match</c> request header: the ETag of the version being changed. Required.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
@@ -239,19 +228,18 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status415UnsupportedMediaType)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public Task<IActionResult> PatchAsync(
         Guid id,
         PatchProductRequest request,
-        [FromHeader(Name = CallerIdHeaderName)] string? callerIdHeader,
         [FromHeader(Name = IfMatchHeader.HeaderName)] string? ifMatchHeader,
         CancellationToken cancellationToken = default
     )
     {
         return WithRequiredVersionAsync(
             ifMatchHeader,
-            expectedVersion =>
-                SendPatchAsync(id, request, callerIdHeader, expectedVersion, cancellationToken)
+            expectedVersion => SendPatchAsync(id, request, expectedVersion, cancellationToken)
         );
     }
 
@@ -272,19 +260,12 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     private async Task<IActionResult> SendPatchAsync(
         Guid id,
         PatchProductRequest request,
-        string? callerIdHeader,
         ProductVersion expectedVersion,
         CancellationToken cancellationToken
     )
     {
         var result = await _sender.Send(
-            new PatchProductCommand(
-                id,
-                request.Name,
-                request.Price,
-                ClaimsPrincipal.FromCallerHeaders(adminHeader: null, callerIdHeader),
-                expectedVersion
-            ),
+            new PatchProductCommand(id, request.Name, request.Price, User, expectedVersion),
             cancellationToken
         );
 
@@ -315,19 +296,12 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     private async Task<IActionResult> SendUpdateAsync(
         Guid id,
         UpdateProductRequest request,
-        string? callerIdHeader,
         ProductVersion expectedVersion,
         CancellationToken cancellationToken
     )
     {
         var result = await _sender.Send(
-            new UpdateProductCommand(
-                id,
-                request.Name,
-                request.Price,
-                ClaimsPrincipal.FromCallerHeaders(adminHeader: null, callerIdHeader),
-                expectedVersion
-            ),
+            new UpdateProductCommand(id, request.Name, request.Price, User, expectedVersion),
             cancellationToken
         );
 
@@ -344,12 +318,10 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     }
 
     /// <summary>
-    /// Deletes a product. Only an administrator may delete — this POC has no real
-    /// authentication, so the caller proves administrator identity by sending an
-    /// <c>X-Admin: true</c> request header; see <see cref="AdminHeaderName"/>.
+    /// Deletes a product. Only an administrator may delete: the caller's token must carry a
+    /// <c>role</c> claim of <c>Administrator</c>.
     /// </summary>
     /// <param name="id">The product's identity.</param>
-    /// <param name="adminHeader">The <see cref="AdminHeaderName"/> request header, bound directly rather than read off <c>Request.Headers</c>.</param>
     /// <param name="ifMatchHeader">The optional <c>If-Match</c> request header; when present the delete only proceeds if it names the product's current version.</param>
     /// <param name="cancellationToken">Bound automatically from the incoming request; defaults to <see cref="CancellationToken.None"/> for direct calls.</param>
     /// <returns>
@@ -364,10 +336,10 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteAsync(
         Guid id,
-        [FromHeader(Name = AdminHeaderName)] string? adminHeader,
         [FromHeader(Name = IfMatchHeader.HeaderName)] string? ifMatchHeader,
         CancellationToken cancellationToken = default
     )
@@ -376,30 +348,24 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         {
             ProductVersion expectedVersion => await SendDeleteAsync(
                 id,
-                adminHeader,
                 expectedVersion,
                 cancellationToken
             ),
 
             // Optional on delete: no header means "delete whatever version is stored".
-            MissingIfMatch => await SendDeleteAsync(id, adminHeader, null, cancellationToken),
+            MissingIfMatch => await SendDeleteAsync(id, null, cancellationToken),
             ValidationErrors errors => errors.ToProblemResult(HttpContext),
         };
     }
 
     private async Task<IActionResult> SendDeleteAsync(
         Guid id,
-        string? adminHeader,
         ProductVersion? expectedVersion,
         CancellationToken cancellationToken
     )
     {
         var result = await _sender.Send(
-            new DeleteProductCommand(
-                id,
-                ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader: null),
-                expectedVersion
-            ),
+            new DeleteProductCommand(id, User, expectedVersion),
             cancellationToken
         );
 

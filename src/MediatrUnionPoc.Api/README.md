@@ -6,8 +6,8 @@ thing: send a command/query via MediatR, then `switch` on the returned union to 
 translated into an HTTP status — handlers and validators never touch `IActionResult` or any other
 web concern. See the repo root README's
 [Switch-and-unwrap: why controllers never return the union directly](../../README.md#switch-and-unwrap-why-controllers-never-return-the-union-directly)
-for why, and its [Authorization](../../README.md#authorization) section for how the two
-`X-Admin`/`X-Caller-Id` request headers this controller reads stand in for real authentication.
+for why, and its [Authorization](../../README.md#authorization) section for how the caller's
+identity (a JWT bearer token) reaches the commands.
 
 ## HTTP mapping (`Http/`)
 
@@ -16,8 +16,7 @@ C# 14 extension members in `MediatrUnionPoc.Api.Http` (`ResultHttpExtensions`):
 `error.ToProblemResult(HttpContext)`, `notFound.ToProblemResult(HttpContext, resource: "Product")`,
 `notAuthorized.ToProblemResult(HttpContext)`, `errors.ToProblemResult(HttpContext)`,
 `preconditionFailed.ToProblemResult(HttpContext)` (412), `conflict.ToProblemResult(HttpContext)`
-(409), `missingIfMatch.ToProblemResult(HttpContext)` (428), plus the static
-`ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader)`. Every failure body is
+(409) and `missingIfMatch.ToProblemResult(HttpContext)` (428). Every failure body is
 `application/problem+json`; the 404 carries a `code` member (`"NOT_FOUND"`).
 
 - `HttpMappingOptions` (registered by `AddResultHttpMapping(Action<HttpMappingOptions>?)` in
@@ -75,6 +74,31 @@ headers on actions marked `[ReturnsPagingHeaders]` (`PagingResponseHeaderTransfo
 example paged body (`ProductContractExampleTransformer`). See the repo root README's
 [Listing products](../../README.md#listing-products-filtering-sorting-and-paging).
 
+## Authentication (`Authentication/`)
+
+- `AddJwtAuthentication()` (called from `Program.cs`) registers `JwtAuthOptions` (`Authentication:Jwt`:
+  `Issuer`, `Audience`, `SigningKey` of at least 32 characters, `ClockSkewSeconds`), validated on
+  start by the source-generated `JwtAuthOptionsValidator`, the JWT bearer scheme configured from them
+  by `ConfigureJwtBearerOptions` (HS256 only, issuer, audience, lifetime and signature all checked,
+  `MapInboundClaims` on so `sub` and `role` arrive as the `NameIdentifier` and `Role` claims the
+  Application layer reads), and a fallback policy `RequireAuthenticatedUser`, so every endpoint needs a
+  caller unless it opts out with `.AllowAnonymous()` (the health endpoints, and in Development the
+  OpenAPI and Scalar endpoints). `Program.cs` calls `UseAuthentication()` before `UseAuthorization()`.
+- Only `appsettings.Development.json` carries a signing key, labelled development-only; any other
+  environment must supply `Authentication:Jwt:SigningKey` (user secrets, `Authentication__Jwt__SigningKey`,
+  a secret store) or the host refuses to start. `dotnet user-jwts` tokens are accepted in Development
+  because this configuration adds to, rather than replaces, the `Authentication:Schemes:Bearer` section
+  that tool writes.
+- `ProblemDetailsAuthorizationResultHandler` (an `IAuthorizationMiddlewareResultHandler`) writes the
+  middleware's `401` and `403` as `application/problem+json` with the `traceId`; it runs the framework's
+  own handling first (status, `WWW-Authenticate`) and only adds the body, which also keeps
+  `UseStatusCodePages` from writing a second one.
+- `BearerSecuritySchemeTransformer` (`OpenApi/`) declares the `Bearer` HTTP scheme and requires it in the
+  OpenAPI document so Scalar offers an authorization field; every action also declares its `401`.
+- `POST` with a valid token that has no `sub` is a `403` (`NotAuthorized` through the usual extension
+  member, decided in the controller before any command is sent); see the repo root README's
+  [Where the identity comes from](../../README.md#where-the-identity-comes-from).
+
 ## Trace id and unhandled exceptions (`Http/`)
 
 - **Trace id.** `HttpContext.TraceId` (extension member in `HttpContextTraceExtensions`) is the
@@ -124,6 +148,8 @@ since it's the one project that's actually a runnable web application.
 
 **Key packages:**
 
+- `Microsoft.AspNetCore.Authentication.JwtBearer` — the JWT bearer scheme (not part of the shared
+  framework). Same `11.0.0-rc.1` build as the other ASP.NET Core packages.
 - `Microsoft.AspNetCore.OpenApi` — generates the OpenAPI document (`/openapi/v1.json`), including
   the request examples described in the repo root `README.md`.
 - `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` — the readiness database
@@ -179,13 +205,15 @@ dotnet run --project src/MediatrUnionPoc.Api
 The default launch profile listens on `http://localhost:5233`. Hit `ProductsController`'s endpoints
 (the complete endpoint-by-outcome table is the repo root README's
 [The HTTP contract](../../README.md#the-http-contract-every-endpoint-and-outcome)), or browse the
-OpenAPI document (`/openapi/v1.json`) and Scalar UI (`/scalar`), both Development-only. Action names
+OpenAPI document (`/openapi/v1.json`) and Scalar UI (`/scalar`), both Development-only (and anonymous;
+everything else needs a bearer token, see [Authentication](#authentication-authentication)). Action names
 keep their `Async` suffix in MVC's route/action metadata — `Program.cs` sets
 `SuppressAsyncSuffixInActionNames = false` (ASP.NET Core's default is `true`), because
 `CreatedAtAction`'s `nameof(GetByIdAsync)` calls would otherwise silently stop matching the action
 name MVC registers.
 
-There's nothing to configure beyond what `Program.cs` already wires up. Persistence is SQLite;
+In Development there is nothing to configure beyond what `Program.cs` already wires up (the
+development signing key ships in `appsettings.Development.json`). Persistence is SQLite;
 with no `ConnectionStrings:Products` value the app uses a private in-memory database created at
 startup, so each run starts with an empty product catalog. Set `ConnectionStrings:Products` to a
 SQLite connection string (for example `Data Source=products.db`) to persist across runs.

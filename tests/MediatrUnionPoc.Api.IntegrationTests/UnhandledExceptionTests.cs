@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using MediatR;
+using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,6 +25,10 @@ public sealed class UnhandledExceptionTests
         baseFactory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(environment);
+            builder.UseSetting(
+                "Authentication:Jwt:SigningKey",
+                JwtTestTokens.NonDevelopmentSigningKey
+            );
             if (logs is not null)
             {
                 builder.ConfigureLogging(logging =>
@@ -50,7 +55,7 @@ public sealed class UnhandledExceptionTests
             "Production",
             new InvalidOperationException(Secret)
         );
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var response = await client.GetAsync("/api/products", CancellationToken.None);
@@ -85,7 +90,7 @@ public sealed class UnhandledExceptionTests
             "Development",
             new InvalidOperationException(Secret)
         );
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var response = await client.GetAsync("/api/products", CancellationToken.None);
@@ -112,7 +117,7 @@ public sealed class UnhandledExceptionTests
         var thrown = new InvalidOperationException(Secret);
         using var baseFactory = new ProductsApiFactory();
         using var factory = ThrowingFactory(baseFactory, "Production", thrown, logs);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var response = await client.GetAsync("/api/products", CancellationToken.None);
@@ -144,7 +149,7 @@ public sealed class UnhandledExceptionTests
                 services.Replace(ServiceDescriptor.Singleton<ISender>(sender))
             );
         });
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
         using var cts = new CancellationTokenSource();
 
         // Act

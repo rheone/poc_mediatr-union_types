@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Net;
+using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using MediatrUnionPoc.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -101,19 +102,18 @@ public sealed class HealthEndpointTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    /// <summary>Verifies both endpoints answer without any identity headers, which is how an orchestrator probes them.</summary>
+    /// <summary>Verifies both endpoints answer without any credentials, on a host whose default scheme is the real JWT bearer scheme, which is how an orchestrator probes them.</summary>
     /// <param name="path">The health endpoint path.</param>
     /// <returns>A task representing the asynchronous test.</returns>
     [Theory]
     [InlineData("/health/live")]
     [InlineData("/health/ready")]
-    public async Task Get_NoIdentityHeaders_IsNotRejected_Test(string path)
+    public async Task Get_NoCredentials_IsNotRejected_Test(string path)
     {
         // Arrange
-        using var factory = new ProductsApiFactory();
+        using var factory = new ProductsApiFactory(ApiAuthentication.RealJwt);
         using var client = factory.CreateClient();
-        Assert.False(client.DefaultRequestHeaders.Contains("X-Caller-Id"));
-        Assert.False(client.DefaultRequestHeaders.Contains("X-Admin"));
+        Assert.Null(client.DefaultRequestHeaders.Authorization);
 
         // Act
         using var response = await client.GetAsync(path, CancellationToken.None);
@@ -154,7 +154,9 @@ public sealed class HealthEndpointTests
         using var factory = baseFactory.WithWebHostBuilder(builder =>
             builder.UseSetting("HealthEndpoints:LivePath", "/probe/alive")
         );
-        using var client = factory.CreateClient();
+
+        // An authenticated caller, so an unmapped path is a plain 404 rather than the fallback policy's 401.
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var custom = await client.GetAsync("/probe/alive", CancellationToken.None);

@@ -82,12 +82,13 @@ dotnet run --project src/MediatrUnionPoc.Api
 OpenAPI document at `/openapi/v1.json` and a Scalar UI at `/scalar`. With no
 `ConnectionStrings:Products` value the API keeps a private in-memory SQLite database (empty on every
 start); set that value to a SQLite connection string such as `Data Source=products.db` to persist.
-A quick tour, using the stand-in identity header described under [Authorization](#where-the-identity-comes-from):
+Every endpoint except the health probes (and, in Development, the OpenAPI and Scalar documents) requires a bearer token; a quick tour, using a token minted as described under [Authorization](#where-the-identity-comes-from):
 
 ```bash
-curl -i -X POST http://localhost:5233/api/products -H "X-Caller-Id: alice" \
+curl -i -X POST http://localhost:5233/api/products -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"name":"Widget","price":9.99}'   # 201, ETag: W/"1"
-curl -i http://localhost:5233/api/products                                   # 200 with X-Total-Count and Link
+curl -i http://localhost:5233/api/products -H "Authorization: Bearer $TOKEN" # 200 with X-Total-Count and Link
+curl -i http://localhost:5233/api/products                                   # 401, a problem body
 ```
 
 The full request/response contract of every endpoint is in
@@ -189,8 +190,8 @@ pipeline throws for an outcome it expected to see.
 
 **Deliberately out of scope** (this is a pattern POC, not a production template):
 
-- **Real authentication.** `X-Admin` and `X-Caller-Id` request headers stand in for an identity;
-  see [Where the identity comes from](#where-the-identity-comes-from).
+- **An identity provider.** The API validates JWT bearer tokens but issues none (no login, no
+  refresh, no user store); see [Where the identity comes from](#where-the-identity-comes-from).
 - **API versioning, rate limiting, CORS.** None are configured. (Health checks are; see
   [Health checks and options](#health-checks-and-options).)
 - **Migrations and a production database.** The schema is created with `EnsureCreated` on SQLite.
@@ -342,29 +343,14 @@ An arm is just an expression of type `IActionResult`, so it can equally be hand-
 `switch` around it still has to cover every case.
 
 **3. Define your own extension member.** The extensions are C# 14 `extension` blocks, so a member
-over a case type (or over any other type, as `FromCallerHeaders` does over `ClaimsPrincipal`) is a
-new `extension` block in any static class. This is the repo's own static one; it needs nothing but
-public types:
+over a case type (or over any other type, such as `ClaimsPrincipal`) is a
+new `extension` block in any static class. A property over the caller's principal, say, needs
+nothing but public types:
 
 ```csharp
-extension(ClaimsPrincipal)
+extension(ClaimsPrincipal principal)
 {
-    public static ClaimsPrincipal FromCallerHeaders(string? adminHeader, string? callerIdHeader)
-    {
-        var identity = new ClaimsIdentity(authenticationType: "Header");
-
-        if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
-        {
-            identity.AddClaim(new Claim(ClaimTypes.Role, AuthorizationRoles.Administrator));
-        }
-
-        if (!string.IsNullOrEmpty(callerIdHeader))
-        {
-            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, callerIdHeader));
-        }
-
-        return new ClaimsPrincipal(identity);
-    }
+    public string? CallerId => principal.FindFirstValue(ClaimTypes.NameIdentifier);
 }
 ```
 
@@ -1047,12 +1033,18 @@ implement. Every non-2xx response is `application/problem+json` (`ValidationProb
 header; problem bodies also carry `traceId` (see
 [Trace id and unhandled exceptions](#trace-id-and-unhandled-exceptions)).
 
+**Authentication.** Every product endpoint requires a valid bearer token (a fallback authorization
+policy makes the whole host secure by default). A missing, expired, wrongly signed or wrongly
+addressed token is `401` (with a `WWW-Authenticate: Bearer` challenge), on every verb and before any
+row below applies; the table lists only what a valid caller can get. The middleware's `401` and `403`
+are problem bodies with a `traceId` like every other failure. Only `/health/live`, `/health/ready`
+and, in Development, `/openapi/v1.json` and `/scalar` are anonymous.
+
 Request headers the API reads:
 
 | Header | Used by | Meaning |
 | --- | --- | --- |
-| `X-Caller-Id` | `POST`, `PUT`, `PATCH` | Stand-in identity; becomes the new product's owner on `POST`, and must equal the owner on `PUT`/`PATCH` |
-| `X-Admin: true` | `DELETE` | Stand-in for the `Administrator` role |
+| `Authorization: Bearer <jwt>` | every product endpoint | The caller's identity: its `sub` becomes the new product's owner on `POST` and must equal the owner on `PUT`/`PATCH`; a `role` of `Administrator` is required on `DELETE` |
 | `If-Match: W/"n"` | `PUT`, `PATCH` (required); `DELETE` (optional) | The `ETag` of the version being changed |
 | `Content-Type: application/merge-patch+json` | `PATCH` | Required for `PATCH`; anything else is `415` |
 
@@ -1060,6 +1052,7 @@ Request headers the API reads:
 | --- | --- | --- | --- |
 | `POST /api/products` | `ProductDto` | `201` | `ETag: W/"1"`, `Location` header, product in the body |
 | | `ValidationErrors` | `400` | Per-field `errors` |
+| | `NotAuthorized` | `403` | The token is valid but has no `sub` claim, so there is no identity to own the product; answered before anything is sent to MediatR |
 | | `Conflict` | `409` | Another product has an equivalent name |
 | | `Error` | `500` | Only a commit that cannot fail this way (`COMMIT_CONCURRENCY_CONFLICT`) |
 | `GET /api/products/{id}` | `ProductDto` | `200` | `ETag` header |
@@ -1093,7 +1086,8 @@ Request headers the API reads:
 | | `Error` | `400` / `500` | `400` for `Error.ValidationFailureCode` (an empty GUID; this union has no `ValidationErrors` case), `500` otherwise |
 
 Outside the union: the framework itself answers a body that cannot be bound (`400`), an unmatched
-route (`404`, including a non-GUID `{id}`) and an unsupported media type (`415`) with the same
+route (`404`, including a non-GUID `{id}`; `401` first when the caller is anonymous, since the
+fallback policy covers unmatched requests too) and an unsupported media type (`415`) with the same
 problem shape and trace id, and `GlobalExceptionHandler` answers an unexpected exception with `500`.
 The `Error` to status table is configurable (`HttpMappingOptions.ErrorStatusCodes`). The OpenAPI
 document at `/openapi/v1.json` declares these responses, the `ETag` and paging response headers,
@@ -1215,11 +1209,11 @@ two layers that share one definition:
 
 ```bash
 # Create: 201 with ETag: W/"1"
-curl -i -X POST localhost:5233/api/products -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
+curl -i -X POST localhost:5233/api/products -H "Authorization: Bearer $ALICE" -H "Content-Type: application/json" \
   -d '{"name":"Widget","price":9.99}'
 
 # No If-Match: 428.  Stale If-Match: 412.  Current If-Match: 204 with ETag: W/"2"
-curl -i -X PUT localhost:5233/api/products/$ID -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' \
+curl -i -X PUT localhost:5233/api/products/$ID -H "Authorization: Bearer $ALICE" -H 'If-Match: W/"1"' \
   -H "Content-Type: application/json" -d '{"name":"Widget Pro","price":19.99}'
 ```
 
@@ -1231,7 +1225,7 @@ each member is either *absent* (leave that field alone) or *present* (replace it
 
 ```bash
 # Rename only; the price is untouched. 200 with the whole product and the new ETag: W/"2"
-curl -i -X PATCH localhost:5233/api/products/$ID -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' \
+curl -i -X PATCH localhost:5233/api/products/$ID -H "Authorization: Bearer $ALICE" -H 'If-Match: W/"1"' \
   -H "Content-Type: application/merge-patch+json" -d '{"name":"Widget Pro"}'
 ```
 
@@ -1297,7 +1291,7 @@ order. The request is bound from the query string, and every parameter is option
 | `nameContains` | Name contains this text, ignoring case and surrounding whitespace (max 200 characters)          |
 | `minPrice`     | Price at least this (inclusive, not negative)                                                  |
 | `maxPrice`     | Price at most this (inclusive, not negative, not below `minPrice`)                             |
-| `ownerId`      | Owned by exactly this caller id (the `X-Caller-Id` sent at creation; max 200 characters)         |
+| `ownerId`      | Owned by exactly this caller id (the `sub` of the token used at creation; max 200 characters)   |
 | `sort`         | Comma-separated keys in priority order; `name`, `price` or `createdAt`, `-` prefix for descending (`name,-price`). Default `name` |
 | `pageNumber`   | 1-based page number (default 1)                                                                |
 | `pageSize`     | 1 to 100 (default 10)                                                                          |
@@ -1562,57 +1556,95 @@ something reimplemented here.
 
 ### Where the identity comes from
 
-This POC has no real authentication — no login, no JWTs, no cookies. Instead,
-[`ProductsController`](src/MediatrUnionPoc.Api/Controllers/ProductsController.cs) builds a
-`ClaimsPrincipal` from two request headers:
+The API authenticates callers with **JWT bearer tokens** and issues none itself. The registration is
+`AddJwtAuthentication()` (`Api/Authentication/`), with `UseAuthentication()` ahead of
+`UseAuthorization()` in `Program.cs`. There is no header-based identity any more: the controller
+passes `User` (the token's principal) straight into each command, so the Application layer only ever
+sees a `ClaimsPrincipal`, never how it was built.
 
-- **`X-Admin`** — a value of `"true"` (case-insensitive) adds an `Administrator` role claim, read
-  by `DeleteAsync` to satisfy the `Administrator` policy.
-- **`X-Caller-Id`** — its value becomes the caller's `ClaimTypes.NameIdentifier` claim, read by
-  `CreateAsync` (to set the new product's owner) and `UpdateAsync` / `PatchAsync` (to prove ownership).
+**Secure by default.** A fallback authorization policy (`RequireAuthenticatedUser`) applies to every
+endpoint that does not say otherwise, `GET` included, and to unmatched routes. The anonymous
+exceptions are `/health/live`, `/health/ready` (`.AllowAnonymous()`) and, in Development only, the
+OpenAPI document and Scalar UI. The middleware's `401` (no or invalid token) and `403` are rendered by
+`ProblemDetailsAuthorizationResultHandler` as `application/problem+json` with the `traceId`. The
+Application layer's own `Administrator` and `ProductOwner` policies live in the same
+`AuthorizationOptions` (ASP.NET's `AddAuthorization` layers the fallback policy on top of the
+Application layer's `AddAuthorizationCore`), so one `IAuthorizationService` serves the middleware and
+the MediatR pipeline.
 
-The principal is built by a static extension member in `Api/Http`
-(`extension(ClaimsPrincipal) { public static ClaimsPrincipal FromCallerHeaders(...) }`), called as
-`ClaimsPrincipal.FromCallerHeaders(adminHeader, callerIdHeader)`.
+**Settings** (`Authentication:Jwt`, `JwtAuthOptions`, validated on start like every options class):
 
-Try both against a running instance (`dotnet run --project src/MediatrUnionPoc.Api`):
+| Setting | Meaning |
+| --- | --- |
+| `Issuer`, `Audience` | Required. A token's `iss` and `aud` must match (in `appsettings.json`) |
+| `SigningKey` | Required, at least 32 characters. HS256 shared secret. Only `appsettings.Development.json` carries one, labelled development-only; any other environment must supply it through user secrets, the `Authentication__Jwt__SigningKey` environment variable or a secret store, and a host without one **refuses to start** |
+| `ClockSkewSeconds` | Tolerance for `exp`/`nbf`, 0 to 300, default 30 |
+
+**Claims.** Tokens carry the standard `sub` and `role` claims. The Application layer authorizes
+against `ClaimTypes.NameIdentifier` and `ClaimTypes.Role`, and the JWT handler's inbound claim
+mapping (`MapInboundClaims`, `true`, which is also the .NET default and is set explicitly) renames
+`sub` and `role` to exactly those types, so the two agree with no Application-layer change. Turning
+the mapping off would leave `sub`/`role` unmapped and make every caller ownerless and role-less. An
+integration test with a real signed token proves both directions (`sub` becomes the owner,
+`role: Administrator` passes `DELETE`).
+
+- `sub` becomes the product owner on `POST` and is what `PUT`/`PATCH` compare with it.
+- A `role` claim (a string, or an array for several) of `Administrator` satisfies the `Administrator`
+  policy on `DELETE`. Role names are case-sensitive.
+- A validly signed token **without** `sub` is authenticated but has no identity to own anything: `POST`
+  answers `403` (the shared `NotAuthorized` case, no exception) and creates nothing; `PUT`/`PATCH`
+  fail the ownership check as before.
+
+**Minting a token for local use.** Any HS256 JWT signed with the configured key, with the right
+`iss` and `aud`, works. In Development, `dotnet user-jwts` works too, with no extra configuration:
+it writes its own issuer, audiences and signing key under `Authentication:Schemes:Bearer` (user
+secrets and `appsettings.Development.json`), the framework's bearer configuration binds that section,
+and this API's own key, issuer and audience are *added* to it rather than replacing it, so both kinds
+of token validate. Outside Development that section does not exist and only the configured key is
+trusted.
+
+```bash
+# A token minted with dotnet user-jwts (Development). Its "sub" is the --name.
+dotnet user-jwts create --project src/MediatrUnionPoc.Api --name alice
+dotnet user-jwts create --project src/MediatrUnionPoc.Api --name root --role Administrator
+ALICE=<the printed token>
+```
+
+Try both flows against a running instance (`dotnet run --project src/MediatrUnionPoc.Api`, with
+`ALICE`, `BOB` and `ADMIN` holding tokens whose `sub` is that person and, for `ADMIN`, `role` is
+`Administrator`):
 
 ```bash
 # Resource-based (UpdateProductCommand, ProductOwner policy)
 
-# Create as caller "alice" — she becomes the product's owner (201, ETag: W/"1")
+# Create as alice — she becomes the product's owner (201, ETag: W/"1")
 curl -i -X POST http://localhost:5233/api/products \
-  -H "X-Caller-Id: alice" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALICE" -H "Content-Type: application/json" \
   -d '{"name":"Widget","price":9.99}'
 
-# 403 Forbidden — "bob" didn't create this product
+# 403 Forbidden — bob didn't create this product
 curl -i -X PUT http://localhost:5233/api/products/<id> \
-  -H "X-Caller-Id: bob" -H 'If-Match: W/"1"' -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOB" -H 'If-Match: W/"1"' -H "Content-Type: application/json" \
   -d '{"name":"Widget v2","price":12.99}'
 
-# 204 No Content — "alice" owns this product
+# 204 No Content — alice owns this product
 curl -i -X PUT http://localhost:5233/api/products/<id> \
-  -H "X-Caller-Id: alice" -H 'If-Match: W/"1"' -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALICE" -H 'If-Match: W/"1"' -H "Content-Type: application/json" \
   -d '{"name":"Widget v2","price":12.99}'
 ```
 
 ```bash
 # Role-based (DeleteProductCommand, Administrator policy)
 
-# 403 Forbidden — no administrator identity
+# 401 Unauthorized — no token at all
 curl -i -X DELETE http://localhost:5233/api/products/<id>
 
-# 204 No Content — claims Administrator
-curl -i -X DELETE http://localhost:5233/api/products/<id> -H "X-Admin: true"
-```
+# 403 Forbidden — authenticated, but not an administrator
+curl -i -X DELETE http://localhost:5233/api/products/<id> -H "Authorization: Bearer $ALICE"
 
-> [!WARNING]
-> `X-Admin` and `X-Caller-Id` are stand-ins for real authentication, appropriate only for this
-> POC. A real deployment would replace `ClaimsPrincipal.FromCallerHeaders(...)` with `HttpContext.User` — populated
-> by an actual authentication scheme (cookies, JWT bearer, etc.) via `app.UseAuthentication()` —
-> and delete the header-reading code entirely. `AuthorizationBehavior`, `ResourceAuthorizationService`,
-> `IRequiresAuthorization`, and `IAuthorizable<TSelf>` wouldn't need to change at all: they only
-> ever see a `ClaimsPrincipal`, never how it was constructed.
+# 204 No Content — the token carries role Administrator
+curl -i -X DELETE http://localhost:5233/api/products/<id> -H "Authorization: Bearer $ADMIN"
+```
 
 ### Configuring role-based authorization for a new command
 
@@ -1891,7 +1923,7 @@ has its own README.
 | `MediatrUnionPoc.Domain.Tests` | `Money`, `ProductId`, `ProductVersion`, `Product`, `ProductNames`, `PagedResult`, `ProductSort`; no other project referenced | none |
 | `MediatrUnionPoc.Application.Tests` | Union mechanics, the pipeline behaviors and their registration order, every handler, validators, authorization | `IProductRepository` and `IUnitOfWork` substituted with NSubstitute |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | `EfCoreUnitOfWork` (commit, rollback, concurrency and unique-violation translation), `ProductRepository` including listing, converters, the EF model | real SQLite, an in-memory database on one kept-open connection per test |
-| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
+| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
 | `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions on the compiled assemblies (layering, only Infrastructure sees EF Core, only Api sees MVC) | none |
 
 There is no EF Core InMemory provider anywhere: runtime and tests both use SQLite, so transactions,

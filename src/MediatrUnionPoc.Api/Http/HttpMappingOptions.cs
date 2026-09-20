@@ -35,11 +35,12 @@ public sealed class HttpMappingOptions
     /// </summary>
     public bool IncludeTypeUris { get; set; } = true;
 
-    /// <summary>Status-to-<c>type</c>-URI table used when <see cref="IncludeTypeUris"/> is on; ships with the RFC references for 400, 403, 404, 409, 412, 428 and 500. Add entries for other statuses, or replace these.</summary>
+    /// <summary>Status-to-<c>type</c>-URI table used when <see cref="IncludeTypeUris"/> is on; ships with the RFC references for 400, 401, 403, 404, 409, 412, 428 and 500. Add entries for other statuses, or replace these.</summary>
     public IDictionary<int, string> TypeUris { get; } =
         new Dictionary<int, string>
         {
             [StatusCodes.Status400BadRequest] = "https://tools.ietf.org/html/rfc7231#section-6.5.1",
+            [StatusCodes.Status401Unauthorized] = "https://tools.ietf.org/html/rfc7235#section-3.1",
             [StatusCodes.Status403Forbidden] = "https://tools.ietf.org/html/rfc7231#section-6.5.3",
             [StatusCodes.Status404NotFound] = "https://tools.ietf.org/html/rfc7231#section-6.5.4",
             [StatusCodes.Status409Conflict] = "https://tools.ietf.org/html/rfc7231#section-6.5.8",

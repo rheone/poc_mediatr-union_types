@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -18,7 +19,7 @@ public sealed class TraceIdTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var response = await client.GetAsync("/api/products", CancellationToken.None);
@@ -36,7 +37,7 @@ public sealed class TraceIdTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var response = await client.GetAsync(
@@ -56,7 +57,7 @@ public sealed class TraceIdTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
         using var content = new StringContent(
             "{ not json",
             System.Text.Encoding.UTF8,
@@ -82,7 +83,7 @@ public sealed class TraceIdTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var response = await client.GetAsync("/no/such/route", CancellationToken.None);
@@ -100,7 +101,7 @@ public sealed class TraceIdTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
         using var content = new StringContent("x", System.Text.Encoding.UTF8, "text/plain");
 
         // Act
@@ -126,7 +127,7 @@ public sealed class TraceIdTests
         using var factory = baseFactory.WithWebHostBuilder(builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs))
         );
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var response = await client.GetAsync("/api/products", CancellationToken.None);

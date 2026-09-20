@@ -8,6 +8,15 @@ public static class ProductRequestMother
     /// <summary>The caller id of the canonical product owner.</summary>
     public const string OwnerId = "owner-1";
 
+    /// <summary>The caller id a test client presents when the test does not care who is calling.</summary>
+    public const string DefaultCallerId = "caller-1";
+
+    /// <summary>The caller id given to an administrator created only to be an administrator.</summary>
+    public const string AdminCallerId = "admin-1";
+
+    /// <summary>The role that allows deleting a product.</summary>
+    public const string AdministratorRole = "Administrator";
+
     /// <summary>The caller id of a caller who owns nothing the tests create.</summary>
     public const string OtherCallerId = "owner-2";
 

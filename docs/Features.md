@@ -65,7 +65,7 @@ null.
 | --- | --- | --- | --- | --- |
 | **Role-based** | `DELETE` requires the `Administrator` role, checked in the pipeline before validation | `IRequiresAuthorization`, `AdministratorAuthorizationHandler` | `Application/Common/Authorization/`, `AuthorizationBehavior` | Reusable gate: any command opts in by implementing one interface |
 | **Resource-based** | `PUT`/`PATCH` require the caller to own the product, checked in the handler once it is loaded | `ResourceAuthorizationService`, `OwnerAuthorizationHandler<TResource>` | `Features/Products/Common/ProductChangeExtensions.cs` | Ownership needs the loaded entity, so it cannot run earlier |
-| **Stand-in identity** | Identity comes from `X-Caller-Id` and `X-Admin` headers | `ClaimsPrincipal.FromCallerHeaders` | `Api/Http/ResultHttpExtensions.cs` | Lets the POC demonstrate authorization with no identity provider. **Not** real authentication; replaced by the plan |
+| **Real authentication** | JWT bearer tokens identify the caller: `sub` becomes the product owner, a `role` of `Administrator` allows `DELETE`. Every endpoint requires a caller (fallback policy) except health checks and, in Development, the OpenAPI and Scalar documents; the middleware's `401`/`403` are problem bodies with a `traceId` | `AddJwtAuthentication`, `JwtAuthOptions`, `RequireAuthenticatedUser` fallback policy, `ProblemDetailsAuthorizationResultHandler` | `Api/Authentication/` | Secure by default, and the Application layer still only sees a `ClaimsPrincipal`. A host with no signing key outside Development refuses to start |
 
 ### Quality and tooling
 
@@ -82,7 +82,6 @@ See [Hardening-Plan.md](Hardening-Plan.md) for scope, order and tests.
 
 | Feature | Intended mechanism | Why |
 | --- | --- | --- |
-| Real JWT authentication with a secure-by-default fallback policy | `AddJwtBearer`, `RequireAuthenticatedUser` | Replaces the spoofable header identity; every `GET` requires a caller |
 | Impersonation with a mandatory recorded reason | Role-gated token endpoint, `act` and marker claims | Support and admins can act as a user for testing, accountably, in every environment |
 | Separate audit stream | `IAuditLog` writing to its own Serilog JSON file | Who did what, and why, kept apart from diagnostic logs |
 | Serilog with enrichment | `Serilog.AspNetCore` with configured sinks and enrichers | Structured, searchable logs joined by `traceId` (Seq is deferred) |

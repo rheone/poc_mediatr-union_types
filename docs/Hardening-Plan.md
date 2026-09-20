@@ -46,6 +46,8 @@ is made to fail).
 
 ## Step 2: Real authentication, fallback policy and test identities
 
+Status: implemented.
+
 - Add `AddAuthentication().AddJwtBearer(...)` (options-bound) and `UseAuthentication()` before
   `UseAuthorization()`.
 - **Fallback policy** `RequireAuthenticatedUser`: every endpoint, including `GET`, requires a caller

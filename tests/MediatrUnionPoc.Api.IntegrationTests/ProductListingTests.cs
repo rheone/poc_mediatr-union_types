@@ -38,7 +38,7 @@ public sealed class ProductListingTests : IDisposable
                 services.AddSingleton<TimeProvider>(_clock);
             })
         );
-        _client = _factory.CreateClient();
+        _client = _factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
     }
 
     /// <inheritdoc/>
@@ -591,7 +591,7 @@ public sealed class ProductListingTests : IDisposable
         };
         if (ownerId is not null)
         {
-            request.Headers.Add("X-Caller-Id", ownerId);
+            request.AsUser(ownerId);
         }
 
         using var response = await _client.SendAsync(

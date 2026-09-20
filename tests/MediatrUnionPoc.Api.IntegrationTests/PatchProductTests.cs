@@ -25,7 +25,8 @@ public sealed class PatchProductTests : IDisposable
     private readonly HttpClient _client;
 
     /// <summary>Initializes a new instance of the <see cref="PatchProductTests"/> class with its own <see cref="HttpClient"/>.</summary>
-    public PatchProductTests() => _client = _factory.CreateClient();
+    public PatchProductTests() =>
+        _client = _factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
     /// <inheritdoc/>
     public void Dispose()
@@ -476,8 +477,7 @@ public sealed class PatchProductTests : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Post, ProductsUri)
         {
             Content = JsonContent.Create(new { name, price }),
-            Headers = { { ProductsController.CallerIdHeaderName, ProductRequestMother.OwnerId } },
-        };
+        }.AsUser(ProductRequestMother.OwnerId);
         using var response = await _client.SendAsync(request, CancellationToken.None);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProductDto>(CancellationToken.None))!;
@@ -498,7 +498,7 @@ public sealed class PatchProductTests : IDisposable
 
         if (callerId is not null)
         {
-            request.Headers.Add(ProductsController.CallerIdHeaderName, callerId);
+            request.AsUser(callerId);
         }
 
         if (ifMatch is not null)

@@ -1,3 +1,4 @@
+using MediatrUnionPoc.Api.Authentication;
 using MediatrUnionPoc.Api.Health;
 using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Api.OpenApi;
@@ -20,6 +21,7 @@ builder
 builder.Services.AddOpenApi(options =>
 {
     options.CreateSchemaReferenceId = OptionalSchemaTransformer.CreateSchemaReferenceId;
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
     options.AddSchemaTransformer<OptionalSchemaTransformer>();
     options.AddSchemaTransformer<ProductContractExampleTransformer>();
     options.AddOperationTransformer<ConsumesMediaTypeTransformer>();
@@ -34,6 +36,7 @@ builder.Services.AddResultHttpMapping();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 builder.Services.AddHealthEndpoints();
+builder.Services.AddJwtAuthentication();
 
 var app = builder.Build();
 
@@ -41,8 +44,9 @@ await app.Services.EnsureInfrastructureCreatedAsync();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference();
+    // The documents stay anonymous in Development so the UI can load before a token is entered.
+    app.MapOpenApi().AllowAnonymous();
+    app.MapScalarApiReference().AllowAnonymous();
 }
 
 app.UseMiddleware<TraceIdMiddleware>();
@@ -52,6 +56,8 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
 
 app.UseAuthorization();
 

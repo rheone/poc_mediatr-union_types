@@ -1,13 +1,21 @@
 @MediatrUnionPoc.Api_HostAddress = http://localhost:5233
 
+# Every product endpoint needs a bearer token. In Development, mint one with:
+#   dotnet user-jwts create --project src/MediatrUnionPoc.Api --name alice
+#   dotnet user-jwts create --project src/MediatrUnionPoc.Api --name root --role Administrator
+# and paste the printed tokens here. The token's "sub" is the caller (the owner of what it creates);
+# a "role" of Administrator is needed to delete.
+@token = <alice's token>
+@adminToken = <the administrator's token>
+
 GET {{MediatrUnionPoc.Api_HostAddress}}/openapi/v1.json
 Accept: application/json
 
 ###
 
-# Create: 201 with ETag: W/"1". X-Caller-Id becomes the owner.
+# Create: 201 with ETag: W/"1". The token's sub becomes the owner. 401 without a token.
 POST {{MediatrUnionPoc.Api_HostAddress}}/api/products
-X-Caller-Id: alice
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "name": "Widget", "price": 9.99 }
@@ -16,6 +24,7 @@ Content-Type: application/json
 
 # List: 200 with X-Total-Count and Link headers.
 GET {{MediatrUnionPoc.Api_HostAddress}}/api/products?sort=name,-price&pageSize=10
+Authorization: Bearer {{token}}
 Accept: application/json
 
 ###
@@ -24,13 +33,14 @@ Accept: application/json
 @id = 00000000-0000-0000-0000-000000000001
 
 GET {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
+Authorization: Bearer {{token}}
 Accept: application/json
 
 ###
 
 # Replace: 204 with the new ETag. If-Match is required (428 without it).
 PUT {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
-X-Caller-Id: alice
+Authorization: Bearer {{token}}
 If-Match: W/"1"
 Content-Type: application/json
 
@@ -40,7 +50,7 @@ Content-Type: application/json
 
 # Partial update (JSON Merge Patch): 200 with the product and the new ETag.
 PATCH {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
-X-Caller-Id: alice
+Authorization: Bearer {{token}}
 If-Match: W/"2"
 Content-Type: application/merge-patch+json
 
@@ -50,6 +60,6 @@ Content-Type: application/merge-patch+json
 
 # Delete: 204. Administrator only; If-Match is optional here.
 DELETE {{MediatrUnionPoc.Api_HostAddress}}/api/products/{{id}}
-X-Admin: true
+Authorization: Bearer {{adminToken}}
 
 ###

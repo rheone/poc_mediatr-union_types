@@ -1,5 +1,3 @@
-using System.Security.Claims;
-using MediatrUnionPoc.Application.Common.Authorization;
 using MediatrUnionPoc.Application.Common.Results;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
@@ -230,35 +228,6 @@ public static class ResultHttpExtensions
             problem.Type = OptionsOf(http).IncludeTypeUris ? problem.Type : null;
 
             return AsProblemResult(problem);
-        }
-    }
-
-    extension(ClaimsPrincipal)
-    {
-        /// <summary>
-        /// Builds the caller's principal from the POC's stand-in identity headers (there is no real
-        /// authentication): an <c>Administrator</c> role claim when <paramref name="adminHeader"/>
-        /// is <c>"true"</c> (case-insensitive), and a <see cref="ClaimTypes.NameIdentifier"/> claim
-        /// when <paramref name="callerIdHeader"/> is non-empty.
-        /// </summary>
-        /// <param name="adminHeader">The <c>X-Admin</c> header value, or <see langword="null"/> if absent.</param>
-        /// <param name="callerIdHeader">The <c>X-Caller-Id</c> header value, or <see langword="null"/> if absent.</param>
-        /// <returns>A principal; anonymous (no claims) when neither header is meaningful.</returns>
-        public static ClaimsPrincipal FromCallerHeaders(string? adminHeader, string? callerIdHeader)
-        {
-            var identity = new ClaimsIdentity(authenticationType: "Header");
-
-            if (string.Equals(adminHeader, "true", StringComparison.OrdinalIgnoreCase))
-            {
-                identity.AddClaim(new Claim(ClaimTypes.Role, AuthorizationRoles.Administrator));
-            }
-
-            if (!string.IsNullOrEmpty(callerIdHeader))
-            {
-                identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, callerIdHeader));
-            }
-
-            return new ClaimsPrincipal(identity);
         }
     }
 

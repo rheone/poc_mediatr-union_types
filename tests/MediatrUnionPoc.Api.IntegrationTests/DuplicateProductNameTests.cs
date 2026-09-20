@@ -25,7 +25,8 @@ public sealed class DuplicateProductNameTests : IDisposable
     private readonly HttpClient _client;
 
     /// <summary>Initializes a new instance of the <see cref="DuplicateProductNameTests"/> class with its own <see cref="HttpClient"/>.</summary>
-    public DuplicateProductNameTests() => _client = _factory.CreateClient();
+    public DuplicateProductNameTests() =>
+        _client = _factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
     /// <inheritdoc/>
     public void Dispose()
@@ -218,7 +219,7 @@ public sealed class DuplicateProductNameTests : IDisposable
 
         if (callerId is not null)
         {
-            request.Headers.Add(ProductsController.CallerIdHeaderName, callerId);
+            request.AsUser(callerId);
         }
 
         if (ifMatch is not null)

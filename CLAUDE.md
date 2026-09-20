@@ -162,6 +162,21 @@ a weak `ETag` (`W/"n"`). `PUT` and `PATCH` require `If-Match` (absent 428, malfo
 `DELETE` treats it as optional. `IfMatchHeader.Parse` (Api) classifies the header before any command is
 sent.
 
+**Authentication** (`Api/Authentication/`): real JWT bearer (`AddJwtAuthentication()`, HS256, `Authentication:Jwt`
+`Issuer`/`Audience`/`SigningKey`/`ClockSkewSeconds`, validated on start with an `[OptionsValidator]`), with
+`UseAuthentication()` before `UseAuthorization()`. A fallback policy `RequireAuthenticatedUser` makes every
+endpoint need a caller unless `.AllowAnonymous()` (health endpoints; in Development the OpenAPI and Scalar
+endpoints); the Application layer's `AddAuthorizationCore` policies and the Api's `AddAuthorization` share one
+`AuthorizationOptions`. Only `appsettings.Development.json` has a (development-only) signing key: any other
+environment must supply `Authentication:Jwt:SigningKey` or the host refuses to start. `MapInboundClaims` is
+deliberately `true` so `sub`/`role` reach the Application layer as `ClaimTypes.NameIdentifier`/`ClaimTypes.Role`;
+do not turn it off. Controllers pass `User` into commands; a token without `sub` cannot `POST` (403 through the
+`NotAuthorized` case, decided in the controller). `ProblemDetailsAuthorizationResultHandler` renders the
+middleware's 401/403 as problem bodies with the trace id. `dotnet user-jwts` tokens work in Development (the
+configuration adds to, not replaces, `Authentication:Schemes:Bearer`). Integration tests use a header-driven
+test scheme by default (`client.AsUser("alice", roles)`, `ProductsApiFactory`) and `ApiAuthentication.RealJwt`
+plus `TestData/JwtTestTokens` for real signed tokens.
+
 **Health checks and options** (`Api/Health/`): `GET /health/live` (no checks) and `GET /health/ready`
 (a `SELECT 1` round trip on `AppDbContext`, tag `ready`) are anonymous, plain-text, registered by
 `AddHealthEndpoints()` / `MapHealthEndpoints()`; paths come from the `HealthEndpoints` section. With

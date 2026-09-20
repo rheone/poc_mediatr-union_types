@@ -8,6 +8,18 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
 - `ProductsApiFactory.cs` — boots the real host with nothing substituted: with no
   `ConnectionStrings:Products` value each host gets its own private in-memory SQLite database (its
   schema created at startup), so tests using their own factory never see another test's data.
+- `ApiAuthentication.cs`, `TestAuthenticationHandler.cs`, `TestIdentityExtensions.cs` — how tests state
+  who is calling. By default the factory registers a header-driven test scheme as the default
+  authentication scheme, and `client.AsUser("alice", roles)` (or `request.AsUser(...)` for one request)
+  sets the identity; a plain client is anonymous. `new ProductsApiFactory(ApiAuthentication.RealJwt)`
+  leaves the production bearer scheme as the default instead. The fallback policy and the rest of the
+  pipeline are the real ones in both modes.
+- `AuthenticationTests.cs` — `401` on every verb with no credentials (problem body, `traceId`), the
+  middleware's `403` shape, anonymous health and OpenAPI, the `Bearer` scheme in the OpenAPI document,
+  the one coherent policy set, and options validation at start (no key outside Development).
+- `JwtBearerAuthenticationTests.cs` (with `TestData/JwtTestTokens.cs`) — real signed tokens: expired,
+  wrongly signed, wrongly addressed and malformed ones are `401`; `sub` becomes the owner and a `role`
+  claim of `Administrator` passes `DELETE`; a token with no `sub` cannot create.
 - `ProductsControllerTests.cs` — exercises the union-to-HTTP-status mapping each controller
   action's `switch` performs, end to end through routing and the real MediatR pipeline behaviors.
   A fresh `ProductsApiFactory` per test gives each test its own isolated database.
@@ -29,7 +41,7 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   `BlockingSender`).
 - `HealthEndpointTests.cs` — `/health/live` and `/health/ready`: `200` plain-text `Healthy`,
   readiness `503` when a `DbConnectionInterceptor` makes the database connection fail, liveness
-  unaffected, no identity headers needed, no JSON check details, configurable paths, and a
+  unaffected, no credentials needed, no JSON check details, configurable paths, and a
   malformed path failing options validation at host start.
 - `OptionalJsonConverterTests.cs` — `Optional<T>` binding.
 - `ListingOpenApiTests.cs`, `ConcurrencyOpenApiTests.cs`, `PatchOpenApiTests.cs`,

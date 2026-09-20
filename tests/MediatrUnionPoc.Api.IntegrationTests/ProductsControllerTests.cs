@@ -40,15 +40,20 @@ public sealed class ProductsControllerTests : IDisposable
     /// <summary>Initializes a new instance of the <see cref="ProductsControllerTests"/> class with its own <see cref="HttpClient"/>.</summary>
     public ProductsControllerTests()
     {
-        _client = _factory.CreateClient();
+        _client = _factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
     }
 
-    /// <summary>Gets the rows for <see cref="DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test"/>: an upper-case "TRUE" (the header is case-insensitive) is an administrator, "false" is not.</summary>
+    /// <summary>Gets the rows for <see cref="DeleteAsync_Role_ReturnsExpectedStatus_Test"/>: only the exact role "Administrator" (role names are case-sensitive) allows a delete.</summary>
     public static TheoryData<
         string,
         HttpStatusCode
-    > DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test_Data =>
-        new() { { "TRUE", HttpStatusCode.NoContent }, { "false", HttpStatusCode.Forbidden } };
+    > DeleteAsync_Role_ReturnsExpectedStatus_Test_Data =>
+        new()
+        {
+            { ProductRequestMother.AdministratorRole, HttpStatusCode.NoContent },
+            { "Support", HttpStatusCode.Forbidden },
+            { "administrator", HttpStatusCode.Forbidden },
+        };
 
     /// <summary>Gets the blank names for <see cref="CreateAsync_BlankName_Returns400FromValidator_Test"/>: empty, space, tab, newline.</summary>
     public static TheoryData<string> CreateAsync_BlankName_Returns400FromValidator_Test_Data =>
@@ -350,7 +355,11 @@ public sealed class ProductsControllerTests : IDisposable
         var uri = $"{ProductsUri}/{Guid.Empty}";
 
         // Act
-        using var response = await SendAsync(HttpMethod.Delete, uri, adminHeader: "true");
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            uri,
+            roles: [ProductRequestMother.AdministratorRole]
+        );
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -729,10 +738,10 @@ public sealed class ProductsControllerTests : IDisposable
         );
     }
 
-    /// <summary>Verifies an update with no caller identity at all returns 403, since an anonymous caller never matches any product's owner.</summary>
+    /// <summary>Verifies an update by an authenticated caller whose token has no subject returns 403, since such a caller never matches any product's owner.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task UpdateAsync_NoCallerIdHeader_Returns403_Test()
+    public async Task UpdateAsync_CallerWithoutSubject_Returns403_Test()
     {
         // Arrange
         var created = await CreateProductAsync(
@@ -745,6 +754,7 @@ public sealed class ProductsControllerTests : IDisposable
             HttpMethod.Put,
             $"{ProductsUri}/{created.Id.Value}",
             ProductRequestMother.WidgetPro(),
+            callerId: string.Empty,
             ifMatch: created.Version.ToETag()
         );
 
@@ -753,28 +763,69 @@ public sealed class ProductsControllerTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies an anonymous caller updating a product that was itself created without an owner
-    /// (an empty <see cref="Domain.Product.OwnerId"/>) still returns 403 — guards against a
-    /// regression where an absent caller claim and an unowned product's empty owner id could
-    /// compare equal and wrongly authorize.
+    /// Verifies creating as an authenticated caller whose token has no subject returns a 403 problem
+    /// (the <c>NotAuthorized</c> outcome) and creates nothing: there is no identity to record as the owner.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task UpdateAsync_UnownedProductAnonymousCaller_Returns403_Test()
+    public async Task CreateAsync_CallerWithoutSubject_Returns403AndCreatesNothing_Test()
     {
-        // Arrange
-        var created = await CreateProductAsync(ProductRequestMother.Widget());
-
         // Act
         using var response = await SendAsync(
+            HttpMethod.Post,
+            ProductsUri,
+            ProductRequestMother.Widget(),
+            callerId: string.Empty
+        );
+
+        // Assert
+        using var list = await _client.GetAsync(ProductsUri, CancellationToken.None);
+        var page = await list.Content.ReadFromJsonAsync<PagedResult<ProductDto>>(
+            CancellationToken.None
+        );
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode),
+            () =>
+                Assert.Equal(
+                    "application/problem+json",
+                    response.Content.Headers.ContentType?.MediaType
+                ),
+            () => Assert.Empty(page!.Items)
+        );
+    }
+
+    /// <summary>Verifies a created product is owned by the caller who created it: that caller may update it, the default caller may not.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Fact]
+    public async Task CreateAsync_AuthenticatedCaller_RecordsCallerAsOwner_Test()
+    {
+        // Arrange
+        var created = await CreateProductAsync(
+            ProductRequestMother.Widget(),
+            ProductRequestMother.OwnerId
+        );
+        var uri = $"{ProductsUri}/{created.Id.Value}";
+
+        // Act
+        using var byOwner = await SendAsync(
             HttpMethod.Put,
-            $"{ProductsUri}/{created.Id.Value}",
+            uri,
+            ProductRequestMother.WidgetPro(),
+            ProductRequestMother.OwnerId,
+            ifMatch: created.Version.ToETag()
+        );
+        using var byOther = await SendAsync(
+            HttpMethod.Put,
+            uri,
             ProductRequestMother.WidgetPro(),
             ifMatch: created.Version.ToETag()
         );
 
         // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Multiple(
+            () => Assert.Equal(HttpStatusCode.NoContent, byOwner.StatusCode),
+            () => Assert.Equal(HttpStatusCode.Forbidden, byOther.StatusCode)
+        );
     }
 
     /// <summary>Verifies an administrator's delete returns 204 and the product subsequently returns 404 from GetById.</summary>
@@ -787,7 +838,11 @@ public sealed class ProductsControllerTests : IDisposable
         var uri = $"{ProductsUri}/{created.Id.Value}";
 
         // Act
-        using var response = await SendAsync(HttpMethod.Delete, uri, adminHeader: "true");
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            uri,
+            roles: [ProductRequestMother.AdministratorRole]
+        );
 
         // Assert
         using var afterDelete = await _client.GetAsync(uri, CancellationToken.None);
@@ -820,7 +875,7 @@ public sealed class ProductsControllerTests : IDisposable
         using var response = await SendAsync(
             HttpMethod.Delete,
             uri,
-            adminHeader: "true",
+            roles: [ProductRequestMother.AdministratorRole],
             ifMatch: created.Version.ToETag()
         );
 
@@ -844,7 +899,7 @@ public sealed class ProductsControllerTests : IDisposable
         using var response = await SendAsync(
             HttpMethod.Delete,
             $"{ProductsUri}/{created.Id.Value}",
-            adminHeader: "true",
+            roles: [ProductRequestMother.AdministratorRole],
             ifMatch: created.Version.ToETag()
         );
 
@@ -864,7 +919,7 @@ public sealed class ProductsControllerTests : IDisposable
         using var response = await SendAsync(
             HttpMethod.Delete,
             $"{ProductsUri}/{created.Id.Value}",
-            adminHeader: "true",
+            roles: [ProductRequestMother.AdministratorRole],
             ifMatch: "garbage"
         );
 
@@ -881,16 +936,20 @@ public sealed class ProductsControllerTests : IDisposable
         var uri = $"{ProductsUri}/{ProductRequestMother.UnknownId}";
 
         // Act
-        using var response = await SendAsync(HttpMethod.Delete, uri, adminHeader: "true");
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            uri,
+            roles: [ProductRequestMother.AdministratorRole]
+        );
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Verifies a delete without the X-Admin header returns 403, and the product is left untouched.</summary>
+    /// <summary>Verifies a delete by a caller without the Administrator role returns 403, and the product is left untouched.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task DeleteAsync_NoAdminHeader_Returns403AndLeavesProductUntouched_Test()
+    public async Task DeleteAsync_NonAdministrator_Returns403AndLeavesProductUntouched_Test()
     {
         // Arrange
         var created = await CreateProductAsync(ProductRequestMother.Widget());
@@ -907,15 +966,15 @@ public sealed class ProductsControllerTests : IDisposable
         );
     }
 
-    /// <summary>Verifies the X-Admin header grants administrator rights only for a case-insensitive "true".</summary>
-    /// <param name="adminHeader">The X-Admin header value to present.</param>
+    /// <summary>Verifies only the exact Administrator role grants administrator rights.</summary>
+    /// <param name="role">The role the caller holds.</param>
     /// <param name="expectedStatus">The status the delete is expected to return.</param>
     /// <returns>A task representing the asynchronous test.</returns>
     // Auto Generated, verify expected behavior:
     [Theory]
-    [MemberData(nameof(DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test_Data))]
-    public async Task DeleteAsync_AdminHeaderValue_ReturnsExpectedStatus_Test(
-        string adminHeader,
+    [MemberData(nameof(DeleteAsync_Role_ReturnsExpectedStatus_Test_Data))]
+    public async Task DeleteAsync_Role_ReturnsExpectedStatus_Test(
+        string role,
         HttpStatusCode expectedStatus
     )
     {
@@ -926,7 +985,7 @@ public sealed class ProductsControllerTests : IDisposable
         using var response = await SendAsync(
             HttpMethod.Delete,
             $"{ProductsUri}/{created.Id.Value}",
-            adminHeader: adminHeader
+            roles: [role]
         );
 
         // Assert
@@ -961,7 +1020,7 @@ public sealed class ProductsControllerTests : IDisposable
 
     /// <summary>Creates a product through the API and returns the created representation.</summary>
     /// <param name="request">The create request to send.</param>
-    /// <param name="callerId">The <c>X-Caller-Id</c> header value to present, or <see langword="null"/> to create an unowned product.</param>
+    /// <param name="callerId">The caller to create the product as (it becomes the owner), or <see langword="null"/> for the client's default caller.</param>
     /// <returns>The created product.</returns>
     private async Task<ProductDto> CreateProductAsync(
         CreateProductRequest request,
@@ -973,12 +1032,12 @@ public sealed class ProductsControllerTests : IDisposable
         return dto!;
     }
 
-    /// <summary>Sends a request carrying whichever identity headers the API treats as proof of caller identity.</summary>
+    /// <summary>Sends a request from the given caller, or from the client's default caller when neither an id nor roles are given.</summary>
     /// <param name="method">The HTTP method.</param>
     /// <param name="requestUri">The request URI.</param>
     /// <param name="body">The JSON body, or <see langword="null"/> for none.</param>
-    /// <param name="callerId">The <c>X-Caller-Id</c> header value, or <see langword="null"/> to omit it.</param>
-    /// <param name="adminHeader">The <c>X-Admin</c> header value, or <see langword="null"/> to omit it.</param>
+    /// <param name="callerId">The caller's id, or <see langword="null"/> for the client's default caller (an empty string is an authenticated caller with no subject).</param>
+    /// <param name="roles">The roles the caller holds, or <see langword="null"/> for none; a caller with roles but no <paramref name="callerId"/> is the admin caller.</param>
     /// <param name="ifMatch">The raw <c>If-Match</c> header value, or <see langword="null"/> to omit it.</param>
     /// <returns>The response to the request.</returns>
     private async Task<HttpResponseMessage> SendAsync(
@@ -986,7 +1045,7 @@ public sealed class ProductsControllerTests : IDisposable
         string requestUri,
         object? body = null,
         string? callerId = null,
-        string? adminHeader = null,
+        string[]? roles = null,
         string? ifMatch = null
     )
     {
@@ -996,14 +1055,13 @@ public sealed class ProductsControllerTests : IDisposable
             request.Content = JsonContent.Create(body, body.GetType());
         }
 
-        if (callerId is not null)
+        if (roles is not null)
         {
-            request.Headers.Add(ProductsController.CallerIdHeaderName, callerId);
+            request.AsUser(callerId ?? ProductRequestMother.AdminCallerId, roles);
         }
-
-        if (adminHeader is not null)
+        else if (callerId is not null)
         {
-            request.Headers.Add(ProductsController.AdminHeaderName, adminHeader);
+            request.AsUser(callerId);
         }
 
         if (ifMatch is not null)

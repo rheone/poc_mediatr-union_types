@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Claims;
 using MediatrUnionPoc.Api.Http;
+using MediatrUnionPoc.Api.IntegrationTests.TestData;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Domain;
 using Microsoft.AspNetCore.Http;
@@ -34,7 +35,7 @@ public sealed class ResultHttpMappingTests
                 )
             )
         );
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClient().AsUser(ProductRequestMother.DefaultCallerId);
 
         // Act
         using var response = await client.GetAsync(
@@ -239,22 +240,6 @@ public sealed class ResultHttpMappingTests
         Assert.Multiple(
             () => Assert.Equal(400, problem.Status),
             () => Assert.Equal(["too short", "bad chars"], problem.Errors["Name"])
-        );
-    }
-
-    /// <summary>Verifies the caller principal grants the admin role and identity only from the matching headers.</summary>
-    [Fact]
-    public void FromCallerHeaders_AdminAndCallerId_BuildsClaims_Test()
-    {
-        // Arrange / Act
-        var principal = ClaimsPrincipal.FromCallerHeaders("TRUE", "alice");
-        var anonymous = ClaimsPrincipal.FromCallerHeaders("false", string.Empty);
-
-        // Assert
-        Assert.Multiple(
-            () => Assert.True(principal.IsInRole("Administrator")),
-            () => Assert.Equal("alice", principal.FindFirstValue(ClaimTypes.NameIdentifier)),
-            () => Assert.Empty(anonymous.Claims)
         );
     }
 

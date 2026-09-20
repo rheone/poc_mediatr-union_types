@@ -32,7 +32,7 @@ public sealed record PatchProductRequest(Optional<string?> Name, Optional<decima
 /// <param name="NameContains">Only products whose name contains this text, ignoring case and surrounding whitespace.</param>
 /// <param name="MinPrice">Only products priced at least this much (inclusive).</param>
 /// <param name="MaxPrice">Only products priced at most this much (inclusive); not below <c>minPrice</c>.</param>
-/// <param name="OwnerId">Only products owned by exactly this caller id (the value sent as <c>X-Caller-Id</c> when the product was created).</param>
+/// <param name="OwnerId">Only products owned by exactly this caller id (the <c>sub</c> claim of the token used to create the product).</param>
 /// <param name="Sort">
 /// Comma-separated sort keys in priority order, each a field (<c>name</c>, <c>price</c>,
 /// <c>createdAt</c>) optionally prefixed with <c>-</c> for descending, e.g. <c>name,-price</c>.
