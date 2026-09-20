@@ -268,10 +268,34 @@ Built into the framework (`Microsoft.AspNetCore.RateLimiting`).
 
 ## Step 8: Request timeouts and the OpenAPI contract check
 
+Status: implemented.
+
 - `AddRequestTimeouts` with a default policy from `RequestTimeoutOptions`; a timed-out request maps to
   a ProblemDetails `504`. The `CancellationToken` already flows through every handler.
 - OpenAPI generated at build time (`Microsoft.Extensions.ApiDescription.Server`); a test diffs it
   against a committed copy so an unintended contract change fails the build.
+
+**As built.**
+- **Timeouts.** `RequestTimeoutOptions` holds `Default` (30 s) and a shorter `Impersonation` (10 s) as `TimeSpan`s
+  from 1 ms to 10 minutes, so tests can use tens of milliseconds. The framework applies the default policy to every
+  endpoint that names none, which is the secure-by-default mechanism; health and the Development documents say
+  `DisableRequestTimeout()`. A timed-out request is `504` (`code` `REQUEST_TIMEOUT`) written by the policies'
+  `WriteTimeoutResponse`.
+- **Position:** after the impersonation audit and before the rate limiter, rather than before authentication. The
+  timeout middleware answers the cancellation itself, so the audit records the real `504` instead of the `500` it
+  records for an exception; the cost is that authentication (a local JWT validation with no I/O) is not under the
+  deadline, while the limiter's queue, authorization and the handler are.
+- **Cancellation.** `TransactionBehavior` now rolls back with `CancellationToken.None` and logs a requested
+  cancellation at Information: with the cancelled token the provider skipped the rollback and logged a transaction
+  `Error`, which the plan's "no Error for a timeout" requirement ruled out. The request line for a `504` is a
+  `Warning`, and the framework's own timeout line is filtered so a timeout is logged once.
+- **Impersonation mint.** Cancelled by the deadline it delivers no token and is audited as `Exception`. A slow
+  audit write is not interrupted (it ignores the token by design): the request outlives the deadline, the event is
+  written and the token is then delivered. Bounding a hung audit store needs a timeout on the store itself.
+- **Contract check.** The document is fetched from the test host rather than generated at build time, so no
+  `Microsoft.Extensions.ApiDescription.Server` package is needed. The comparison is over parsed, normalized trees
+  (sorted keys, LF inside strings, no `servers`) and the snapshot is regenerated deliberately with
+  `UPDATE_OPENAPI_SNAPSHOT=1`, which is refused when `CI` is set.
 
 ## Step 9: Dev container for agentic development
 

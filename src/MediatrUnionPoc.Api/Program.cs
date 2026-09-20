@@ -10,8 +10,10 @@ using MediatrUnionPoc.Api.Logging;
 using MediatrUnionPoc.Api.OpenApi;
 using MediatrUnionPoc.Api.Proxies;
 using MediatrUnionPoc.Api.RateLimiting;
+using MediatrUnionPoc.Api.RequestTimeouts;
 using MediatrUnionPoc.Application;
 using MediatrUnionPoc.Infrastructure;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -61,6 +63,7 @@ builder.Services.AddImpersonation();
 builder.Services.AddAudit();
 builder.Services.AddApiForwardedHeaders();
 builder.Services.AddApiRateLimiting();
+builder.Services.AddApiRequestTimeouts();
 
 var app = builder.Build();
 
@@ -69,14 +72,15 @@ await app.Services.EnsureInfrastructureCreatedAsync();
 if (app.Environment.IsDevelopment())
 {
     // The documents stay anonymous in Development so the UI can load before a token is entered.
-    app.MapOpenApi().AllowAnonymous().DisableRateLimiting();
+    app.MapOpenApi().AllowAnonymous().DisableRateLimiting().DisableRequestTimeout();
 
     // One entry per API version, so the UI's document picker lists /openapi/v1.json, /openapi/v2.json, ...
     app.MapScalarApiReference(options =>
             options.AddDocuments(app.DescribeApiVersions().Select(version => version.GroupName))
         )
         .AllowAnonymous()
-        .DisableRateLimiting();
+        .DisableRateLimiting()
+        .DisableRequestTimeout();
 }
 
 // First: with trusted proxies configured, everything after it (rate limiting, request logging, the
@@ -107,6 +111,12 @@ app.UseUserLogContext();
 // After authentication (it reads the principal) and before authorization, so a 403 an
 // impersonated caller receives is recorded too.
 app.UseImpersonationAudit();
+
+// Inside the impersonation audit (so a timed-out impersonated request is recorded with the 504 it was
+// answered, not the 500 of a cancelled one) and outside the rate limiter, authorization and the action,
+// so the budget covers a queued rate-limit wait and the handler. The endpoint is resolved by now, which
+// is what selects the policy: every endpoint gets the default unless it names one or opts out.
+app.UseApiRequestTimeouts();
 
 // After authentication (the caller is the partition), CORS (a preflight is answered there and
 // neither spends nor is refused by a budget) and the impersonation audit (a request refused with a

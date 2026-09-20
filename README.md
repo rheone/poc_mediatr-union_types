@@ -66,6 +66,8 @@ Details below.
 - [Audit stream: a separate record of security-relevant actions](#audit-stream-a-separate-record-of-security-relevant-actions)
 - [CORS: letting a browser client call the API](#cors-letting-a-browser-client-call-the-api)
 - [Rate limiting: a budget per caller](#rate-limiting-a-budget-per-caller)
+- [Request timeouts: a deadline per request](#request-timeouts-a-deadline-per-request)
+- [OpenAPI contract check: no accidental drift](#openapi-contract-check-no-accidental-drift)
 - [Worked example: `UpdateProductCommand`, case by case](#worked-example-updateproductcommand-case-by-case)
 - [Extending the pattern: syncing a search index](#extending-the-pattern-syncing-a-search-index)
 - [Speculative shared case types for a larger API](#speculative-shared-case-types-for-a-larger-api)
@@ -987,8 +989,9 @@ flowchart TD
 
 Before the controller runs, the request passes the host's middleware, in this order: forwarded headers (only
 with trusted proxies), trace id, request logging, exception handler, status-code pages, HTTPS redirection, CORS,
-authentication, user log context, impersonation audit, rate limiter, authorization. Each is explained where it
+authentication, user log context, impersonation audit, request timeout, rate limiter, authorization. Each is explained where it
 is introduced ([CORS](#cors-letting-a-browser-client-call-the-api),
+[Request timeouts](#request-timeouts-a-deadline-per-request),
 [Rate limiting](#rate-limiting-a-budget-per-caller)); the diagram above starts after them.
 
 Only the last "Controller switches on the union" step is HTTP-aware — everything above it deals
@@ -1071,6 +1074,11 @@ can also answer `429 Too Many Requests` once the caller has spent its budget: a 
 after authentication and before authorization, so it is not a union case and is not repeated per row; see
 [Rate limiting](#rate-limiting-a-budget-per-caller).
 
+**Request timeouts.** Likewise every endpoint of the table (again all but the health probes and the Development
+documents) can answer `504 Gateway Timeout` when the request outlives its deadline: a problem body with `code`
+`REQUEST_TIMEOUT` and the `traceId`. It comes from the timeout middleware, not from a union, and is not repeated
+per row; see [Request timeouts](#request-timeouts-a-deadline-per-request).
+
 Request headers the API reads:
 
 | Header | Used by | Meaning |
@@ -1126,7 +1134,7 @@ Outside the union: the framework itself answers a body that cannot be bound (`40
 route (`404`, including a non-GUID `{id}` and an API version this host does not serve; `401` first
 when the caller is anonymous, since the fallback policy covers unmatched requests too) and an
 unsupported media type (`415`) with the same problem shape and trace id, `GlobalExceptionHandler`
-answers an unexpected exception with `500`, and the rate limiter answers `429`.
+answers an unexpected exception with `500`, the rate limiter answers `429` and the timeout middleware answers `504`.
 The `Error` to status table is configurable (`HttpMappingOptions.ErrorStatusCodes`). The OpenAPI
 document at `/openapi/v1.json` declares these responses, the `ETag` and paging response headers,
 and example bodies.
@@ -1244,8 +1252,8 @@ That returns the request line and every log event written while it ran, includin
 
 ## Health checks and options
 
-Two anonymous probe endpoints, mapped with `.AllowAnonymous().DisableRateLimiting()` (a probe must never be
-refused) and answering the framework's default
+Two anonymous probe endpoints, mapped with `.AllowAnonymous().DisableRateLimiting().DisableRequestTimeout()` (a probe must never be
+refused or given a deadline of its own) and answering the framework's default
 plain-text status only (`Healthy`, `Degraded` or `Unhealthy`; never a JSON body of check details):
 
 | Endpoint | Runs | Answers |
@@ -2132,7 +2140,7 @@ this table and the tables above name every default):
 ```text
 forwarded headers (only with trusted proxies) -> routing (implicit) -> TraceIdMiddleware
   -> Serilog request logging -> exception handler -> status-code pages -> HTTPS redirection -> CORS
-  -> authentication -> user log context -> impersonation audit -> rate limiter -> authorization -> endpoint
+  -> authentication -> user log context -> impersonation audit -> request timeout -> rate limiter -> authorization -> endpoint
 ```
 
 CORS runs after routing and before authentication (and before the rate limiter, which a preflight therefore
@@ -2252,7 +2260,7 @@ non-controller endpoint that should be limited needs `.RequireRateLimiting(...)`
 ```text
 forwarded headers (only with trusted proxies) -> routing (implicit) -> TraceIdMiddleware
   -> Serilog request logging -> exception handler -> status-code pages -> HTTPS redirection -> CORS
-  -> authentication -> user log context -> impersonation audit -> rate limiter -> authorization -> endpoint
+  -> authentication -> user log context -> impersonation audit -> request timeout -> rate limiter -> authorization -> endpoint
 ```
 
 - After **authentication**, because the partition is the caller and the principal must exist.
@@ -2264,6 +2272,8 @@ forwarded headers (only with trusted proxies) -> routing (implicit) -> TraceIdMi
   budget: an attacker guessing tokens is limited too.
 - After the **impersonation audit**, so a request made under an impersonation token that the limiter refuses is
   still recorded (as a `429`) against the real actor.
+- After the **request timeout**, so a request waiting in the limiter's queue (`QueueLimit` above 0) is bounded by the
+  deadline too.
 
 ### The `429` response
 
@@ -2328,6 +2338,192 @@ share one address and one budget. `ForwardedHeaders:TrustedProxies` (`ApiForward
 - **Anonymous callers behind one NAT share a budget**, and so do all of them when the proxy is not trusted (see
   above): configure the proxy.
 - **Memory:** a partition exists per caller seen; the framework discards a fully replenished, idle partition.
+
+## Request timeouts: a deadline per request
+
+Every request has a deadline. When it passes, the request's `HttpContext.RequestAborted` token is cancelled, the
+handler's `CancellationToken` (which already flows from the controller through every MediatR behavior, handler
+and EF Core call) stops what it is doing, and the caller is answered `504 Gateway Timeout`. The mechanism is the
+framework's own (`Microsoft.AspNetCore.Http.Timeouts`, in the shared framework; no package). It is on by default
+and bounded by default: the deadlines below apply with no configuration at all. Registration and placement live
+in `Api/RequestTimeouts/` (`AddApiRequestTimeouts()`, `UseApiRequestTimeouts()`), so `Program.cs` stays a list of
+calls.
+
+### Options
+
+`RequestTimeoutOptions` (section `RequestTimeouts`) holds one deadline per policy, as a `TimeSpan`
+(`hh:mm:ss`, or `hh:mm:ss.fff`).
+
+| Setting | Default | Applies to |
+| --- | --- | --- |
+| `RequestTimeouts:Default` | `00:00:30` | Every endpoint that names no policy and does not opt out |
+| `RequestTimeouts:Impersonation` | `00:00:10` | `POST /api/v1/impersonation/tokens` |
+
+Each value must be from one millisecond to ten minutes (`[TimeoutRange]`), validated when the host starts
+(`[OptionsValidator]`), so a zero, negative or absurd value stops startup. The defaults are the same in code and in
+`appsettings.json`; a test checks that, and that this table lists them. Override per environment, for example
+`RequestTimeouts__Default=00:01:00`. Sub-second values exist so tests can use tens of milliseconds; they are never
+sensible in production. Like the rate limits, the values are read once through `IOptions`: a change takes a
+restart.
+
+**Why a separate, shorter policy for minting a token.** The endpoint does one signature and one audit append, so
+a healthy call takes milliseconds. A stalled audit store or key provider should fail that endpoint fast rather than
+hold connections of the most sensitive endpoint open for the whole default. Nothing else is different about it.
+
+### Every endpoint is covered unless it says otherwise
+
+- The framework applies the default policy to every endpoint that carries no `[RequestTimeout("policy")]` and no
+  `[DisableRequestTimeout]`, so an action added later with no attribute is covered without anyone remembering to
+  do anything. A named policy always wins over the default.
+- **Exempt:** `/health/live` and `/health/ready` (the orchestrator owns a probe's deadline, and a `504` from the API
+  would misreport a slow dependency as the probe's own failure) and, in Development, the OpenAPI and Scalar
+  endpoints (documents are generated on first request and are not part of the API's traffic). Each says
+  `DisableRequestTimeout()` where it is mapped, so an exemption is always visible in the code.
+- A test walks every endpoint the host maps and fails if a controller action is exempt, if any action other than
+  the token endpoint names a policy, or if an exempt endpoint is not one of the operational ones above; another
+  adds a throwaway controller with an unannotated action, and one that names a policy, and proves the first is
+  timed out and the second uses its own deadline.
+
+**Exempting a future endpoint.** Say so where it is declared (`[DisableRequestTimeout]` on the action, or
+`.DisableRequestTimeout()` on a mapped endpoint) and add its route prefix to the operational list in
+`EveryExemptEndpoint_IsOperational_Test`. An endpoint that legitimately needs longer (an export, say) should get
+its own named policy rather than an exemption.
+
+### Where it sits in the pipeline
+
+```text
+forwarded headers (only with trusted proxies) -> routing (implicit) -> TraceIdMiddleware
+  -> Serilog request logging -> exception handler -> status-code pages -> HTTPS redirection -> CORS
+  -> authentication -> user log context -> impersonation audit -> request timeout -> rate limiter
+  -> authorization -> endpoint
+```
+
+- After **routing**, because the policy is chosen from the resolved endpoint's metadata.
+- Inside the **exception handler** and request logging, so the `504` is the status they see and report.
+- After **CORS**, so a preflight (answered there, instantly) never meets a timer.
+- After the **impersonation audit**, so the audit records the real `504` of a timed-out impersonated request. The
+  timeout middleware turns the cancellation into the `504` itself; were it outside the audit, the audit would see
+  the cancellation as an exception and record `500`.
+- Before the **rate limiter**, **authorization** and the action, so the deadline covers a request waiting in the
+  limiter's queue (`QueueLimit` above 0), the authorization policies and the handler. It starts after
+  **authentication**, which validates a JWT locally with no I/O and so cannot stall.
+
+### The `504` response
+
+```http
+HTTP/1.1 504 Gateway Timeout
+Content-Type: application/problem+json
+X-Trace-Id: 4bf92f3577b34da6a3ce929d0e0e4736
+
+{
+  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.5",
+  "title": "Gateway Timeout",
+  "status": 504,
+  "detail": "The request did not complete in time and was cancelled.",
+  "code": "REQUEST_TIMEOUT",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736"
+}
+```
+
+It is a problem body like every other non-2xx response: `traceId` and `X-Trace-Id` agree, `type` comes from
+`HttpMappingOptions.TypeUris`, and `code` is the stable member a client matches on. It is written by
+`RequestTimeoutResponseWriter`, the policies' `WriteTimeoutResponse`, and is declared on every operation of the
+OpenAPI document with an example. A timeout is logged once at `Warning` (`RequestTimedOut`, event id 1400); the
+framework's own duplicate line is filtered out (`Microsoft.AspNetCore.Http.Timeouts` is at `Error`), and the
+request line for the `504` is a `Warning` too. Nothing is logged at `Error` and `GlobalExceptionHandler` never
+sees it.
+
+**The status is `504`, not `408`.** `408 Request Timeout` says the client was too slow sending the request;
+here the server ran out of time doing the work, so a client that retries an idempotent request is doing the right
+thing and one that retries a `POST` should check the resource first.
+
+### Cancellation: what is and is not interrupted
+
+- **The timeout is cooperative.** It cancels a token; work that honours the token (every handler and EF Core
+  call here) stops, and work that ignores it keeps running. A handler that never observes its token is not
+  interrupted, and the response is whatever it eventually produces.
+- **Timeout versus client abort.** The timeout middleware answers the cancellation only when its own timer fired.
+  A client that hangs up cancels the original token instead, and that is still swallowed silently (no `504`, no
+  body, no `Error` line) exactly as before; a test proves both, side by side.
+- **A change may have happened.** A `504` on `POST`, `PUT`, `PATCH` or `DELETE` means the request was cancelled,
+  not that nothing changed: a transactional command cancelled before its commit is rolled back (a test proves a
+  `POST` cancelled inside its transaction creates nothing), but a request cancelled after its commit has still
+  committed. The `If-Match` precondition makes a retry of `PUT`/`PATCH`/`DELETE` safe.
+- **Rollback and logging on cancellation.** `TransactionBehavior` rolls back with `CancellationToken.None`: the
+  path runs because the request is cancelled, and a rollback given the cancelled token would be skipped by the
+  provider and reported by it as a transaction error. It logs the cancellation at `Information`
+  (`... was cancelled; rolling back transaction`), not `Error`; any other exception is still an `Error`. The same
+  holds for a client that hangs up.
+- **Audit.** For an auditable command cancelled by the timeout, `AuditBehavior` sees the pipeline throw and records
+  one event with outcome `Exception` (best effort), then rethrows; the timeout middleware answers `504`. The
+  audit write itself deliberately ignores the request's token (a disconnecting client must not cost a committed
+  action its record), so the timeout cannot interrupt it either.
+- **A timed-out impersonation mint delivers no token.** If the pipeline is cancelled before the command returns,
+  the exception propagates, no response body is built, and the attempt is audited as `Exception`; a test asserts a
+  `504`, no `token` member anywhere in the body and exactly one audit event. The exception is the pipeline
+  cancellation itself, so this holds wherever inside the pipeline the deadline lands.
+- **A slow audit write does not turn a finished mint into a `504`.** If the token was already minted and the
+  *audit write* is what is slow, nothing interrupts the request (the write ignores the token and the timeout only
+  cancels a token): it runs past its deadline, the event is written, and only then is the token returned with a
+  `200`. Fail-closed still holds (no token without its event), and a test asserts that order. What the deadline
+  cannot do is bound a hung audit store: that needs a timeout on the store itself.
+- **Middleware after the timeout that catches `OperationCanceledException` itself** would hide the cancellation
+  from the timeout middleware; none does today.
+
+### Debugger caveat
+
+The framework's timeout middleware does nothing while a debugger is attached, so the deadlines never fire in a
+debug session and the timeout tests, which assume no debugger, fail if run under one. Run them with
+`dotnet test`, not with the debugger attached.
+
+## OpenAPI contract check: no accidental drift
+
+The OpenAPI document is the API's public contract, and it is generated from code, so a change to a controller, a
+`ProducesResponseType`, a DTO or a transformer can change it without anyone meaning to. A test compares the
+served document with a committed snapshot, so an unintended change fails the build and an intended one is
+visible in the same commit's diff.
+
+### How it works
+
+- The snapshot is `tests/MediatrUnionPoc.Api.IntegrationTests/Contracts/openapi.v1.json`: the `v1` document
+  (versioned paths only; the transitional unversioned alias is not in the contract).
+- `OpenApiContractTests` boots the real host (Development, anonymous, exactly as `/openapi/v1.json` is served to
+  the UI), fetches the document and normalizes it: every object's keys in ordinal order, every line ending inside a
+  string turned into LF (documentation text carries the line endings of the source files it was compiled from,
+  which differ between checkouts), and the `servers` member removed (the test host's address is a property of the
+  machine). It compares the result with the snapshot as parsed trees, so line endings and key order in the file on
+  disk can never cause a false alarm.
+- The test-host approach was chosen over generating the document at build time with
+  `Microsoft.Extensions.ApiDescription.Server`: it needs no new package, no build step or extra project, and it
+  checks exactly the document a client receives, transformers and API-versioning integration included.
+- Other tests assert the document holds versioned paths only, that neither it nor the snapshot contains a
+  signing key, a bearer token or a local path, and that the snapshot file is already in canonical form.
+
+### When it fails
+
+The failure message says what changed, not just that something did: a count of added, removed and changed
+locations, the operations added or removed, the first 25 differences as readable paths
+(`+ paths['/api/v1/widgets'].get`, `- ....responses.404 (was ...)`,
+`~ ....properties.price.type: "number" -> "string"`), and the exact command to regenerate the snapshot.
+`OpenApiContractComparerTests` proves against a mutated copy of the real document that an added path, a removed
+response code and a changed schema property are each detected.
+
+### Updating the snapshot deliberately
+
+When the change is intended, regenerate the file, read its diff and commit it with the code change:
+
+```bash
+UPDATE_OPENAPI_SNAPSHOT=1 dotnet test tests/MediatrUnionPoc.Api.IntegrationTests --filter "FullyQualifiedName~OpenApiContractTests"
+```
+
+```powershell
+$env:UPDATE_OPENAPI_SNAPSHOT=1; dotnet test tests/MediatrUnionPoc.Api.IntegrationTests --filter "FullyQualifiedName~OpenApiContractTests"; Remove-Item Env:UPDATE_OPENAPI_SNAPSHOT
+```
+
+- Rewriting happens only when `UPDATE_OPENAPI_SNAPSHOT` is `1` or `true`; it is never on by default.
+- It is refused when the `CI` variable is set (the test fails instead), so a pipeline can never rewrite the
+  contract it exists to check. CI runs plain `dotnet test`, which needs no setup.
+- A second run of the update writes a byte-identical file, and a plain run then passes.
 
 ## Worked example: `UpdateProductCommand`, case by case
 
@@ -2551,7 +2747,7 @@ has its own README.
 | `MediatrUnionPoc.Domain.Tests` | `Money`, `ProductId`, `ProductVersion`, `Product`, `ProductNames`, `PagedResult`, `ProductSort`; no other project referenced | none |
 | `MediatrUnionPoc.Application.Tests` | Union mechanics, the pipeline behaviors and their registration order, every handler, validators, authorization, the audit behavior and event format | `IProductRepository` and `IUnitOfWork` substituted with NSubstitute |
 | `MediatrUnionPoc.Infrastructure.IntegrationTests` | `EfCoreUnitOfWork` (commit, rollback, concurrency and unique-violation translation), `ProductRepository` including listing, converters, the EF model | real SQLite, an in-memory database on one kept-open connection per test |
-| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), impersonation (roles, escalation, chaining, keys, expiry, off switch, no token in logs), rate limiting (the `429` shape, per-user and per-address budgets, the real actor behind an impersonated token, secure by default, preflights and health never limited, trusted proxies), the audit stream (files, events, fail-closed and best-effort), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
+| `MediatrUnionPoc.Api.IntegrationTests` | The real host through `WebApplicationFactory` over actual HTTP: status mapping, authentication (a header-driven test scheme by default, real signed JWTs in dedicated tests), impersonation (roles, escalation, chaining, keys, expiry, off switch, no token in logs), rate limiting (the `429` shape, per-user and per-address budgets, the real actor behind an impersonated token, secure by default, preflights and health never limited, trusted proxies), request timeouts (the `504` shape, secure by default, exempt endpoints, client abort versus timeout, a cancelled impersonation mint and a slow audit write), the OpenAPI contract check (a committed `v1` snapshot and its comparer), the audit stream (files, events, fail-closed and best-effort), `ETag`/`If-Match`, `PATCH`, listing headers, trace id, exception handler, OpenAPI | real SQLite, a private in-memory database per host |
 | `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions on the compiled assemblies (layering, only Infrastructure sees EF Core, only Api sees MVC) | none |
 
 There is no EF Core InMemory provider anywhere: runtime and tests both use SQLite, so transactions,

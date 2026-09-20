@@ -119,6 +119,13 @@ public static class LoggingExtensions
             return LogEventLevel.Information;
         }
 
+        // A request the timeout middleware answered 504 is a handled outcome, logged once at Warning by
+        // RequestTimeoutResponseWriter; its request line is not a second, Error-level, entry.
+        if (http.Response.StatusCode == StatusCodes.Status504GatewayTimeout)
+        {
+            return LogEventLevel.Warning;
+        }
+
         return http.Features.Get<IExceptionHandlerFeature>() is null
             ? LogEventLevel.Error
             : LogEventLevel.Warning;

@@ -241,10 +241,27 @@ another, and only an explicit `DisableRateLimiting()` exempts (health, Developme
 walks every endpoint to enforce it. The partition (`RateLimitCaller`) is `user:<sub>`, the real `act` actor
 for an impersonated token, else `ip:<address>`. Middleware order: forwarded headers (only with
 `ForwardedHeaders:TrustedProxies`), trace id, request logging, exception handler, status-code pages, HTTPS
-redirection, CORS, authentication, user log context, impersonation audit, rate limiter, authorization,
-endpoints. `RateLimitRejectionHandler` writes the `429` problem (`code` `RATE_LIMITED`, `Retry-After`) and,
+redirection, CORS, authentication, user log context, impersonation audit, request timeout, rate limiter,
+authorization, endpoints. `RateLimitRejectionHandler` writes the `429` problem (`code` `RATE_LIMITED`, `Retry-After`) and,
 for `Impersonation` only, a best-effort `RateLimited` audit event. The default test host uses maximal limits;
 rate-limit tests use `factory.WithLimits(...)`. See README "Rate limiting".
+
+**Request timeouts** (`Api/RequestTimeouts/`): the framework's `Microsoft.AspNetCore.Http.Timeouts`, options
+`RequestTimeoutOptions` (section `RequestTimeouts`: `Default` 30 s, `Impersonation` 10 s; `TimeSpan`s, 1 ms to
+10 min, read once). The default policy covers every endpoint that names none and does not opt out; only health
+and the Development OpenAPI/Scalar say `DisableRequestTimeout()`; the token endpoint has `[RequestTimeout("Impersonation")]`.
+`UseApiRequestTimeouts()` sits after the impersonation audit and before the rate limiter (so the audit records the
+real 504). A timeout is `504` `application/problem+json`, `code` `REQUEST_TIMEOUT` (`RequestTimeoutResponseWriter`,
+event 1400); a client abort is still swallowed silently. `TransactionBehavior` rolls back with
+`CancellationToken.None` and logs a requested cancellation at Information. The middleware is a no-op under a
+debugger. The default test host uses a 10 minute timeout; timeout tests use `factory.WithTimeouts(...)`. See README
+"Request timeouts".
+
+**OpenAPI contract check**: `OpenApiContractTests` compares the served `/openapi/v1.json` (normalized:
+sorted keys, LF, no `servers`) with the committed `tests/MediatrUnionPoc.Api.IntegrationTests/Contracts/openapi.v1.json`.
+A deliberate contract change regenerates it with `UPDATE_OPENAPI_SNAPSHOT=1 dotnet test ... --filter
+"FullyQualifiedName~OpenApiContractTests"` (refused when `CI` is set) and commits the diff. See README "OpenAPI
+contract check".
 
 **Trace id and unhandled exceptions** (`Api/Http/`): `HttpContext.TraceId` (extension member; W3C
 `Activity.Current` trace id, falling back to `HttpContext.TraceIdentifier`) is the one accessor. It

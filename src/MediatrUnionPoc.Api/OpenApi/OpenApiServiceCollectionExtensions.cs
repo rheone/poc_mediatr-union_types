@@ -46,6 +46,7 @@ public static class OpenApiServiceCollectionExtensions
                 options.AddOperationTransformer<PagingResponseHeaderTransformer>();
                 options.AddOperationTransformer<PreconditionProblemExampleTransformer>();
                 options.AddOperationTransformer<RateLimitResponseTransformer>();
+                options.AddOperationTransformer<RequestTimeoutResponseTransformer>();
             }
         );
     }

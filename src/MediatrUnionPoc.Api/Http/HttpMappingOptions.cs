@@ -35,7 +35,7 @@ public sealed class HttpMappingOptions
     /// </summary>
     public bool IncludeTypeUris { get; set; } = true;
 
-    /// <summary>Status-to-<c>type</c>-URI table used when <see cref="IncludeTypeUris"/> is on; ships with the RFC references for 400, 401, 403, 404, 409, 412, 428, 429 and 500. Add entries for other statuses, or replace these.</summary>
+    /// <summary>Status-to-<c>type</c>-URI table used when <see cref="IncludeTypeUris"/> is on; ships with the RFC references for 400, 401, 403, 404, 409, 412, 428, 429, 500 and 504. Add entries for other statuses, or replace these.</summary>
     public IDictionary<int, string> TypeUris { get; } =
         new Dictionary<int, string>
         {
@@ -52,6 +52,8 @@ public sealed class HttpMappingOptions
                 "https://tools.ietf.org/html/rfc6585#section-4",
             [StatusCodes.Status500InternalServerError] =
                 "https://tools.ietf.org/html/rfc7231#section-6.6.1",
+            [StatusCodes.Status504GatewayTimeout] =
+                "https://tools.ietf.org/html/rfc7231#section-6.6.5",
         };
 
     /// <summary>Resolves the HTTP status for <paramref name="error"/> from <see cref="ErrorStatusCodes"/>, falling back to <see cref="DefaultErrorStatusCode"/>.</summary>

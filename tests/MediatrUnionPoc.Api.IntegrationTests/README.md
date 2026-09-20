@@ -49,6 +49,27 @@ and a real (SQLite in-memory) database, exercised through actual HTTP requests v
   bound of every policy, host start refusing an invalid limit, and a configuration reload (valid or invalid)
   changing nothing until restart. `RateLimitingOpenApiTests.cs` — every operation declares the `429` with its
   header and example.
+- `RequestTimeoutTests.cs` — the timeout over real HTTP with tens of milliseconds and a substituted sender that
+  waits on its token (no wall-clock waits): the exact `504` problem (`type`, `title`, `status`, `code`
+  `REQUEST_TIMEOUT`, `traceId` equal to `X-Trace-Id`), one Warning and no Error (request line included), a named
+  policy beating the default, an unannotated action timed out and a `[DisableRequestTimeout]` one not, health never
+  timed out, a client abort still swallowed silently (no `504`), a transactional `POST` cancelled inside its
+  transaction creating nothing without an Error, and the fail-closed impersonation mint: cancelled by the deadline
+  it delivers no token and is audited as `Exception`, while a merely slow audit write outlives the deadline and the
+  token is delivered only after its event. They assume no debugger is attached. `TestData/RequestTimeoutProbeController`
+  and `RequestTimeoutTestSupport` (`WithTimeouts`, `WithTimeoutProbe`) are the arrangement; the default host uses a
+  10 minute timeout.
+- `RequestTimeoutSecureByDefaultTests.cs` — walks every mapped endpoint: no controller action is exempt, only the
+  token endpoint names a policy, every exempt endpoint is operational, and the framework holds a default and a named
+  policy. `RequestTimeoutOptionsTests.cs` — defaults (equal in code, `appsettings.json` and the README table), every
+  bound, host start refusing an invalid value. `RequestTimeoutOpenApiTests.cs` — every operation declares the `504`.
+- `OpenApiContractTests.cs` (with `TestData/OpenApiContract.cs` and `Contracts/openapi.v1.json`) — the OpenAPI
+  contract check: the live `v1` document, normalized, equals the committed snapshot; versioned paths only; no signing
+  key, token or local path in it; the snapshot is canonical (LF, sorted, one trailing newline) and stable across
+  fetches. `UPDATE_OPENAPI_SNAPSHOT=1` rewrites it (never with `CI` set); see the root README's "OpenAPI contract
+  check". `OpenApiContractComparerTests.cs` — against a mutated copy of the snapshot an added path, a removed response
+  code and a changed schema property are each detected, the failure message names operations, caps the list and gives
+  the regeneration command, and key order, line endings and `servers` are not differences.
 - `ForwardedHeadersTests.cs` — with no trusted proxy a spoofed `X-Forwarded-For` cannot change the rate-limit
   partition; with trusted proxies (an address or a CIDR network) the forwarded client is the partition and the
   audit `sourceIp`, and from an untrusted sender the header is ignored; entry validation and host start.

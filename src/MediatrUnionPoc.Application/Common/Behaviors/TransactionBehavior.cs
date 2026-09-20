@@ -114,13 +114,29 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
         catch (Exception ex)
         {
             // Log the request-specific rollback context here, then rethrow the original exception
-            // unmodified (not wrapped) so its type and stack trace survive for the caller.
-            _logger.LogError(
-                ex,
-                "{RequestName} threw; rolling back transaction",
-                typeof(TRequest).Name
-            );
-            await _unitOfWork.RollbackAsync(cancellationToken);
+            // unmodified (not wrapped) so its type and stack trace survive for the caller. A cancellation
+            // the caller asked for (a client that hung up, a request timeout) is not a fault in the
+            // handler, so it is not an Error.
+            if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation(
+                    "{RequestName} was cancelled; rolling back transaction",
+                    typeof(TRequest).Name
+                );
+            }
+            else
+            {
+                _logger.LogError(
+                    ex,
+                    "{RequestName} threw; rolling back transaction",
+                    typeof(TRequest).Name
+                );
+            }
+
+            // Not the request's token: this path runs because the request may already be cancelled (a
+            // client that hung up, a timeout), and a cancelled rollback would be skipped by the provider
+            // and reported by it as a transaction error.
+            await _unitOfWork.RollbackAsync(CancellationToken.None);
             throw;
         }
     }

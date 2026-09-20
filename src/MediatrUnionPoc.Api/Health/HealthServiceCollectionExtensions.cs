@@ -1,5 +1,6 @@
 using MediatrUnionPoc.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -48,7 +49,7 @@ public static class HealthServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Maps the anonymous, rate-limit-exempt (a probe must never be refused) liveness endpoint (no checks; proves the process answers) and readiness
+    /// Maps the anonymous, rate-limit-exempt (a probe must never be refused) and timeout-exempt (the orchestrator owns the probe's deadline, and a 504 from the API would misreport a stalled dependency as the probe's own failure) liveness endpoint (no checks; proves the process answers) and readiness
     /// endpoint (checks tagged <see cref="ReadyTag"/>). Both answer with the default plain-text
     /// status only: <c>Healthy</c>, <c>Degraded</c> (200) or <c>Unhealthy</c> (503).
     /// </summary>
@@ -66,14 +67,16 @@ public static class HealthServiceCollectionExtensions
         endpoints
             .MapHealthChecks(options.LivePath, new HealthCheckOptions { Predicate = _ => false })
             .AllowAnonymous()
-            .DisableRateLimiting();
+            .DisableRateLimiting()
+            .DisableRequestTimeout();
         endpoints
             .MapHealthChecks(
                 options.ReadyPath,
                 new HealthCheckOptions { Predicate = check => check.Tags.Contains(ReadyTag) }
             )
             .AllowAnonymous()
-            .DisableRateLimiting();
+            .DisableRateLimiting()
+            .DisableRequestTimeout();
 
         return endpoints;
     }

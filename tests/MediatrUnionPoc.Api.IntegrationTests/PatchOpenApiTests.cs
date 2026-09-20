@@ -97,7 +97,20 @@ public sealed class PatchOpenApiTests : IDisposable
         Assert.Multiple(
             () =>
                 Assert.Equal(
-                    ["200", "400", "401", "403", "404", "409", "412", "415", "428", "429", "500"],
+                    [
+                        "200",
+                        "400",
+                        "401",
+                        "403",
+                        "404",
+                        "409",
+                        "412",
+                        "415",
+                        "428",
+                        "429",
+                        "500",
+                        "504",
+                    ],
                     responses.Select(r => r.Key).Order().ToList()
                 ),
             () => Assert.NotNull(responses["200"]!["headers"]?["ETag"])

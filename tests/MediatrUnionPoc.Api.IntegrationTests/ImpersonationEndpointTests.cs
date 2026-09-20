@@ -399,7 +399,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
         var responses = operation["responses"]!.AsObject().Select(p => p.Key).Order().ToList();
         var schemas = document["components"]!["schemas"]!.AsObject();
         Assert.Multiple(
-            () => Assert.Equal(["200", "400", "401", "403", "404", "429", "500"], responses),
+            () => Assert.Equal(["200", "400", "401", "403", "404", "429", "500", "504"], responses),
             () => Assert.NotNull(schemas["IssueImpersonationTokenRequest"]!["examples"]),
             () => Assert.NotNull(schemas["ImpersonationToken"]!["examples"])
         );

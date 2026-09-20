@@ -363,6 +363,27 @@ public class TransactionBehaviorLoggingTests
         Assert.False(entry.Properties.ContainsKey(ResultCaseKey));
     }
 
+    /// <summary>Verifies a cancellation the caller asked for (a hung-up client, a request timeout) is rolled back and rethrown but logged at Information rather than Error, and that the rollback is not handed the already-cancelled token.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task Handle_CancelledWhileRunning_RollsBackWithoutErrorAndWithAnUncancelledToken_Test()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var token = cts.Token;
+
+        // Act
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            _sut.Handle(DeleteCommand(), _ => throw new OperationCanceledException(token), token));
+
+        // Assert
+        var entry = Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Information, entry.Level);
+        Assert.Equal($"{nameof(DeleteProductCommand)} was cancelled; rolling back transaction", entry.Message);
+        await _unitOfWork.Received(1).RollbackAsync(CancellationToken.None);
+    }
+
     private static DeleteProductCommand DeleteCommand() =>
         new(ProductGuid, PrincipalMother.Anonymous());
 }

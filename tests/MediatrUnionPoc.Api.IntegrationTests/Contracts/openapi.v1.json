@@ -1,0 +1,2707 @@
+{
+  "components": {
+    "schemas": {
+      "CreateProductRequest": {
+        "description": "Request body for Task&lt;IActionResult&gt; ProductsController.CreateAsync(CreateProductRequest request, CancellationToken cancellationToken = default(CancellationToken)).",
+        "examples": [
+          {
+            "name": "Wireless Mouse",
+            "price": 24.99
+          }
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "price"
+        ],
+        "type": "object"
+      },
+      "ImpersonationToken": {
+        "description": "The success case of IssueImpersonationTokenResult: a signed, short-lived bearer token\nand the identity it acts as. The string ImpersonationToken.Token is a credential: it is deliberately absent from\nstring ImpersonationToken.ToString() and the debugger display so it cannot leak through an incidental log line.",
+        "examples": [
+          {
+            "actorId": "root",
+            "expiresAt": "2026-03-02T14:20:00+00:00",
+            "roles": [
+              "Support"
+            ],
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<payload>.<signature>",
+            "tokenType": "Bearer",
+            "userId": "alice"
+          }
+        ],
+        "properties": {
+          "actorId": {
+            "description": "The real caller the token was issued to, recorded in its `act` claim.",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When the token stops being valid (UTC).",
+            "format": "date-time",
+            "type": "string"
+          },
+          "roles": {
+            "description": "The effective roles: the token's `role` claims.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "token": {
+            "description": "The compact serialized token to present as `Authorization: Bearer ...`.",
+            "type": "string"
+          },
+          "tokenType": {
+            "description": "The scheme to present string ImpersonationToken.Token under; always `Bearer`.",
+            "type": "string"
+          },
+          "userId": {
+            "description": "The effective identity: the token's `sub`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt",
+          "userId",
+          "roles",
+          "actorId"
+        ],
+        "type": "object"
+      },
+      "IssueImpersonationTokenRequest": {
+        "description": "Request body for Task&lt;IActionResult&gt; ImpersonationController.IssueTokenAsync(IssueImpersonationTokenRequest request, CancellationToken cancellationToken = default(CancellationToken)). Every member is\nnullable here so a missing one is reported by the application's validator as a per-field 400, like\nevery other rule, rather than by model binding.",
+        "examples": [
+          {
+            "lifetimeMinutes": 15,
+            "reason": "Reproducing the checkout error alice reported",
+            "roles": [
+              "Support"
+            ],
+            "targetUserId": "alice",
+            "ticketReference": "SUP-1234"
+          }
+        ],
+        "properties": {
+          "lifetimeMinutes": {
+            "description": "The requested lifetime; defaults to the configured default and may not exceed the configured maximum.",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "reason": {
+            "description": "Why the impersonation is needed, 10 to 500 characters. Required; recorded in the token and the audit trail.",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "roles": {
+            "description": "The roles to grant. Each must be assignable, and a non-administrator may grant only roles they hold. Optional.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "targetUserId": {
+            "description": "The identity the token acts as (its `sub`). Required; not the caller's own id.",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ticketReference": {
+            "description": "An optional ticket or case reference, up to 100 characters.",
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "targetUserId",
+          "roles",
+          "reason",
+          "ticketReference",
+          "lifetimeMinutes"
+        ],
+        "type": "object"
+      },
+      "PagedResultOfProductDto": {
+        "description": "A single page of T, plus enough metadata for a caller to compute whether further pages exist.",
+        "examples": [
+          {
+            "firstPage": 1,
+            "items": [
+              {
+                "createdAt": "2026-03-01T09:30:00+00:00",
+                "id": "3f2b8a52-6c1e-4d0b-9a57-1c2d3e4f5a6b",
+                "name": "Wireless Keyboard",
+                "price": 39.99,
+                "version": 1
+              },
+              {
+                "createdAt": "2026-03-02T14:05:00+00:00",
+                "id": "9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+                "name": "Wireless Mouse",
+                "price": 24.99,
+                "version": 2
+              }
+            ],
+            "lastPage": 3,
+            "nextPage": 3,
+            "pageNumber": 2,
+            "pageSize": 2,
+            "previousPage": 1,
+            "sort": [
+              {
+                "direction": "ascending",
+                "field": "name"
+              }
+            ],
+            "totalCount": 5,
+            "totalPages": 3
+          }
+        ],
+        "properties": {
+          "firstPage": {
+            "description": "The number of the first page.\nAlways 1; pages are 1-based.",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "items": {
+            "description": "The rows for this page only — never the full result set.\nThe non-null page rows.",
+            "items": {
+              "$ref": "#/components/schemas/ProductDto"
+            },
+            "type": "array"
+          },
+          "lastPage": {
+            "description": "The number of the last page at the current int PagedResult&lt;T&gt;.PageSize.\nint PagedResult&lt;T&gt;.TotalPages, but never less than 1: a result with no rows still has one (empty) page.",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "nextPage": {
+            "description": "The next page's number.\n`null` when int PagedResult&lt;T&gt;.PageNumber is the last page or beyond it.",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "pageNumber": {
+            "description": "The 1-based page number this result represents.",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "pageSize": {
+            "description": "The page size that was requested, not necessarily IReadOnlyList&lt;T&gt; PagedResult&lt;T&gt;.Items's count (the last page is typically shorter).",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "previousPage": {
+            "description": "The previous page's number.\n`null` on the first page. From a page past the end, the real int PagedResult&lt;T&gt;.LastPage, so a client can always navigate back to data.",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "sort": {
+            "description": "The sort keys that were applied, in priority order (the implicit trailing ProductId Product.Id tiebreaker is not listed).",
+            "items": {
+              "$ref": "#/components/schemas/ProductSort"
+            },
+            "type": "array"
+          },
+          "totalCount": {
+            "description": "The total number of rows across all pages, used to compute int PagedResult&lt;T&gt;.TotalPages.",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "totalPages": {
+            "description": "The total number of pages, rounded up — e.g. 10 total rows at a page size of 3 yields 4 pages, the last with only 1 row.\nThe page count implied by int PagedResult&lt;T&gt;.TotalCount and int PagedResult&lt;T&gt;.PageSize; never negative, but callers must guard against a zero int PagedResult&lt;T&gt;.PageSize.",
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "pageNumber",
+          "pageSize",
+          "totalCount",
+          "sort",
+          "items"
+        ],
+        "type": "object"
+      },
+      "PatchProductRequest": {
+        "description": "A JSON Merge Patch (RFC 7396, `application/merge-patch+json`) for a product. Each member is\neither absent (leave that field alone) or present (replace it). A member present as `null`\nis rejected — name and price are required, so there is nothing to clear — as is a body that names\nneither. Members this contract does not know are ignored, as RFC 7396 leaves unrecognised members\nto the recipient. Binding the Optional&lt;T&gt; members is the job of\n`OptionalJsonConverterFactory`; every rule on their values belongs to the application's\nvalidator.",
+        "examples": [
+          {
+            "name": "Wireless Mouse (v3)"
+          }
+        ],
+        "properties": {
+          "name": {
+            "description": "The new display name, when present.",
+            "type": "string"
+          },
+          "price": {
+            "description": "The new price, when present.",
+            "format": "double",
+            "type": [
+              "number",
+              "string"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ProblemDetails": {
+        "properties": {
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ProductDto": {
+        "description": "The read shape of a product returned across every \"success\" case in this feature's unions.",
+        "properties": {
+          "createdAt": {
+            "description": "The instant the product was created (UTC).",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ProductId",
+            "description": "The product's identity."
+          },
+          "name": {
+            "description": "The product's display name; never `null`.",
+            "type": "string"
+          },
+          "price": {
+            "description": "The product's price.",
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ]
+          },
+          "version": {
+            "$ref": "#/components/schemas/ProductVersion",
+            "description": "The product's concurrency version; the API renders it as the `ETag` a client echoes back in `If-Match`."
+          }
+        },
+        "required": [
+          "id",
+          "price",
+          "version",
+          "createdAt",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ProductId": {
+        "description": "A Guid-backed identity for Product. Generated by Vogen from the\n`[ValueObject]` attribute — <see cref=\"M:MediatrUnionPoc.Domain.ProductId.Validate(System.Guid)\" /> is called from every generated\nfactory (`From`, `TryFrom`) so an empty guid can never enter the system, and\nequality/hashing/string ProductId.ToString() are all structural rather than reference-based.\nSerializes as a bare GUID string (see Conversions.SystemTextJson), not as an\nobject — the Infrastructure layer's `ProductIdValueConverter` handles the equivalent\nround-trip through EF Core instead."
+      },
+      "ProductSort": {
+        "description": "One key of a multi-key sort: a ProductSortField and the SortDirection to order it in.",
+        "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/SortDirection",
+            "description": "Ascending or descending."
+          },
+          "field": {
+            "$ref": "#/components/schemas/ProductSortField",
+            "description": "The property to order by."
+          }
+        },
+        "required": [
+          "field",
+          "direction"
+        ],
+        "type": "object"
+      },
+      "ProductSortField": {
+        "description": "The allowlist of Product properties a listing may be sorted by. An enum rather\nthan a property-name string, so a caller can never name anything outside this set. Serialized\nas the camel-case name the HTTP `sort` parameter uses.",
+        "enum": [
+          "name",
+          "price",
+          "createdAt"
+        ]
+      },
+      "ProductVersion": {
+        "description": "The optimistic-concurrency version of a Product: a positive long\nthat starts at 1 for a new product and is advanced by the domain (never by the database) on\nevery mutation. Two writers that both loaded version `n` cannot both win — whoever writes\nsecond finds the stored version is no longer `n`."
+      },
+      "SortDirection": {
+        "description": "Which way a sort key orders its rows. Serialized as its lower-case name.",
+        "enum": [
+          "ascending",
+          "descending"
+        ]
+      },
+      "UpdateProductRequest": {
+        "description": "Request body for Task&lt;IActionResult&gt; ProductsController.UpdateAsync(Guid id, UpdateProductRequest request, string? ifMatchHeader, CancellationToken cancellationToken = default(CancellationToken)).",
+        "examples": [
+          {
+            "name": "Wireless Mouse (v2)",
+            "price": 27.99
+          }
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "price"
+        ],
+        "type": "object"
+      },
+      "ValidationProblemDetails": {
+        "properties": {
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errors": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "bearerFormat": "JWT",
+        "description": "A JWT signed with the configured key. The sub claim identifies the caller (and becomes a product's owner); a role claim of Administrator allows deletes.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "MediatrUnionPoc.Api | v1",
+    "version": "1.0.0"
+  },
+  "openapi": "3.2.0",
+  "paths": {
+    "/api/v1/impersonation/tokens": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueImpersonationTokenRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueImpersonationTokenRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueImpersonationTokenRequest"
+              }
+            }
+          },
+          "description": "Who to act as, which roles to grant, why, and for how long.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpersonationToken"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpersonationToken"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpersonationToken"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "detail": "Rate limit exceeded. Retry after 42 seconds.",
+                  "status": 429,
+                  "title": "Too Many Requests",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-4"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller exceeded its rate limit for this kind of request. Wait the number of seconds in Retry-After, then retry.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the caller's budget is available again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "REQUEST_TIMEOUT",
+                  "detail": "The request did not complete in time and was cancelled.",
+                  "status": 504,
+                  "title": "Gateway Timeout",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.5"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request did not complete within its time limit and was cancelled. Nothing it was doing is guaranteed to have been undone; check the resource before retrying a change."
+          }
+        },
+        "summary": "Mints a short-lived bearer token that acts as string? IssueImpersonationTokenRequest.TargetUserId.\nOnly an `Administrator` or `Support` caller may ask; see\nIssueImpersonationTokenHandler for the rules on chaining and on which roles may be granted.\nThe token's `act` claim names the real caller and its reason is recorded.",
+        "tags": [
+          "Impersonation"
+        ]
+      }
+    },
+    "/api/v1/products": {
+      "get": {
+        "parameters": [
+          {
+            "description": "1-based page number (default 1).",
+            "in": "query",
+            "name": "PageNumber",
+            "schema": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            }
+          },
+          {
+            "description": "Items per page, 1 to 100 (default 10).",
+            "in": "query",
+            "name": "PageSize",
+            "schema": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            }
+          },
+          {
+            "description": "Only products whose name contains this text, ignoring case and surrounding whitespace.",
+            "in": "query",
+            "name": "NameContains",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only products priced at least this much (inclusive).",
+            "in": "query",
+            "name": "MinPrice",
+            "schema": {
+              "format": "double",
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ]
+            }
+          },
+          {
+            "description": "Only products priced at most this much (inclusive); not below `minPrice`.",
+            "in": "query",
+            "name": "MaxPrice",
+            "schema": {
+              "format": "double",
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ]
+            }
+          },
+          {
+            "description": "Only products owned by exactly this caller id (the `sub` claim of the token used to create the product).",
+            "in": "query",
+            "name": "OwnerId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated sort keys in priority order, each a field (`name`, `price`,\n`createdAt`) optionally prefixed with `-` for descending, e.g. `name,-price`.\nDefaults to `name`. Ties always break by product id, so pages are stable.",
+            "in": "query",
+            "name": "Sort",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResultOfProductDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResultOfProductDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResultOfProductDto"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Link": {
+                "description": "RFC 8288 navigation links with rel first, prev, next and last. Each is this request's URL with only pageNumber changed; prev is absent on the first page and next on the last.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "The number of products matching the filters, across all pages.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "detail": "Rate limit exceeded. Retry after 42 seconds.",
+                  "status": 429,
+                  "title": "Too Many Requests",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-4"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller exceeded its rate limit for this kind of request. Wait the number of seconds in Retry-After, then retry.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the caller's budget is available again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "REQUEST_TIMEOUT",
+                  "detail": "The request did not complete in time and was cancelled.",
+                  "status": 504,
+                  "title": "Gateway Timeout",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.5"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request did not complete within its time limit and was cancelled. Nothing it was doing is guaranteed to have been undone; check the resource before retrying a change."
+          }
+        },
+        "summary": "Lists products: filtered, sorted and a page at a time. See ListProductsRequest\nfor the query-string contract.",
+        "tags": [
+          "Products"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductRequest"
+              }
+            }
+          },
+          "description": "The product to create.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description": "Created",
+            "headers": {
+              "ETag": {
+                "description": "Weak entity tag of the product's current version, e.g. W/\"3\". Send it back in If-Match to update or delete conditionally.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "detail": "Rate limit exceeded. Retry after 42 seconds.",
+                  "status": 429,
+                  "title": "Too Many Requests",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-4"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller exceeded its rate limit for this kind of request. Wait the number of seconds in Retry-After, then retry.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the caller's budget is available again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "REQUEST_TIMEOUT",
+                  "detail": "The request did not complete in time and was cancelled.",
+                  "status": 504,
+                  "title": "Gateway Timeout",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.5"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request did not complete within its time limit and was cancelled. Nothing it was doing is guaranteed to have been undone; check the resource before retrying a change."
+          }
+        },
+        "summary": "Creates a product. The authenticated caller becomes its owner: the value of their\nstring ClaimTypes.NameIdentifier claim (the token's `sub`) is recorded as\nstring Product.OwnerId, which is what later updates are checked against. A caller\nwhose token has no `sub` is authenticated but has no identity to own anything with, so the\nrequest is refused with a NotAuthorized outcome (403) before anything is sent.",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
+    "/api/v1/products/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "description": "The product's identity.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The optional `If-Match` request header; when present the delete only proceeds if it names the product's current version.",
+            "in": "header",
+            "name": "If-Match",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "detail": "Rate limit exceeded. Retry after 42 seconds.",
+                  "status": 429,
+                  "title": "Too Many Requests",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-4"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller exceeded its rate limit for this kind of request. Wait the number of seconds in Retry-After, then retry.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the caller's budget is available again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "REQUEST_TIMEOUT",
+                  "detail": "The request did not complete in time and was cancelled.",
+                  "status": 504,
+                  "title": "Gateway Timeout",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.5"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request did not complete within its time limit and was cancelled. Nothing it was doing is guaranteed to have been undone; check the resource before retrying a change."
+          }
+        },
+        "summary": "Deletes a product. Only an administrator may delete: the caller's token must carry a\n`role` claim of `Administrator`.",
+        "tags": [
+          "Products"
+        ]
+      },
+      "get": {
+        "parameters": [
+          {
+            "description": "The product's identity.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "Weak entity tag of the product's current version, e.g. W/\"3\". Send it back in If-Match to update or delete conditionally.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "detail": "Rate limit exceeded. Retry after 42 seconds.",
+                  "status": 429,
+                  "title": "Too Many Requests",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-4"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller exceeded its rate limit for this kind of request. Wait the number of seconds in Retry-After, then retry.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the caller's budget is available again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "REQUEST_TIMEOUT",
+                  "detail": "The request did not complete in time and was cancelled.",
+                  "status": 504,
+                  "title": "Gateway Timeout",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.5"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request did not complete within its time limit and was cancelled. Nothing it was doing is guaranteed to have been undone; check the resource before retrying a change."
+          }
+        },
+        "summary": "Looks up a single product by id.",
+        "tags": [
+          "Products"
+        ]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "description": "The product's identity.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The `If-Match` request header: the ETag of the version being changed. Required.",
+            "in": "header",
+            "name": "If-Match",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchProductRequest"
+              }
+            }
+          },
+          "description": "The members to change; absent members are left alone, a `null` member or an empty patch is a 400.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "Weak entity tag of the product's current version, e.g. W/\"3\". Send it back in If-Match to update or delete conditionally.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "This request must be conditional: send an If-Match header carrying the ETag of the version you are changing.",
+                  "status": 428,
+                  "title": "Precondition Required",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-3"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "example": {
+                  "detail": "This request must be conditional: send an If-Match header carrying the ETag of the version you are changing.",
+                  "status": 428,
+                  "title": "Precondition Required",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-3"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "example": {
+                  "detail": "This request must be conditional: send an If-Match header carrying the ETag of the version you are changing.",
+                  "status": 428,
+                  "title": "Precondition Required",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-3"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "detail": "Rate limit exceeded. Retry after 42 seconds.",
+                  "status": 429,
+                  "title": "Too Many Requests",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-4"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller exceeded its rate limit for this kind of request. Wait the number of seconds in Retry-After, then retry.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the caller's budget is available again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "REQUEST_TIMEOUT",
+                  "detail": "The request did not complete in time and was cancelled.",
+                  "status": 504,
+                  "title": "Gateway Timeout",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.5"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request did not complete within its time limit and was cancelled. Nothing it was doing is guaranteed to have been undone; check the resource before retrying a change."
+          }
+        },
+        "summary": "Changes only the fields of a product the caller supplies (JSON Merge Patch, RFC 7396). Same\nownership rule, `If-Match` requirement and duplicate-name rule as\nTask&lt;IActionResult&gt; ProductsController.UpdateAsync(Guid id, UpdateProductRequest request, string? ifMatchHeader, CancellationToken cancellationToken = default(CancellationToken)); the body must be sent as `application/merge-patch+json`.",
+        "tags": [
+          "Products"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "description": "The product's identity.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The `If-Match` request header: the ETag of the version being replaced. Required.",
+            "in": "header",
+            "name": "If-Match",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductRequest"
+              }
+            }
+          },
+          "description": "The new name and price.",
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "ETag": {
+                "description": "Weak entity tag of the product's current version, e.g. W/\"3\". Send it back in If-Match to update or delete conditionally.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "example": {
+                  "detail": "A product named 'Blue Widget' already exists. Product names must be unique, ignoring case and surrounding whitespace.",
+                  "status": 409,
+                  "title": "Conflict",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "example": {
+                  "detail": "Product 'b5e0a0a1-1c0e-4f7e-9d59-0d6a1d1c9b11' is at version 3, not the expected 2.",
+                  "status": 412,
+                  "title": "Precondition Failed",
+                  "type": "https://tools.ietf.org/html/rfc7232#section-4.2"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "This request must be conditional: send an If-Match header carrying the ETag of the version you are changing.",
+                  "status": 428,
+                  "title": "Precondition Required",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-3"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "example": {
+                  "detail": "This request must be conditional: send an If-Match header carrying the ETag of the version you are changing.",
+                  "status": 428,
+                  "title": "Precondition Required",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-3"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "example": {
+                  "detail": "This request must be conditional: send an If-Match header carrying the ETag of the version you are changing.",
+                  "status": 428,
+                  "title": "Precondition Required",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-3"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "detail": "Rate limit exceeded. Retry after 42 seconds.",
+                  "status": 429,
+                  "title": "Too Many Requests",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc6585#section-4"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller exceeded its rate limit for this kind of request. Wait the number of seconds in Retry-After, then retry.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the caller's budget is available again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "example": {
+                  "code": "REQUEST_TIMEOUT",
+                  "detail": "The request did not complete in time and was cancelled.",
+                  "status": 504,
+                  "title": "Gateway Timeout",
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.5"
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "instance": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "format": "int32",
+                      "pattern": "^-?(?:0|[1-9]\\d*)$",
+                      "type": [
+                        "null",
+                        "integer",
+                        "string"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request did not complete within its time limit and was cancelled. Nothing it was doing is guaranteed to have been undone; check the resource before retrying a change."
+          }
+        },
+        "summary": "Replaces a product's name and price. Only the product's owner may update it: the caller's\nstring ClaimTypes.NameIdentifier claim (the token's `sub`) must equal the\nstring Product.OwnerId recorded when the product was created.",
+        "tags": [
+          "Products"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "Bearer": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Impersonation"
+    },
+    {
+      "name": "Products"
+    }
+  ]
+}

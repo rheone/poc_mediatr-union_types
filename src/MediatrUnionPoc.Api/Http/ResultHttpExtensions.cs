@@ -25,6 +25,9 @@ public static class ResultHttpExtensions
     /// <summary>The <see cref="CodeExtensionName"/> value on a 429 the rate limiter answers.</summary>
     public const string RateLimitedCode = "RATE_LIMITED";
 
+    /// <summary>The <see cref="CodeExtensionName"/> value on a 504 the request timeout answers.</summary>
+    public const string RequestTimeoutCode = "REQUEST_TIMEOUT";
+
     private const string ProblemJson = "application/problem+json";
 
     private const string MissingIfMatchDetail =

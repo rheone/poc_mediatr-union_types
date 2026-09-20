@@ -76,6 +76,11 @@ public sealed class ProductsApiFactory(
             builder.UseSetting($"RateLimiting:{policy}:PermitLimit", GenerousPermitLimit);
         }
 
+        // A generous timeout, so no ordinary test ever meets it; the timeout tests override these through
+        // WithWebHostBuilder with tens of milliseconds.
+        builder.UseSetting("RequestTimeouts:Default", GenerousTimeout);
+        builder.UseSetting("RequestTimeouts:Impersonation", GenerousTimeout);
+
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<ILogEventSink>(LogSink);
@@ -99,6 +104,9 @@ public sealed class ProductsApiFactory(
 
     /// <summary>The per-window permit limit every policy gets unless a test overrides it (the largest the options allow).</summary>
     public const string GenerousPermitLimit = "1000000";
+
+    /// <summary>The request timeout every policy gets unless a test overrides it (the largest the options allow).</summary>
+    public const string GenerousTimeout = "00:10:00";
 
     /// <summary>A request header that overrides <see cref="TestRemoteAddress"/> for that one request, so a test can be several distinct network callers.</summary>
     public const string RemoteAddressHeaderName = "X-Test-Remote-Address";

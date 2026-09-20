@@ -231,7 +231,7 @@ since it's the one project that's actually a runnable web application.
 - `GET /health/live` runs no checks (proves the process answers). `GET /health/ready` runs the
   checks tagged `ready`: a `SELECT 1` round trip on `AppDbContext` (`AddDbContextCheck`, from
   `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore`). Both are
-  `.AllowAnonymous().DisableRateLimiting()` and return the default plain-text status only (`503` when
+  `.AllowAnonymous().DisableRateLimiting().DisableRequestTimeout()` and return the default plain-text status only (`503` when
   unhealthy).
 - Caveat: with the default private in-memory SQLite database the readiness check is trivially
   healthy; it is only meaningful with a real `ConnectionStrings:Products`.
@@ -276,6 +276,24 @@ since it's the one project that's actually a runnable web application.
   best-effort audit event (`Impersonation.IssueToken`, outcome `RateLimited`; a failed write is event id 1301).
 - `OpenApi/RateLimitResponseTransformer` declares the `429` (with `Retry-After` and an example) on every
   operation that is not exempt.
+
+## Request timeouts (`RequestTimeouts/`)
+
+- `AddApiRequestTimeouts()` registers `RequestTimeoutOptions` (section `RequestTimeouts`: `Default` 30 s and
+  `Impersonation` 10 s as `TimeSpan`s, each 1 ms to 10 min via `[TimeoutRange]`, validated on start by the
+  source-generated `RequestTimeoutOptionsValidator`), the framework's request-timeouts services, a default policy and
+  the `Impersonation` policy (`RequestTimeoutPolicyNames`), both answering `504` through
+  `RequestTimeoutResponseWriter`. Values are read once through `IOptions` (restart to change).
+- `UseApiRequestTimeouts()` sits after `UseImpersonationAudit()` and before `UseApiRateLimiting()`. The framework
+  applies the default policy to every endpoint that names none, so an action added later is covered; an endpoint is
+  exempt only with an explicit `DisableRequestTimeout()` (health, and the Development OpenAPI and Scalar
+  endpoints). The token endpoint has `[RequestTimeout(RequestTimeoutPolicyNames.Impersonation)]`.
+- `RequestTimeoutResponseWriter` writes the `504` problem (`code` `REQUEST_TIMEOUT`, `traceId`, `type` from
+  `HttpMappingOptions`) and logs a `Warning` (event id 1400); the framework's own duplicate line is filtered to
+  `Error` in `appsettings.json`. The request line for a `504` is a `Warning`.
+- `OpenApi/RequestTimeoutResponseTransformer` declares the `504` (with an example) on every operation that is not
+  exempt.
+- The framework's timeout middleware does nothing while a debugger is attached.
 
 ## Forwarded headers (`Proxies/`)
 

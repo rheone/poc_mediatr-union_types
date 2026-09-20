@@ -3,8 +3,10 @@ using MediatR;
 using MediatrUnionPoc.Api.Contracts;
 using MediatrUnionPoc.Api.Http;
 using MediatrUnionPoc.Api.RateLimiting;
+using MediatrUnionPoc.Api.RequestTimeouts;
 using MediatrUnionPoc.Application.Common.Results;
 using MediatrUnionPoc.Application.Features.Impersonation.IssueToken;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -16,7 +18,7 @@ namespace MediatrUnionPoc.Api.Controllers;
 /// (also declared via <c>ProducesResponseType</c>):
 /// <list type="table">
 /// <listheader><term>Action</term><description>Cases</description></listheader>
-/// <item><term>IssueTokenAsync</term><description>ImpersonationToken 200; ValidationErrors 400; NotAuthorized 403 (caller is not an Administrator or Support user, is already impersonating, or asked for a role it may not grant); impersonation switched off 404 (for every authenticated caller); Error 500; over the much tighter <c>Impersonation</c> rate limit (per real caller) 429, which is also audited.</description></item>
+/// <item><term>IssueTokenAsync</term><description>ImpersonationToken 200; ValidationErrors 400; NotAuthorized 403 (caller is not an Administrator or Support user, is already impersonating, or asked for a role it may not grant); impersonation switched off 404 (for every authenticated caller); Error 500; over the much tighter <c>Impersonation</c> rate limit (per real caller) 429, which is also audited; not finished within the shorter <c>Impersonation</c> request timeout 504 (the token is never delivered).</description></item>
 /// </list>
 /// </summary>
 /// <param name="sender">The MediatR sender the action dispatches its request through.</param>
@@ -49,6 +51,7 @@ public sealed class ImpersonationController(ISender sender, IImpersonationSettin
     /// </returns>
     [HttpPost("tokens")]
     [EnableRateLimiting(RateLimitPolicyNames.Impersonation)]
+    [RequestTimeout(RequestTimeoutPolicyNames.Impersonation)]
     [ProducesResponseType(typeof(ImpersonationToken), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
