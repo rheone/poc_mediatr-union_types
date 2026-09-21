@@ -10,8 +10,14 @@ public sealed class AuditIdentityTests
 {
     /// <summary>Verifies no principal yields an unknown identity.</summary>
     [Fact]
-    public void From_NullPrincipal_IsUnknown_Test() =>
-        Assert.Same(AuditIdentity.Unknown, AuditIdentity.From(null));
+    public void From_NullPrincipal_IsUnknown_Test()
+    {
+        // Act
+        var identity = AuditIdentity.From(null);
+
+        // Assert
+        Assert.Same(AuditIdentity.Unknown, identity);
+    }
 
     /// <summary>Verifies an ordinary caller is its own actor and effective identity, with no token id even if it carries a <c>jti</c>.</summary>
     [Fact]

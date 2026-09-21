@@ -14,8 +14,8 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 /// <param name="Price">The product's new price. Must be zero or greater.</param>
 /// <param name="Principal">
 /// The caller's identity. Unlike <see cref="Delete.DeleteProductCommand.Principal"/>'s role-based
-/// check (run by a pipeline behavior before the handler), only the product's owner may update it — a resource-based check against
-/// <see cref="AuthorizationPolicies.ProductOwner"/> that <see cref="UpdateProductHandler"/> runs
+/// check (run by a pipeline behavior before the handler), only the product's owner may update it:
+/// a resource-based check against <see cref="AuthorizationPolicies.ProductOwner"/> that <see cref="UpdateProductHandler"/> runs
 /// itself, once it has loaded the product, via <see cref="ResourceAuthorizationService"/>. This
 /// command deliberately does not implement <see cref="IRequiresAuthorization"/> — that pipeline
 /// path runs before any resource is loaded, too early for an ownership check.
@@ -26,12 +26,14 @@ namespace MediatrUnionPoc.Application.Features.Products.Update;
 /// <see cref="MediatrUnionPoc.Application.Common.Results.PreconditionFailed"/> and nothing changes.
 /// </param>
 /// <remarks>
+/// <para>
 /// <see cref="Name"/> is deliberately not null-guarded in the constructor (unlike
 /// <see cref="Principal"/>): <see cref="UpdateProductValidator"/> owns that rule, so a
 /// <see langword="null"/> name from a direct <c>ISender.Send</c> caller comes back as a
 /// <c>ValidationErrors</c> outcome rather than a thrown <see cref="ArgumentNullException"/>.
 /// Over HTTP a <see langword="null"/> name is already rejected (400) by MVC model validation on
 /// the request DTO, so the guard would be redundant there, not harmful.
+/// </para>
 /// </remarks>
 /// <exception cref="ArgumentNullException"><paramref name="Principal"/> is <see langword="null"/>.</exception>
 public sealed record UpdateProductCommand(

@@ -24,7 +24,22 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class ImpersonationTokenTests : IDisposable
 {
     private const string ProductsUri = ApiRoutes.Products;
+    private const string AdministratorRole = "Administrator";
+    private const string SupportRole = "Support";
+    private const string TokenTicket = "SUP-7";
+    private const string BobId = "bob";
+    private const string CarolId = "carol";
     private const string RandomKey = "a-completely-different-signing-key-of-sufficient-length";
+
+    private static readonly DateTimeOffset LongPastInstant = new(
+        2020,
+        1,
+        1,
+        0,
+        0,
+        0,
+        TimeSpan.Zero
+    );
 
     private readonly ProductsApiFactory _factory = new(ApiAuthentication.RealJwt);
 
@@ -41,10 +56,10 @@ public sealed class ImpersonationTokenTests : IDisposable
     public async Task Token_ValidatedByTheBearerHandler_CarriesTargetRolesActorMarkerAndReason_Test()
     {
         // Arrange
-        using var minter = ClientAs(_factory, AdminId, "Administrator");
+        using var minter = ClientAs(_factory, AdminId, AdministratorRole);
         var token = await MintAsync(
             minter,
-            Body(roles: ["Support", "Administrator"], ticket: "SUP-7")
+            Body(roles: [SupportRole, AdministratorRole], ticket: TokenTicket)
         );
         var bearer = _factory
             .Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
@@ -59,14 +74,14 @@ public sealed class ImpersonationTokenTests : IDisposable
         Assert.Multiple(
             () => Assert.True(result.IsValid),
             () => Assert.Equal(UserId, principal.FindFirst(ClaimTypes.NameIdentifier)?.Value),
-            () => Assert.True(principal.IsInRole("Support")),
-            () => Assert.True(principal.IsInRole("Administrator")),
+            () => Assert.True(principal.IsInRole(SupportRole)),
+            () => Assert.True(principal.IsInRole(AdministratorRole)),
             () => Assert.True(principal.IsImpersonated()),
             () => Assert.Equal(AdminId, principal.GetActorId()),
             () =>
                 Assert.Equal("true", principal.FindFirst(ImpersonationClaims.Impersonated)?.Value),
             () => Assert.Equal(ValidReason, principal.FindFirst(ImpersonationClaims.Reason)?.Value),
-            () => Assert.Equal("SUP-7", principal.FindFirst(ImpersonationClaims.Ticket)?.Value),
+            () => Assert.Equal(TokenTicket, principal.FindFirst(ImpersonationClaims.Ticket)?.Value),
             () => Assert.NotNull(principal.FindFirst("jti")),
             () => Assert.NotNull(principal.FindFirst("iat"))
         );
@@ -78,7 +93,7 @@ public sealed class ImpersonationTokenTests : IDisposable
     public async Task Token_Payload_HasActAsJsonObjectAndTimeClaims_Test()
     {
         // Arrange
-        using var minter = ClientAs(_factory, SupportId, "Support");
+        using var minter = ClientAs(_factory, SupportId, SupportRole);
         var token = await MintAsync(minter, Body(lifetimeMinutes: 10));
 
         // Act
@@ -104,11 +119,11 @@ public sealed class ImpersonationTokenTests : IDisposable
     public async Task MintedToken_Creates_ProductOwnedByTheTarget_Test()
     {
         // Arrange
-        using var minter = ClientAs(_factory, SupportId, "Support");
+        using var minter = ClientAs(_factory, SupportId, SupportRole);
         var token = await MintAsync(minter, Body());
         using var asTarget = ClientWithToken(_factory, token);
         using var alice = ClientAs(_factory, UserId);
-        using var bob = ClientAs(_factory, "bob");
+        using var bob = ClientAs(_factory, BobId);
 
         // Act
         using var created = await asTarget.PostAsJsonAsync(
@@ -138,7 +153,7 @@ public sealed class ImpersonationTokenTests : IDisposable
     public async Task MintedToken_Roles_DriveProtectedEndpoints_Test()
     {
         // Arrange
-        using var admin = ClientAs(_factory, AdminId, "Administrator");
+        using var admin = ClientAs(_factory, AdminId, AdministratorRole);
         using var owner = ClientAs(_factory, UserId);
         using var created = await owner.PostAsJsonAsync(
             ProductsUri,
@@ -150,11 +165,11 @@ public sealed class ImpersonationTokenTests : IDisposable
         )!;
         using var withoutRole = ClientWithToken(
             _factory,
-            await MintAsync(admin, Body(target: "bob"))
+            await MintAsync(admin, Body(target: BobId))
         );
         using var withRole = ClientWithToken(
             _factory,
-            await MintAsync(admin, Body(target: "carol", roles: ["Administrator"]))
+            await MintAsync(admin, Body(target: CarolId, roles: [AdministratorRole]))
         );
 
         // Act
@@ -211,14 +226,12 @@ public sealed class ImpersonationTokenTests : IDisposable
         // Arrange
         using var pastClock = _factory.WithWebHostBuilder(builder =>
             builder.ConfigureTestServices(services =>
-                services.AddSingleton<TimeProvider>(
-                    new ManualTimeProvider(DateTimeOffset.UtcNow.AddHours(-3))
-                )
+                services.AddSingleton<TimeProvider>(new ManualTimeProvider(LongPastInstant))
             )
         );
         using var minter = ClientWithToken(
             pastClock,
-            JwtTestTokens.Create(_factory, AdminId, ["Administrator"])
+            JwtTestTokens.Create(_factory, AdminId, [AdministratorRole])
         );
         var minted = await MintAsync(minter, Body(lifetimeMinutes: 10));
         using var crafted = ClientWithToken(
@@ -249,12 +262,12 @@ public sealed class ImpersonationTokenTests : IDisposable
     public async Task Post_CallerUsingAnImpersonationToken_Returns403ChainedImpersonation_Test()
     {
         // Arrange
-        using var admin = ClientAs(_factory, AdminId, "Administrator");
-        var token = await MintAsync(admin, Body(target: "bob", roles: ["Administrator"]));
+        using var admin = ClientAs(_factory, AdminId, AdministratorRole);
+        var token = await MintAsync(admin, Body(target: BobId, roles: [AdministratorRole]));
         using var chained = ClientWithToken(_factory, token);
 
         // Act
-        using var response = await PostAsync(chained, Body(target: "carol"));
+        using var response = await PostAsync(chained, Body(target: CarolId));
 
         // Assert
         using var problem = JsonDocument.Parse(

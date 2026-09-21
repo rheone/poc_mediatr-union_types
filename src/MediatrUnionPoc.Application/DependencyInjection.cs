@@ -15,7 +15,7 @@ namespace MediatrUnionPoc.Application;
 /// <summary>Wires up MediatR, FluentValidation, authorization, and the pipeline behaviors for the whole Application layer.</summary>
 public static class DependencyInjection
 {
-    /// <summary>Used by both MediatR and FluentValidation's assembly-scanning registration — every handler/validator in this assembly is found automatically, no per-feature DI wiring needed.</summary>
+    /// <summary>The Application assembly, scanned by both MediatR and FluentValidation so every handler and validator in it is registered without per-feature wiring.</summary>
     public static readonly Assembly AssemblyReference = typeof(DependencyInjection).Assembly;
 
     /// <summary>

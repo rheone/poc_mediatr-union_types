@@ -219,8 +219,11 @@ public class TransactionBehaviorTests
     [Fact]
     public void Ctor_NullUnitOfWork_ThrowsArgumentNullException_Test()
     {
+        // Arrange
+        var logger = NullLogger<TransactionBehavior<DeleteProductCommand, DeleteProductResult>>.Instance;
+
         // Act
-        var ex = Assert.Throws<ArgumentNullException>(() => new TransactionBehavior<DeleteProductCommand, DeleteProductResult>(null!, NullLogger<TransactionBehavior<DeleteProductCommand, DeleteProductResult>>.Instance));
+        var ex = Assert.Throws<ArgumentNullException>(() => new TransactionBehavior<DeleteProductCommand, DeleteProductResult>(null!, logger));
 
         // Assert
         Assert.Equal("unitOfWork", ex.ParamName);
@@ -231,8 +234,11 @@ public class TransactionBehaviorTests
     [Fact]
     public void Ctor_NullLogger_ThrowsArgumentNullException_Test()
     {
+        // Arrange
+        var unitOfWork = _unitOfWork;
+
         // Act
-        var ex = Assert.Throws<ArgumentNullException>(() => new TransactionBehavior<DeleteProductCommand, DeleteProductResult>(_unitOfWork, null!));
+        var ex = Assert.Throws<ArgumentNullException>(() => new TransactionBehavior<DeleteProductCommand, DeleteProductResult>(unitOfWork, null!));
 
         // Assert
         Assert.Equal("logger", ex.ParamName);
@@ -244,8 +250,11 @@ public class TransactionBehaviorTests
     [Fact]
     public async Task Handle_NullRequest_ThrowsArgumentNullException_Test()
     {
+        // Arrange
+        DeleteProductResult response = new Success();
+
         // Act
-        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(null!, _ => Task.FromResult<DeleteProductResult>(new Success()), CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(null!, _ => Task.FromResult(response), CancellationToken.None));
 
         // Assert
         Assert.Equal("request", ex.ParamName);
@@ -259,8 +268,11 @@ public class TransactionBehaviorTests
     [Fact]
     public async Task Handle_NullNext_ThrowsArgumentNullException_Test()
     {
+        // Arrange
+        var command = DeleteCommand();
+
         // Act
-        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(DeleteCommand(), null!, CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _sut.Handle(command, null!, CancellationToken.None));
 
         // Assert
         Assert.Equal("next", ex.ParamName);
@@ -311,8 +323,11 @@ public class TransactionBehaviorLoggingTests
     [MemberData(nameof(Handle_RollbackCase_LogsInformationWithRequestNameAndCase_Test_Data))]
     public async Task Handle_RollbackCase_LogsInformationWithRequestNameAndCase_Test(DeleteProductResult response, string expectedCase)
     {
+        // Arrange
+        var command = DeleteCommand();
+
         // Act
-        await _sut.Handle(DeleteCommand(), _ => Task.FromResult(response), TestContext.Current.CancellationToken);
+        await _sut.Handle(command, _ => Task.FromResult(response), TestContext.Current.CancellationToken);
 
         // Assert
         var entry = Assert.Single(_logger.Entries);

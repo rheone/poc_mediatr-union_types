@@ -49,10 +49,15 @@ public static class HealthServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Maps the anonymous, rate-limit-exempt (a probe must never be refused) and timeout-exempt (the orchestrator owns the probe's deadline, and a 504 from the API would misreport a stalled dependency as the probe's own failure) liveness endpoint (no checks; proves the process answers) and readiness
-    /// endpoint (checks tagged <see cref="ReadyTag"/>). Both answer with the default plain-text
-    /// status only: <c>Healthy</c>, <c>Degraded</c> (200) or <c>Unhealthy</c> (503).
+    /// Maps the liveness endpoint (no checks; proves the process answers) and the readiness endpoint
+    /// (checks tagged <see cref="ReadyTag"/>). Both answer with the default plain-text status only:
+    /// <c>Healthy</c>, <c>Degraded</c> (200) or <c>Unhealthy</c> (503).
     /// </summary>
+    /// <remarks>
+    /// <para>Both endpoints are anonymous, exempt from rate limiting (a probe must never be refused) and
+    /// exempt from the request timeout (the orchestrator owns the probe's deadline, and a 504 from the
+    /// API would misreport a stalled dependency as the probe's own failure).</para>
+    /// </remarks>
     /// <param name="endpoints">The endpoint route builder to map onto.</param>
     /// <returns><paramref name="endpoints"/>, for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="endpoints"/> is <see langword="null"/>.</exception>

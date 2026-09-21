@@ -14,6 +14,10 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class HealthEndpointTests
 {
+    private const string LivePath = "/health/live";
+    private const string ReadyPath = "/health/ready";
+    private const string PlainText = "text/plain";
+
     private static WebApplicationFactory<Program> BreakableFactory(
         ProductsApiFactory baseFactory,
         DatabaseSwitch databaseSwitch
@@ -36,12 +40,12 @@ public sealed class HealthEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        using var response = await client.GetAsync("/health/live", CancellationToken.None);
+        using var response = await client.GetAsync(LivePath, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Healthy", await response.Content.ReadAsStringAsync(CancellationToken.None));
-        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(PlainText, response.Content.Headers.ContentType?.MediaType);
     }
 
     /// <summary>Verifies readiness answers 200 with the plain-text Healthy status when the database is reachable.</summary>
@@ -54,12 +58,12 @@ public sealed class HealthEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        using var response = await client.GetAsync("/health/ready", CancellationToken.None);
+        using var response = await client.GetAsync(ReadyPath, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Healthy", await response.Content.ReadAsStringAsync(CancellationToken.None));
-        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(PlainText, response.Content.Headers.ContentType?.MediaType);
     }
 
     /// <summary>Verifies readiness answers 503 with the plain-text Unhealthy status, no check details, when the database cannot be reached.</summary>
@@ -75,12 +79,12 @@ public sealed class HealthEndpointTests
         databaseSwitch.Broken = true;
 
         // Act
-        using var response = await client.GetAsync("/health/ready", CancellationToken.None);
+        using var response = await client.GetAsync(ReadyPath, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Equal("Unhealthy", await response.Content.ReadAsStringAsync(CancellationToken.None));
-        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(PlainText, response.Content.Headers.ContentType?.MediaType);
     }
 
     /// <summary>Verifies liveness stays 200 while the database is unreachable, because it runs no checks.</summary>
@@ -96,7 +100,7 @@ public sealed class HealthEndpointTests
         databaseSwitch.Broken = true;
 
         // Act
-        using var response = await client.GetAsync("/health/live", CancellationToken.None);
+        using var response = await client.GetAsync(LivePath, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -106,8 +110,8 @@ public sealed class HealthEndpointTests
     /// <param name="path">The health endpoint path.</param>
     /// <returns>A task representing the asynchronous test.</returns>
     [Theory]
-    [InlineData("/health/live")]
-    [InlineData("/health/ready")]
+    [InlineData(LivePath)]
+    [InlineData(ReadyPath)]
     public async Task Get_NoCredentials_IsNotRejected_Test(string path)
     {
         // Arrange
@@ -126,8 +130,8 @@ public sealed class HealthEndpointTests
     /// <param name="path">The health endpoint path.</param>
     /// <returns>A task representing the asynchronous test.</returns>
     [Theory]
-    [InlineData("/health/live")]
-    [InlineData("/health/ready")]
+    [InlineData(LivePath)]
+    [InlineData(ReadyPath)]
     public async Task Get_Healthy_ReturnsNoJsonCheckDetails_Test(string path)
     {
         // Arrange
@@ -160,7 +164,7 @@ public sealed class HealthEndpointTests
 
         // Act
         using var custom = await client.GetAsync("/probe/alive", CancellationToken.None);
-        using var original = await client.GetAsync("/health/live", CancellationToken.None);
+        using var original = await client.GetAsync(LivePath, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, custom.StatusCode);

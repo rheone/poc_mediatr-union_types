@@ -13,8 +13,10 @@ namespace MediatrUnionPoc.Application.Features.Impersonation.IssueToken;
 /// <see cref="IssueImpersonationTokenHandler"/>. Validated by <see cref="IssueImpersonationTokenValidator"/>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The text members are deliberately nullable and not null-guarded: the validator owns those rules, so
 /// a missing member is a per-field <c>ValidationErrors</c> outcome rather than a framework 400 or an exception.
+/// </para>
 /// </remarks>
 /// <param name="TargetUserId">The identity to act as (becomes the token's <c>sub</c>).</param>
 /// <param name="Roles">The roles to grant; absent or empty grants none.</param>
@@ -42,7 +44,9 @@ public sealed record IssueImpersonationTokenCommand(
     public string AuditAction => Action;
 
     /// <inheritdoc/>
-    /// <remarks>Fail closed: a token must never reach a caller whose issue was not recorded.</remarks>
+    /// <remarks>
+    /// <para>Fail closed: a token must never reach a caller whose issue was not recorded.</para>
+    /// </remarks>
     public AuditFailurePolicy AuditFailurePolicy => AuditFailurePolicy.FailClosed;
 
     /// <inheritdoc/>
@@ -50,9 +54,11 @@ public sealed record IssueImpersonationTokenCommand(
 
     /// <inheritdoc/>
     /// <remarks>
+    /// <para>
     /// Records the target, reason and ticket as requested (trimmed), the roles granted (the token's) or
     /// asked for (a refusal), the id of the token minted, and for a refusal the denial message. Never
     /// the token itself.
+    /// </para>
     /// </remarks>
     public AuditDescription DescribeAudit(IssueImpersonationTokenResult response)
     {

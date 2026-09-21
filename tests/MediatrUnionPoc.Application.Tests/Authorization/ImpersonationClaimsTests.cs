@@ -92,13 +92,16 @@ public class ImpersonationClaimsTests
 
     /// <summary>Verifies the token id is the <c>jti</c> claim, and null when it is absent.</summary>
     [Fact]
-    public void GetTokenId_JtiClaim_IsReturnedOrNull_Test() =>
+    public void GetTokenId_JtiClaim_IsReturnedOrNull_Test()
+    {
+        // Arrange
+        var withToken = ImpersonationMother.Caller("alice", tokenId: "jti-1");
+        var withoutToken = ImpersonationMother.Caller("alice");
+
+        // Act / Assert
         Assert.Multiple(
-            () =>
-                Assert.Equal(
-                    "jti-1",
-                    ImpersonationMother.Caller("alice", tokenId: "jti-1").GetTokenId()
-                ),
-            () => Assert.Null(ImpersonationMother.Caller("alice").GetTokenId())
+            () => Assert.Equal("jti-1", withToken.GetTokenId()),
+            () => Assert.Null(withoutToken.GetTokenId())
         );
+    }
 }

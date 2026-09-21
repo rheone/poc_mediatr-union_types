@@ -11,7 +11,6 @@ namespace MediatrUnionPoc.Api.Impersonation;
 /// exceed the maximum.
 /// </summary>
 /// <param name="configuration">Read for the ordinary signing key, so this check does not depend on that key's own options validating first.</param>
-/// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
 public sealed class ImpersonationOptionsRules(IConfiguration configuration)
     : IValidateOptions<ImpersonationOptions>
 {

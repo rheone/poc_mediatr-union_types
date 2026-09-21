@@ -21,6 +21,10 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class ProductListingTests : IDisposable
 {
     private const string ProductsUri = ApiRoutes.Products;
+    private const string Origin = "http://localhost";
+    private const string LinkHeader = "Link";
+    private const string TotalCountHeader = "X-Total-Count";
+    private const string ProblemJson = "application/problem+json";
 
     private static readonly DateTimeOffset ClockStart = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -184,23 +188,19 @@ public sealed class ProductListingTests : IDisposable
         string[] expectedFields
     )
     {
-        // Act
+        // Arrange / Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?{query}",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
-        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         using var json = JsonDocument.Parse(body);
         var fields = ErrorKeys(json.RootElement);
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode),
-            () =>
-                Assert.Equal(
-                    "application/problem+json",
-                    response.Content.Headers.ContentType?.MediaType
-                ),
+            () => Assert.Equal(ProblemJson, response.Content.Headers.ContentType?.MediaType),
             () => Assert.Equal(expectedFields, fields)
         );
     }
@@ -210,14 +210,14 @@ public sealed class ProductListingTests : IDisposable
     [Fact]
     public async Task GetPagedAsync_NonNumericPrice_Returns400NamingTheField_Test()
     {
-        // Act
+        // Arrange / Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?minPrice=abc",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
-        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         using var json = JsonDocument.Parse(body);
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode),
@@ -230,14 +230,14 @@ public sealed class ProductListingTests : IDisposable
     [Fact]
     public async Task GetPagedAsync_UnknownSortField_ErrorMessageListsAllowedFields_Test()
     {
-        // Act
+        // Arrange / Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?sort=weight",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
-        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         using var json = JsonDocument.Parse(body);
         var message = json.RootElement.GetProperty("errors").GetProperty("Sort")[0].GetString();
         Assert.Equal(
@@ -260,11 +260,11 @@ public sealed class ProductListingTests : IDisposable
         // Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?pageNumber=2&pageSize=2&sort=-name",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
-        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         using var json = JsonDocument.Parse(body);
         var root = json.RootElement;
         Assert.Multiple(
@@ -332,14 +332,11 @@ public sealed class ProductListingTests : IDisposable
         }
 
         // Act
-        using var response = await _client.GetAsync(
-            ProductsUri,
-            TestContext.Current.CancellationToken
-        );
+        using var response = await _client.GetAsync(ProductsUri, CancellationToken.None);
 
         // Assert
         var page = await response.Content.ReadFromJsonAsync<PagedResult<ProductDto>>(
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, response.StatusCode),
@@ -373,11 +370,11 @@ public sealed class ProductListingTests : IDisposable
         // Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?{query}",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
-        Assert.Equal(expectedTotal, Assert.Single(response.Headers.GetValues("X-Total-Count")));
+        Assert.Equal(expectedTotal, Assert.Single(response.Headers.GetValues(TotalCountHeader)));
     }
 
     /// <summary>Verifies a middle page links to first, prev, next and last, preserving every other query parameter and replacing only the page number in place.</summary>
@@ -394,16 +391,16 @@ public sealed class ProductListingTests : IDisposable
         // Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?nameContains=item&pageSize=2&pageNumber=2&sort=name,-price",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
         const string Base =
-            $"http://localhost{ApiRoutes.Products}?nameContains=item&pageSize=2&pageNumber=";
+            $"{Origin}{ApiRoutes.Products}?nameContains=item&pageSize=2&pageNumber=";
         const string Rest = "&sort=name,-price";
         Assert.Equal(
             $"<{Base}1{Rest}>; rel=\"first\", <{Base}1{Rest}>; rel=\"prev\", <{Base}3{Rest}>; rel=\"next\", <{Base}4{Rest}>; rel=\"last\"",
-            Assert.Single(response.Headers.GetValues("Link"))
+            Assert.Single(response.Headers.GetValues(LinkHeader))
         );
     }
 
@@ -428,11 +425,11 @@ public sealed class ProductListingTests : IDisposable
         // Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?pageSize=2&pageNumber={pageNumber}",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
-        var link = Assert.Single(response.Headers.GetValues("Link"));
+        var link = Assert.Single(response.Headers.GetValues(LinkHeader));
         var rels = link.Split(", ")
             .Select(part => part[(part.IndexOf("rel=\"", StringComparison.Ordinal) + 5)..^1]);
         Assert.Equal(expectedRels.Split(','), rels);
@@ -452,13 +449,13 @@ public sealed class ProductListingTests : IDisposable
         // Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?pageSize=2",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
         Assert.Equal(
-            $"<http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=1>; rel=\"first\", <http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=2>; rel=\"next\", <http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=2>; rel=\"last\"",
-            Assert.Single(response.Headers.GetValues("Link"))
+            $"<{Origin}{ApiRoutes.Products}?pageSize=2&pageNumber=1>; rel=\"first\", <{Origin}{ApiRoutes.Products}?pageSize=2&pageNumber=2>; rel=\"next\", <{Origin}{ApiRoutes.Products}?pageSize=2&pageNumber=2>; rel=\"last\"",
+            Assert.Single(response.Headers.GetValues(LinkHeader))
         );
     }
 
@@ -476,13 +473,13 @@ public sealed class ProductListingTests : IDisposable
         // Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?pageSize=2&pageNumber=9",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
         Assert.Equal(
-            $"<http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=1>; rel=\"first\", <http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=3>; rel=\"prev\", <http://localhost{ApiRoutes.Products}?pageSize=2&pageNumber=3>; rel=\"last\"",
-            Assert.Single(response.Headers.GetValues("Link"))
+            $"<{Origin}{ApiRoutes.Products}?pageSize=2&pageNumber=1>; rel=\"first\", <{Origin}{ApiRoutes.Products}?pageSize=2&pageNumber=3>; rel=\"prev\", <{Origin}{ApiRoutes.Products}?pageSize=2&pageNumber=3>; rel=\"last\"",
+            Assert.Single(response.Headers.GetValues(LinkHeader))
         );
     }
 
@@ -491,16 +488,16 @@ public sealed class ProductListingTests : IDisposable
     [Fact]
     public async Task GetPagedAsync_NoMatches_LinkHeaderHasOnlyFirstAndLast_Test()
     {
-        // Act
+        // Arrange / Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?nameContains=zzz",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
         Assert.Equal(
-            $"<http://localhost{ApiRoutes.Products}?nameContains=zzz&pageNumber=1>; rel=\"first\", <http://localhost{ApiRoutes.Products}?nameContains=zzz&pageNumber=1>; rel=\"last\"",
-            Assert.Single(response.Headers.GetValues("Link"))
+            $"<{Origin}{ApiRoutes.Products}?nameContains=zzz&pageNumber=1>; rel=\"first\", <{Origin}{ApiRoutes.Products}?nameContains=zzz&pageNumber=1>; rel=\"last\"",
+            Assert.Single(response.Headers.GetValues(LinkHeader))
         );
     }
 
@@ -509,16 +506,16 @@ public sealed class ProductListingTests : IDisposable
     [Fact]
     public async Task GetPagedAsync_InvalidQuery_HasNoPagingHeaders_Test()
     {
-        // Act
+        // Arrange / Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?pageSize=0",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
         Assert.Multiple(
-            () => Assert.False(response.Headers.Contains("Link")),
-            () => Assert.False(response.Headers.Contains("X-Total-Count"))
+            () => Assert.False(response.Headers.Contains(LinkHeader)),
+            () => Assert.False(response.Headers.Contains(TotalCountHeader))
         );
     }
 
@@ -527,16 +524,16 @@ public sealed class ProductListingTests : IDisposable
     [Fact]
     public async Task GetPagedAsync_QueryValueNeedingEscapes_LinksKeepItEscaped_Test()
     {
-        // Act
+        // Arrange / Act
         using var response = await _client.GetAsync(
             $"{ProductsUri}?nameContains=a%26b%2Bc%20d",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
         Assert.Equal(
-            $"<http://localhost{ApiRoutes.Products}?nameContains=a%26b%2Bc%20d&pageNumber=1>; rel=\"first\", <http://localhost{ApiRoutes.Products}?nameContains=a%26b%2Bc%20d&pageNumber=1>; rel=\"last\"",
-            Assert.Single(response.Headers.GetValues("Link"))
+            $"<{Origin}{ApiRoutes.Products}?nameContains=a%26b%2Bc%20d&pageNumber=1>; rel=\"first\", <{Origin}{ApiRoutes.Products}?nameContains=a%26b%2Bc%20d&pageNumber=1>; rel=\"last\"",
+            Assert.Single(response.Headers.GetValues(LinkHeader))
         );
     }
 
@@ -594,28 +591,21 @@ public sealed class ProductListingTests : IDisposable
             request.AsUser(ownerId);
         }
 
-        using var response = await _client.SendAsync(
-            request,
-            TestContext.Current.CancellationToken
-        );
+        using var response = await _client.SendAsync(request, CancellationToken.None);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        return (
-            await response.Content.ReadFromJsonAsync<ProductDto>(
-                TestContext.Current.CancellationToken
-            )
-        )!;
+        return (await response.Content.ReadFromJsonAsync<ProductDto>(CancellationToken.None))!;
     }
 
     private async Task<PagedResult<ProductDto>> ListAsync(string query)
     {
         using var response = await _client.GetAsync(
             $"{ProductsUri}?{query}",
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (
             await response.Content.ReadFromJsonAsync<PagedResult<ProductDto>>(
-                TestContext.Current.CancellationToken
+                CancellationToken.None
             )
         )!;
     }

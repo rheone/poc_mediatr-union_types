@@ -23,6 +23,7 @@ public sealed class ApiForwardedHeadersOptions
     /// middleware is off. The catch-all networks (<c>0.0.0.0/0</c>, <c>::/0</c>) and the unspecified
     /// addresses are rejected, since trusting everyone is the same as trusting the client.
     /// </summary>
+    /// <value>Zero or more IP addresses or CIDR networks; an empty array leaves forwarded-headers handling off.</value>
     [SuppressMessage(
         "Performance",
         "CA1819:Properties should not return arrays",

@@ -17,6 +17,11 @@ public sealed class LoggingTests
     private const string HandlingTemplate = "Handling {RequestName}";
     private const string RequestLoggingCategory = "Serilog.AspNetCore.RequestLoggingMiddleware";
     private const string ProductsUri = ApiRoutes.Products;
+    private const string TraceIdHeader = "X-Trace-Id";
+    private const string Alice = "alice";
+    private const string LiveUri = "/health/live";
+    private const string ReadyUri = "/health/ready";
+    private const string PagedQueryName = "GetPagedProductsQuery";
 
     /// <summary>
     /// Verifies an ordinary <c>ILogger</c> call from the MediatR pipeline carries the enriched
@@ -30,23 +35,23 @@ public sealed class LoggingTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient().AsUser("alice");
+        using var client = factory.CreateClient().AsUser(Alice);
 
         // Act
         using var response = await client.GetAsync(ProductsUri, CancellationToken.None);
 
         // Assert
-        var header = Assert.Single(response.Headers.GetValues("X-Trace-Id"));
+        var header = Assert.Single(response.Headers.GetValues(TraceIdHeader));
         var handling = Assert.Single(
             factory.LogSink.Events,
             log => log.Template() == HandlingTemplate
         );
         Assert.Multiple(
             () => Assert.Equal(header, handling.Scalar("TraceId")),
-            () => Assert.Equal("alice", handling.Scalar("UserId")),
+            () => Assert.Equal(Alice, handling.Scalar("UserId")),
             () => Assert.False(handling.Flag("IsImpersonated")),
             () => Assert.False(handling.Properties.ContainsKey("ImpersonatedBy")),
-            () => Assert.Equal("GetPagedProductsQuery", handling.Scalar("RequestName")),
+            () => Assert.Equal(PagedQueryName, handling.Scalar("RequestName")),
             () => Assert.Equal(1000, handling.EventIdNumber()),
             () => Assert.Equal("MediatrUnionPoc.Api", handling.Scalar("Application")),
             () => Assert.Equal("Development", handling.Scalar("Environment")),
@@ -64,19 +69,19 @@ public sealed class LoggingTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient().AsUser("alice");
+        using var client = factory.CreateClient().AsUser(Alice);
 
         // Act
         using var response = await client.GetAsync(ProductsUri, CancellationToken.None);
 
         // Assert
-        var header = Assert.Single(response.Headers.GetValues("X-Trace-Id"));
+        var header = Assert.Single(response.Headers.GetValues(TraceIdHeader));
         var handled = Assert.Single(
             factory.LogSink.Events,
             log => log.Template() == "Handled {RequestName} -> {ResultCase}"
         );
         Assert.Multiple(
-            () => Assert.Equal("GetPagedProductsQuery", handled.Scalar("RequestName")),
+            () => Assert.Equal(PagedQueryName, handled.Scalar("RequestName")),
             () => Assert.Equal("PagedResult`1", handled.Scalar("ResultCase")),
             () => Assert.Equal(1001, handled.EventIdNumber()),
             () => Assert.Equal(header, handled.Scalar("TraceId"))
@@ -99,7 +104,7 @@ public sealed class LoggingTests
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var header = Assert.Single(response.Headers.GetValues("X-Trace-Id"));
+        var header = Assert.Single(response.Headers.GetValues(TraceIdHeader));
         var handling = Assert.Single(
             factory.LogSink.Events,
             log =>
@@ -131,13 +136,13 @@ public sealed class LoggingTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient().AsUser("alice");
+        using var client = factory.CreateClient().AsUser(Alice);
 
         // Act
         using var response = await client.GetAsync(ProductsUri, CancellationToken.None);
 
         // Assert
-        var header = Assert.Single(response.Headers.GetValues("X-Trace-Id"));
+        var header = Assert.Single(response.Headers.GetValues(TraceIdHeader));
         var line = Assert.Single(factory.LogSink.Events, log => log.From(RequestLoggingCategory));
         Assert.Multiple(
             () => Assert.Equal(LogEventLevel.Information, line.Level),
@@ -146,7 +151,7 @@ public sealed class LoggingTests
             () => Assert.Equal(200, line.Scalar("StatusCode")),
             () => Assert.IsType<double>(line.Scalar("Elapsed")),
             () => Assert.Equal(header, line.Scalar("TraceId")),
-            () => Assert.Equal("alice", line.Scalar("UserId")),
+            () => Assert.Equal(Alice, line.Scalar("UserId")),
             () => Assert.False(line.Flag("IsImpersonated")),
             () => Assert.Equal("MediatrUnionPoc.Api", line.Scalar("Application"))
         );
@@ -183,7 +188,7 @@ public sealed class LoggingTests
         using var client = factory.CreateClient();
 
         // Act
-        using var response = await client.GetAsync("/health/live", CancellationToken.None);
+        using var response = await client.GetAsync(LiveUri, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -200,11 +205,11 @@ public sealed class LoggingTests
         using var factory = baseFactory.WithWebHostBuilder(builder =>
             builder.UseSetting("Serilog:MinimumLevel:Default", "Debug")
         );
-        using var client = factory.CreateClient().AsUser("alice");
+        using var client = factory.CreateClient().AsUser(Alice);
 
         // Act
-        using var live = await client.GetAsync("/health/live", CancellationToken.None);
-        using var ready = await client.GetAsync("/health/ready", CancellationToken.None);
+        using var live = await client.GetAsync(LiveUri, CancellationToken.None);
+        using var ready = await client.GetAsync(ReadyUri, CancellationToken.None);
         using var products = await client.GetAsync(ProductsUri, CancellationToken.None);
 
         // Assert
@@ -241,7 +246,7 @@ public sealed class LoggingTests
                 "Warning"
             )
         );
-        using var client = factory.CreateClient().AsUser("alice");
+        using var client = factory.CreateClient().AsUser(Alice);
 
         // Act
         using var response = await client.GetAsync(ProductsUri, CancellationToken.None);
@@ -265,7 +270,7 @@ public sealed class LoggingTests
     {
         // Arrange
         using var factory = new ProductsApiFactory();
-        using var client = factory.CreateClient().AsUser("alice");
+        using var client = factory.CreateClient().AsUser(Alice);
 
         // Act
         using var response = await client.GetAsync(ProductsUri, CancellationToken.None);

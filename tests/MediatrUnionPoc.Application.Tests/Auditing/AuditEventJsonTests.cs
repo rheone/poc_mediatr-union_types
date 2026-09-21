@@ -10,15 +10,15 @@ namespace MediatrUnionPoc.Application.Tests.Auditing;
 /// </summary>
 public sealed class AuditEventJsonTests
 {
+    private static readonly Guid FixedEventId = new("0b7e4d52-91a3-4c68-b2f0-6d3a85c1e947");
+
     /// <summary>Verifies every member is written under its camelCase name with the expected values.</summary>
     [Fact]
     public void Serialize_FullEvent_WritesCamelCaseMembers_Test()
     {
         // Arrange
-        var id = Guid.NewGuid();
         var auditEvent = Event() with
         {
-            Id = id,
             ActorId = "root",
             EffectiveId = "alice",
             IsImpersonated = true,
@@ -38,7 +38,7 @@ public sealed class AuditEventJsonTests
         // Assert
         var root = json.RootElement;
         Assert.Multiple(
-            () => Assert.Equal(id, root.GetProperty("id").GetGuid()),
+            () => Assert.Equal(FixedEventId, root.GetProperty("id").GetGuid()),
             () =>
                 Assert.Equal(
                     "2026-03-04T05:06:07+00:00",
@@ -68,8 +68,11 @@ public sealed class AuditEventJsonTests
     [Fact]
     public void Serialize_MinimalEvent_OmitsNullMembers_Test()
     {
+        // Arrange
+        var auditEvent = Event();
+
         // Act
-        var json = JsonNode.Parse(AuditEventJson.Serialize(Event()))!.AsObject();
+        var json = JsonNode.Parse(AuditEventJson.Serialize(auditEvent))!.AsObject();
 
         // Assert
         var names = json.Select(pair => pair.Key).Order().ToArray();
@@ -112,13 +115,19 @@ public sealed class AuditEventJsonTests
 
     /// <summary>Verifies a null event is rejected.</summary>
     [Fact]
-    public void Serialize_Null_ThrowsArgumentNullException_Test() =>
-        Assert.Throws<ArgumentNullException>(() => AuditEventJson.Serialize(null!));
+    public void Serialize_Null_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        AuditEvent? auditEvent = null;
+
+        // Act / Assert
+        Assert.Throws<ArgumentNullException>(() => AuditEventJson.Serialize(auditEvent!));
+    }
 
     private static AuditEvent Event() =>
         new()
         {
-            Id = Guid.NewGuid(),
+            Id = FixedEventId,
             Timestamp = new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero),
             Action = "Impersonation.IssueToken",
             Outcome = "ImpersonationToken",

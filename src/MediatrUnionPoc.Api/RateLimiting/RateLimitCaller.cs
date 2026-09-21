@@ -9,7 +9,7 @@ namespace MediatrUnionPoc.Api.RateLimiting;
 /// so an address string can never collide with a user id.
 /// </summary>
 /// <remarks>
-/// A request made under an impersonation token is counted against the <em>real</em> actor (the token's
+/// A request made under an impersonation token is counted against the real actor (the token's
 /// <c>act</c> subject), never the identity it runs as: otherwise an administrator could mint tokens for
 /// many targets and spend a fresh budget under each. An impersonated principal whose actor cannot be read
 /// falls back to the network address instead of the effective identity, for the same reason.

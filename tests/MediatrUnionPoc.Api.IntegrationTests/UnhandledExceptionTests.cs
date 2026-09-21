@@ -15,6 +15,9 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class UnhandledExceptionTests
 {
     private const string Secret = "secret-internal-detail-42";
+    private const string RequestLoggingCategory = "Serilog.AspNetCore.RequestLoggingMiddleware";
+    private const int PollAttempts = 10;
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
 
     private static WebApplicationFactory<Program> ThrowingFactory(
         ProductsApiFactory baseFactory,
@@ -121,10 +124,7 @@ public sealed class UnhandledExceptionTests
         var header = Assert.Single(response.Headers.GetValues("X-Trace-Id"));
         var events = baseFactory.LogSink.Events;
         var entry = Assert.Single(events, log => log.Level == LogEventLevel.Error);
-        var requestLine = Assert.Single(
-            events,
-            log => log.From("Serilog.AspNetCore.RequestLoggingMiddleware")
-        );
+        var requestLine = Assert.Single(events, log => log.From(RequestLoggingCategory));
         Assert.Multiple(
             () => Assert.Same(thrown, entry.Exception),
             () => Assert.Equal(2000, entry.EventIdNumber()),
@@ -168,8 +168,17 @@ public sealed class UnhandledExceptionTests
 #pragma warning restore VSTHRD003
         await sender.Finished.Task.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
 
-        // Give the rest of the server pipeline a moment to finish logging after the handler unwinds.
-        await Task.Delay(500, CancellationToken.None);
+        // The server pipeline logs after the handler unwinds: poll in short steps until the request line appears.
+        // SWEEP-AMBIGUITY: no confirmed signal that the request line is written for an aborted request, so the poll is bounded and falls through.
+        for (var attempt = 0; attempt < PollAttempts; attempt++)
+        {
+            if (baseFactory.LogSink.Events.Any(log => log.From(RequestLoggingCategory)))
+            {
+                break;
+            }
+
+            await Task.Delay(PollInterval, CancellationToken.None);
+        }
 
         // Assert
         Assert.DoesNotContain(baseFactory.LogSink.Events, log => log.Level >= LogEventLevel.Error);

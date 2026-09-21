@@ -15,6 +15,8 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class RequestTimeoutSecureByDefaultTests : IDisposable
 {
+    private const int GatewayTimeoutStatusCode = 504;
+
     private readonly ProductsApiFactory _factory = new();
 
     /// <inheritdoc/>
@@ -26,6 +28,8 @@ public sealed class RequestTimeoutSecureByDefaultTests : IDisposable
     {
         // Arrange
         using var client = _factory.CreateClient();
+
+        // Act
         var actions = Endpoints()
             .Where(e => e.Metadata.GetMetadata<ControllerActionDescriptor>() is not null)
             .Select(e =>
@@ -37,7 +41,7 @@ public sealed class RequestTimeoutSecureByDefaultTests : IDisposable
             )
             .ToList();
 
-        // Act / Assert
+        // Assert
         Assert.Multiple(
             () => Assert.NotEmpty(actions),
             () => Assert.All(actions, action => Assert.False(action.Exempt, action.Pattern)),
@@ -65,12 +69,14 @@ public sealed class RequestTimeoutSecureByDefaultTests : IDisposable
     {
         // Arrange
         using var client = _factory.CreateClient();
+
+        // Act
         var exempt = Endpoints()
             .Where(e => e.Metadata.GetMetadata<DisableRequestTimeoutAttribute>() is not null)
             .Select(e => e.RoutePattern.RawText!)
             .ToList();
 
-        // Act / Assert
+        // Assert
         Assert.Multiple(
             () => Assert.NotEmpty(exempt),
             () =>
@@ -102,10 +108,10 @@ public sealed class RequestTimeoutSecureByDefaultTests : IDisposable
         // Assert
         Assert.Multiple(
             () => Assert.NotNull(options.DefaultPolicy),
-            () => Assert.Equal(504, options.DefaultPolicy!.TimeoutStatusCode),
+            () => Assert.Equal(GatewayTimeoutStatusCode, options.DefaultPolicy!.TimeoutStatusCode),
             () =>
                 Assert.Equal(
-                    504,
+                    GatewayTimeoutStatusCode,
                     options.Policies[RequestTimeoutPolicyNames.Impersonation].TimeoutStatusCode
                 )
         );

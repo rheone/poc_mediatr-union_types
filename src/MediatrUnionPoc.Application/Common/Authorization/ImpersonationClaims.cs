@@ -43,7 +43,7 @@ public static class ImpersonationClaims
     extension(ClaimsPrincipal principal)
     {
         /// <summary>
-        /// Gets whether the caller is using an impersonation token: it carries the <see cref="Impersonated"/>
+        /// Determines whether the caller is using an impersonation token: it carries the <see cref="Impersonated"/>
         /// marker or an <see cref="Actor"/> claim. Either alone is enough, so a token that lost one of
         /// them is still recognised.
         /// </summary>

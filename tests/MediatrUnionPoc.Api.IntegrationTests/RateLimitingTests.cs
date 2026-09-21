@@ -15,6 +15,10 @@ public sealed class RateLimitingTests : IDisposable
 {
     private const string ProblemJson = "application/problem+json";
     private const string DevOrigin = "http://localhost:5173";
+    private const string AddressA = "198.51.100.1";
+    private const string AddressB = "198.51.100.2";
+    private const string CallerAddress = "198.51.100.23";
+    private static readonly Guid UnknownProductId = new("5b0f3b6e-2c1a-4d7e-9a41-0c6d2f8e7a13");
 
     private readonly ProductsApiFactory _factory = new();
 
@@ -116,19 +120,19 @@ public sealed class RateLimitingTests : IDisposable
         using var allowed = await client.RequestAsync(
             HttpMethod.Get,
             ApiRoutes.Products,
-            "198.51.100.23"
+            CallerAddress
         );
         using var refused = await client.RequestAsync(
             HttpMethod.Get,
             ApiRoutes.Products,
-            "198.51.100.23"
+            CallerAddress
         );
         var text = await refused.Content.ReadAsStringAsync(CancellationToken.None);
 
         // Assert
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.TooManyRequests, refused.StatusCode),
-            () => Assert.DoesNotContain("198.51.100.23", text, StringComparison.Ordinal),
+            () => Assert.DoesNotContain(CallerAddress, text, StringComparison.Ordinal),
             () => Assert.DoesNotContain("ip:", text, StringComparison.Ordinal)
         );
     }
@@ -178,7 +182,7 @@ public sealed class RateLimitingTests : IDisposable
         // Arrange
         using var factory = _factory.WithLimits(writes: 1);
         using var client = factory.CreateClient().AsUser("alice");
-        var id = Guid.NewGuid();
+        var id = UnknownProductId;
 
         // Act
         using var spent = await client.PostAsync(
@@ -188,7 +192,7 @@ public sealed class RateLimitingTests : IDisposable
         );
         using var put = await client.PutAsync(
             $"{ApiRoutes.Products}/{id}",
-            Widget("x"),
+            Widget("Replacement"),
             CancellationToken.None
         );
         using var mergePatch = new StringContent(
@@ -250,8 +254,8 @@ public sealed class RateLimitingTests : IDisposable
         using var client = factory.CreateClient();
 
         // Act
-        var fromA = await client.GetStatusesAsync(ApiRoutes.Products, 3, "198.51.100.1");
-        var fromB = await client.GetStatusesAsync(ApiRoutes.Products, 3, "198.51.100.2");
+        var fromA = await client.GetStatusesAsync(ApiRoutes.Products, 3, AddressA);
+        var fromB = await client.GetStatusesAsync(ApiRoutes.Products, 3, AddressB);
 
         // Assert
         Assert.Multiple(
@@ -266,7 +270,7 @@ public sealed class RateLimitingTests : IDisposable
     public async Task Anonymous_CannotSpendAnAuthenticatedCallersBudget_AndAKeyCannotCollide_Test()
     {
         // Arrange
-        const string address = "198.51.100.1";
+        const string address = AddressA;
         using var factory = _factory.WithLimits(reads: 1);
         using var anonymous = factory.CreateClient();
         using var alice = factory.CreateClient().AsUser("alice");
@@ -295,8 +299,8 @@ public sealed class RateLimitingTests : IDisposable
         using var client = factory.CreateClient().AsUser(null);
 
         // Act
-        var fromA = await client.GetStatusesAsync(ApiRoutes.Products, 2, "198.51.100.1");
-        var fromB = await client.GetStatusesAsync(ApiRoutes.Products, 2, "198.51.100.2");
+        var fromA = await client.GetStatusesAsync(ApiRoutes.Products, 2, AddressA);
+        var fromB = await client.GetStatusesAsync(ApiRoutes.Products, 2, AddressB);
 
         // Assert
         Assert.Multiple(
@@ -313,7 +317,7 @@ public sealed class RateLimitingTests : IDisposable
         // Arrange
         using var factory = _factory.WithLimits(writes: 2);
         using var client = factory.CreateClient().AsUser("alice");
-        var uri = $"{ApiRoutes.Products}/{Guid.NewGuid()}";
+        var uri = $"{ApiRoutes.Products}/{UnknownProductId}";
 
         // Act
         using var first = await client.DeleteAsync(uri, CancellationToken.None);

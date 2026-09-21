@@ -15,6 +15,7 @@ namespace MediatrUnionPoc.Application.Tests.Handlers;
 public sealed class IssueImpersonationTokenHandlerTests
 {
     private const string Secret = "the-signed-token-value-that-must-never-be-logged";
+    private const int RequestedMinutes = 5;
 
     private readonly IImpersonationTokenIssuer _issuer =
         Substitute.For<IImpersonationTokenIssuer>();
@@ -71,13 +72,21 @@ public sealed class IssueImpersonationTokenHandlerTests
     [Fact]
     public async Task Handle_RequestedLifetime_IsPassedToTheIssuer_Test()
     {
+        // Arrange
+        var sut = Sut();
+        var command = Command(lifetime: RequestedMinutes);
+
         // Act
-        await Sut().Handle(Command(lifetime: 5), CancellationToken.None);
+        await sut.Handle(command, CancellationToken.None);
 
         // Assert
         _issuer
             .Received(1)
-            .Issue(Arg.Is<ImpersonationGrant>(grant => grant.Lifetime == TimeSpan.FromMinutes(5)));
+            .Issue(
+                Arg.Is<ImpersonationGrant>(grant =>
+                    grant.Lifetime == TimeSpan.FromMinutes(RequestedMinutes)
+                )
+            );
     }
 
     /// <summary>Verifies roles are trimmed and de-duplicated before being judged and granted.</summary>
@@ -85,12 +94,12 @@ public sealed class IssueImpersonationTokenHandlerTests
     [Fact]
     public async Task Handle_RolesWithPaddingAndDuplicates_AreGrantedOnce_Test()
     {
+        // Arrange
+        var sut = Sut();
+        var command = Command(roles: [" Support ", "Support", "Administrator"]);
+
         // Act
-        await Sut()
-            .Handle(
-                Command(roles: [" Support ", "Support", "Administrator"]),
-                CancellationToken.None
-            );
+        await sut.Handle(command, CancellationToken.None);
 
         // Assert
         _issuer
@@ -148,8 +157,12 @@ public sealed class IssueImpersonationTokenHandlerTests
         bool granted
     )
     {
+        // Arrange
+        var sut = Sut();
+        var command = Command(roles: [role]);
+
         // Act
-        var result = await Sut().Handle(Command(roles: [role]), CancellationToken.None);
+        var result = await sut.Handle(command, CancellationToken.None);
 
         // Assert
         var value = ((IUnion)result).Value;
@@ -193,12 +206,12 @@ public sealed class IssueImpersonationTokenHandlerTests
     [Fact]
     public async Task Handle_CallerWithoutSubject_IsRefused_Test()
     {
+        // Arrange
+        var sut = Sut();
+        var command = Command(principal: Caller(null, [AuthorizationRoles.Administrator]));
+
         // Act
-        var result = await Sut()
-            .Handle(
-                Command(principal: Caller(null, [AuthorizationRoles.Administrator])),
-                CancellationToken.None
-            );
+        var result = await sut.Handle(command, CancellationToken.None);
 
         // Assert
         Assert.IsType<NotAuthorized>(((IUnion)result).Value);
@@ -210,8 +223,12 @@ public sealed class IssueImpersonationTokenHandlerTests
     [Fact]
     public async Task Handle_Disabled_ReturnsDisabledErrorAndIssuesNothing_Test()
     {
+        // Arrange
+        var sut = Sut(enabled: false);
+        var command = Command();
+
         // Act
-        var result = await Sut(enabled: false).Handle(Command(), CancellationToken.None);
+        var result = await sut.Handle(command, CancellationToken.None);
 
         // Assert
         var error = Assert.IsType<Error>(((IUnion)result).Value);
@@ -223,18 +240,21 @@ public sealed class IssueImpersonationTokenHandlerTests
     [Fact]
     public void Ctor_NullDependencies_ThrowArgumentNullException_Test()
     {
+        // Arrange
+        var validSettings = Settings();
+
         // Act
-        var issuer = Assert.Throws<ArgumentNullException>(() =>
-            new IssueImpersonationTokenHandler(null!, Settings())
+        var issuerException = Assert.Throws<ArgumentNullException>(() =>
+            new IssueImpersonationTokenHandler(null!, validSettings)
         );
-        var settings = Assert.Throws<ArgumentNullException>(() =>
+        var settingsException = Assert.Throws<ArgumentNullException>(() =>
             new IssueImpersonationTokenHandler(_issuer, null!)
         );
 
         // Assert
         Assert.Multiple(
-            () => Assert.Equal("issuer", issuer.ParamName),
-            () => Assert.Equal("settings", settings.ParamName)
+            () => Assert.Equal("issuer", issuerException.ParamName),
+            () => Assert.Equal("settings", settingsException.ParamName)
         );
     }
 

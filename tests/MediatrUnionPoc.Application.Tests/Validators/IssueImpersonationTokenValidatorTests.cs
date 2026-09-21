@@ -14,9 +14,12 @@ public class IssueImpersonationTokenValidatorTests
     [Fact]
     public void Ctor_NullSettings_ThrowsArgumentNullException_Test()
     {
+        // Arrange
+        IImpersonationSettings? settings = null;
+
         // Act
         var ex = Assert.Throws<ArgumentNullException>(() =>
-            new IssueImpersonationTokenValidator(null!)
+            new IssueImpersonationTokenValidator(settings!)
         );
 
         // Assert
@@ -45,6 +48,7 @@ public class IssueImpersonationTokenValidatorTests
     [InlineData("   ")]
     public void Validate_MissingTarget_FailsTargetRule_Test(string? target)
     {
+        // Arrange
         // Act
         var result = _sut.TestValidate(Command(target: target));
 
@@ -56,6 +60,7 @@ public class IssueImpersonationTokenValidatorTests
     [Fact]
     public void Validate_TargetLengthBoundary_FailsOnlyOver200_Test()
     {
+        // Arrange
         // Act
         var tooLong = _sut.TestValidate(Command(target: new string('a', 201)));
         var atLimit = _sut.TestValidate(Command(target: new string('a', 200)));
@@ -71,6 +76,7 @@ public class IssueImpersonationTokenValidatorTests
     [Fact]
     public void Validate_ControlCharacters_AreRejectedEverywhereTextIsAccepted_Test()
     {
+        // Arrange
         // Act
         var target = _sut.TestValidate(Command(target: "ali\nce"));
         var reason = _sut.TestValidate(Command(reason: "a long enough reason\r\nforged"));
@@ -93,6 +99,7 @@ public class IssueImpersonationTokenValidatorTests
     [InlineData("  root  ")]
     public void Validate_TargetIsTheCaller_FailsTargetRule_Test(string target)
     {
+        // Arrange
         // Act
         var result = _sut.TestValidate(Command(target: target));
 
@@ -108,6 +115,7 @@ public class IssueImpersonationTokenValidatorTests
     [Fact]
     public void Validate_RoleCount_FailsOnlyOverTen_Test()
     {
+        // Arrange
         // Act
         var tooMany = _sut.TestValidate(
             Command(roles: [.. Enumerable.Range(0, 11).Select(i => $"r{i}")])
@@ -131,6 +139,7 @@ public class IssueImpersonationTokenValidatorTests
     [InlineData("0123456789012345678901234567890123456789012345678901234567890123x")]
     public void Validate_InvalidRoleName_Fails_Test(string role)
     {
+        // Arrange
         // Act
         var result = _sut.TestValidate(Command(roles: [role]));
 
@@ -148,6 +157,7 @@ public class IssueImpersonationTokenValidatorTests
     [InlineData("   nine chr   ")]
     public void Validate_MissingOrShortReason_FailsReasonRule_Test(string? reason)
     {
+        // Arrange
         // Act
         var result = _sut.TestValidate(Command(reason: reason));
 
@@ -159,6 +169,7 @@ public class IssueImpersonationTokenValidatorTests
     [Fact]
     public void Validate_ReasonLengthBoundaries_AreTenToFiveHundred_Test()
     {
+        // Arrange
         // Act
         var atMinimum = _sut.TestValidate(Command(reason: new string('a', 10)));
         var atMaximum = _sut.TestValidate(Command(reason: new string('a', 500)));
@@ -176,6 +187,7 @@ public class IssueImpersonationTokenValidatorTests
     [Fact]
     public void Validate_TicketReference_IsOptionalAndCappedAt100_Test()
     {
+        // Arrange
         // Act
         var absent = _sut.TestValidate(Command(ticket: null));
         var atLimit = _sut.TestValidate(Command(ticket: new string('t', 100)));
@@ -203,6 +215,7 @@ public class IssueImpersonationTokenValidatorTests
         bool valid
     )
     {
+        // Arrange
         // Act
         var result = _sut.TestValidate(Command(lifetime: minutes));
 
@@ -221,6 +234,7 @@ public class IssueImpersonationTokenValidatorTests
     [Fact]
     public void Validate_AbsentLifetime_IsValid_Test()
     {
+        // Arrange
         // Act
         var result = _sut.TestValidate(Command(lifetime: null));
 

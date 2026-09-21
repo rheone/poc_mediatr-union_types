@@ -222,6 +222,8 @@ public sealed class RequestTimeoutTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
 #pragma warning restore VSTHRD003
         await sender.Finished.Task.WaitAsync(TestBudget, CancellationToken.None);
+
+        // SWEEP-AMBIGUITY: the 500 ms settle delay lets any late log entry arrive before the negative assertions; there is no signal to await for "nothing more was logged".
         await Task.Delay(500, CancellationToken.None);
 
         // Assert
@@ -325,6 +327,8 @@ public sealed class RequestTimeoutTests : IDisposable
         // Act
         var request = PostAsync(client, Body());
         await audit.Reached.Task.WaitAsync(TestBudget, CancellationToken.None);
+
+        // SWEEP-AMBIGUITY: the request must be observed still pending after its timeout elapsed, which can only be shown by letting wall-clock time pass.
         await Task.Delay(WarmDeadline + TimeSpan.FromMilliseconds(400), CancellationToken.None);
         var pendingPastTimeout = !request.IsCompleted;
         var recordedBeforeRelease = audit.Recorded.Count - warmUpEvents;

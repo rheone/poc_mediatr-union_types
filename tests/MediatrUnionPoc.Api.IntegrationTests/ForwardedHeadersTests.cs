@@ -17,6 +17,10 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class ForwardedHeadersTests : IDisposable
 {
     private const string ForwardedFor = "X-Forwarded-For";
+    private const string ClientA = "198.51.100.1";
+    private const string ClientB = "198.51.100.2";
+    private const string ClientC = "198.51.100.3";
+    private const string ClientD = "198.51.100.9";
 
     private readonly ProductsApiFactory _factory = new();
 
@@ -34,7 +38,7 @@ public sealed class ForwardedHeadersTests : IDisposable
 
         // Act
         var statuses = new List<int>();
-        foreach (var spoofed in new[] { "198.51.100.1", "198.51.100.2", "198.51.100.3" })
+        foreach (var spoofed in new[] { ClientA, ClientB, ClientC })
         {
             using var response = await SendAsync(client, spoofed);
             statuses.Add((int)response.StatusCode);
@@ -55,15 +59,7 @@ public sealed class ForwardedHeadersTests : IDisposable
 
         // Act
         var statuses = new List<int>();
-        foreach (
-            var forwarded in new[]
-            {
-                "198.51.100.1",
-                "198.51.100.1",
-                "198.51.100.2",
-                "198.51.100.2",
-            }
-        )
+        foreach (var forwarded in new[] { ClientA, ClientA, ClientB, ClientB })
         {
             using var response = await SendAsync(client, forwarded);
             statuses.Add((int)response.StatusCode);
@@ -83,8 +79,8 @@ public sealed class ForwardedHeadersTests : IDisposable
         using var client = factory.CreateClient();
 
         // Act
-        using var first = await SendAsync(client, "198.51.100.1");
-        using var other = await SendAsync(client, "198.51.100.2");
+        using var first = await SendAsync(client, ClientA);
+        using var other = await SendAsync(client, ClientB);
 
         // Assert
         Assert.Multiple(
@@ -104,7 +100,7 @@ public sealed class ForwardedHeadersTests : IDisposable
 
         // Act
         var statuses = new List<int>();
-        foreach (var spoofed in new[] { "198.51.100.1", "198.51.100.2" })
+        foreach (var spoofed in new[] { ClientA, ClientB })
         {
             using var response = await SendAsync(client, spoofed);
             statuses.Add((int)response.StatusCode);
@@ -126,13 +122,13 @@ public sealed class ForwardedHeadersTests : IDisposable
         // Act
         using var first = await SendAsync(
             client,
-            "198.51.100.9",
+            ClientD,
             ApiRoutes.ImpersonationTokens,
             HttpMethod.Post
         );
         using var refused = await SendAsync(
             client,
-            "198.51.100.9",
+            ClientD,
             ApiRoutes.ImpersonationTokens,
             HttpMethod.Post
         );
@@ -141,14 +137,23 @@ public sealed class ForwardedHeadersTests : IDisposable
         var refusal = Assert.Single(_factory.ReadAuditEvents());
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.TooManyRequests, refused.StatusCode),
-            () => Assert.Equal("198.51.100.9", (string?)refusal["sourceIp"])
+            () => Assert.Equal(ClientD, (string?)refusal["sourceIp"])
         );
     }
 
     /// <summary>Verifies the defaults trust nobody.</summary>
     [Fact]
-    public void Defaults_TrustNoProxy_Test() =>
-        Assert.Empty(new ApiForwardedHeadersOptions().TrustedProxies);
+    public void Defaults_TrustNoProxy_Test()
+    {
+        // Arrange
+        var options = new ApiForwardedHeadersOptions();
+
+        // Act
+        var trusted = options.TrustedProxies;
+
+        // Assert
+        Assert.Empty(trusted);
+    }
 
     /// <summary>Verifies an IP address, an IPv6 address or a CIDR network is accepted.</summary>
     /// <param name="entry">A valid entry.</param>
@@ -158,14 +163,21 @@ public sealed class ForwardedHeadersTests : IDisposable
     [InlineData("203.0.113.0/24")]
     [InlineData("2001:db8::1")]
     [InlineData("2001:db8::/32")]
-    public void Validate_ValidEntry_Passes_Test(string entry) =>
-        Assert.True(Validate(entry).Succeeded);
+    public void Validate_ValidEntry_Passes_Test(string entry)
+    {
+        // Arrange / Act
+        var result = Validate(entry);
+
+        // Assert
+        Assert.True(result.Succeeded);
+    }
 
     /// <summary>Verifies malformed entries, catch-alls and unspecified addresses are refused.</summary>
     /// <param name="entry">An invalid entry.</param>
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
+    [InlineData("	")]
     [InlineData("proxy.example.com")]
     [InlineData("10.0.0.0/33")]
     [InlineData("10.0.0.1/24")]
@@ -176,8 +188,14 @@ public sealed class ForwardedHeadersTests : IDisposable
     [InlineData("::")]
     [InlineData(" 10.0.0.5")]
     [InlineData("*")]
-    public void Validate_InvalidEntry_Fails_Test(string entry) =>
-        Assert.True(Validate(entry).Failed);
+    public void Validate_InvalidEntry_Fails_Test(string entry)
+    {
+        // Arrange / Act
+        var result = Validate(entry);
+
+        // Assert
+        Assert.True(result.Failed);
+    }
 
     /// <summary>Verifies a host configured with a bad proxy entry refuses to start.</summary>
     [Fact]

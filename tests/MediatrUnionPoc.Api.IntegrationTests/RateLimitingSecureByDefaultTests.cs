@@ -115,6 +115,8 @@ public sealed class RateLimitingSecureByDefaultTests : IDisposable
     {
         // Arrange
         using var client = _factory.CreateClient();
+
+        // Act
         var undeclared = Endpoints()
             .Where(e =>
                 e.Metadata.GetMetadata<EnableRateLimitingAttribute>() is null
@@ -127,7 +129,7 @@ public sealed class RateLimitingSecureByDefaultTests : IDisposable
             .Select(e => e.RoutePattern.RawText!)
             .ToList();
 
-        // Act / Assert
+        // Assert
         Assert.Multiple(
             () => Assert.Empty(undeclared),
             () => Assert.NotEmpty(exempt),

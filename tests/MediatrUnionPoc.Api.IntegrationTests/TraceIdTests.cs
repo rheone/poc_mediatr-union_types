@@ -11,6 +11,8 @@ public sealed class TraceIdTests
 {
     private const string TraceHeader = "X-Trace-Id";
 
+    private static readonly Guid UnknownProductId = new("6f1c2b7e-3a94-4d05-8e1b-52c7d0a94f36");
+
     /// <summary>Verifies a successful response carries a non-empty trace id header.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
@@ -40,7 +42,7 @@ public sealed class TraceIdTests
 
         // Act
         using var response = await client.GetAsync(
-            $"{ApiRoutes.Products}/{Guid.NewGuid()}",
+            $"{ApiRoutes.Products}/{UnknownProductId}",
             CancellationToken.None
         );
 

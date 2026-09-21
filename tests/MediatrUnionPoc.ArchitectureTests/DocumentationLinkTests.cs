@@ -9,6 +9,8 @@ namespace MediatrUnionPoc.ArchitectureTests;
 /// </summary>
 public sealed class DocumentationLinkTests : IDisposable
 {
+    // A fresh directory per instance: xUnit builds one instance per test and runs them in parallel,
+    // so the scratch trees must not collide. The name never reaches an assertion.
     private readonly string _scratch = Path.Combine(
         Path.GetTempPath(),
         "doc-links-" + Guid.NewGuid().ToString("N")

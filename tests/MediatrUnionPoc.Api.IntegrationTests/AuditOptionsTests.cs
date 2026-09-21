@@ -12,6 +12,17 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class AuditOptionsTests : IDisposable
 {
+    private static readonly Guid ProbeEventId = Guid.Parse("5b1f0c2e-7a34-4d58-9e61-0c3a8f2d4b70");
+    private static readonly DateTimeOffset ProbeTimestamp = new(
+        2026,
+        1,
+        15,
+        12,
+        0,
+        0,
+        TimeSpan.Zero
+    );
+
     private readonly ProductsApiFactory _factory = new();
 
     /// <summary>Disposes the test's backing <see cref="ProductsApiFactory"/>.</summary>
@@ -78,16 +89,7 @@ public sealed class AuditOptionsTests : IDisposable
         var log = _factory.Services.GetRequiredService<IAuditLog>();
 
         // Act
-        await log.RecordAsync(
-            new AuditEvent
-            {
-                Id = Guid.NewGuid(),
-                Timestamp = DateTimeOffset.UtcNow,
-                Action = "Test.Probe",
-                Outcome = "ok",
-            },
-            CancellationToken.None
-        );
+        await log.RecordAsync(ProbeEvent(), CancellationToken.None);
 
         // Assert
         Assert.Single(_factory.ReadAuditEvents());
@@ -102,6 +104,7 @@ public sealed class AuditOptionsTests : IDisposable
         var contentRoot = Path.Combine(
             Path.GetTempPath(),
             "mediatr-union-poc-audit-tests",
+            // A unique directory per run keeps parallel runs from sharing files; the value is never asserted.
             "content-root-" + Guid.NewGuid().ToString("N")
         );
         try
@@ -121,16 +124,7 @@ public sealed class AuditOptionsTests : IDisposable
             // Act
             await provider
                 .GetRequiredService<IAuditLog>()
-                .RecordAsync(
-                    new AuditEvent
-                    {
-                        Id = Guid.NewGuid(),
-                        Timestamp = DateTimeOffset.UtcNow,
-                        Action = "Test.Probe",
-                        Outcome = "ok",
-                    },
-                    CancellationToken.None
-                );
+                .RecordAsync(ProbeEvent(), CancellationToken.None);
 
             // Assert
             Assert.Single(
@@ -145,6 +139,15 @@ public sealed class AuditOptionsTests : IDisposable
             }
         }
     }
+
+    private static AuditEvent ProbeEvent() =>
+        new()
+        {
+            Id = ProbeEventId,
+            Timestamp = ProbeTimestamp,
+            Action = "Test.Probe",
+            Outcome = "ok",
+        };
 
     private sealed class StubEnvironment(string contentRoot) : IHostEnvironment
     {

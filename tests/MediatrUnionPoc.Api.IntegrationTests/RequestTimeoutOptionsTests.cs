@@ -20,13 +20,17 @@ public sealed class RequestTimeoutOptionsTests : IDisposable
     [Fact]
     public void Defaults_AreBoundedAndOrdered_Test()
     {
+        // Arrange
+        var expectedDefault = TimeSpan.FromSeconds(30);
+        var expectedImpersonation = TimeSpan.FromSeconds(10);
+
         // Act
         var options = new RequestTimeoutOptions();
 
         // Assert
         Assert.Multiple(
-            () => Assert.Equal(TimeSpan.FromSeconds(30), options.Default),
-            () => Assert.Equal(TimeSpan.FromSeconds(10), options.Impersonation),
+            () => Assert.Equal(expectedDefault, options.Default),
+            () => Assert.Equal(expectedImpersonation, options.Impersonation),
             () => Assert.True(options.Impersonation < options.Default),
             () => Assert.True(Validate(options).Succeeded)
         );
@@ -59,19 +63,19 @@ public sealed class RequestTimeoutOptionsTests : IDisposable
     {
         // Arrange
         var section = OperationsDocumentation.Section(RepositoryRoot(), "Request timeouts");
+        var defaultRow = new Regex(@"\|\s*`RequestTimeouts:Default`\s*\|\s*`00:00:30`\s*\|");
+        var impersonationRow = new Regex(
+            @"\|\s*`RequestTimeouts:Impersonation`\s*\|\s*`00:00:10`\s*\|"
+        );
 
-        // Act / Assert
+        // Act
+        var defaultMatches = defaultRow.IsMatch(section);
+        var impersonationMatches = impersonationRow.IsMatch(section);
+
+        // Assert
         Assert.Multiple(
-            () =>
-                Assert.Matches(
-                    new Regex(@"\|\s*`RequestTimeouts:Default`\s*\|\s*`00:00:30`\s*\|"),
-                    section
-                ),
-            () =>
-                Assert.Matches(
-                    new Regex(@"\|\s*`RequestTimeouts:Impersonation`\s*\|\s*`00:00:10`\s*\|"),
-                    section
-                )
+            () => Assert.True(defaultMatches, "The Default row is missing or wrong."),
+            () => Assert.True(impersonationMatches, "The Impersonation row is missing or wrong.")
         );
     }
 
@@ -104,8 +108,11 @@ public sealed class RequestTimeoutOptionsTests : IDisposable
             options.Impersonation = span;
         }
 
-        // Act / Assert
-        Assert.Equal(valid, Validate(options).Succeeded);
+        // Act
+        var result = Validate(options);
+
+        // Assert
+        Assert.Equal(valid, result.Succeeded);
     }
 
     /// <summary>Verifies a host configured with an invalid timeout refuses to start, for each setting.</summary>
@@ -124,7 +131,8 @@ public sealed class RequestTimeoutOptionsTests : IDisposable
         var exception = Record.Exception(() => factory.CreateClient().Dispose());
 
         // Assert
-        Assert.IsType<OptionsValidationException>(exception);
+        var validation = Assert.IsType<OptionsValidationException>(exception);
+        Assert.NotEmpty(validation.Failures);
     }
 
     private static ValidateOptionsResult Validate(RequestTimeoutOptions options) =>

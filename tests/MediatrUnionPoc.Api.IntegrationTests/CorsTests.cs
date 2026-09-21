@@ -19,6 +19,9 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class CorsTests : IDisposable
 {
     private const string AppOrigin = "https://app.example.com";
+    private const string EvilOrigin = "https://evil.example.com";
+    private const string AllowOriginHeader = "Access-Control-Allow-Origin";
+    private static readonly Guid AnyProductId = new("6f1c2b0e-4d5a-4b7e-9c31-0a8d2e5f7b14");
 
     private readonly ProductsApiFactory _factory = new();
 
@@ -42,7 +45,7 @@ public sealed class CorsTests : IDisposable
         // Assert
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, response.StatusCode),
-            () => Assert.Equal(AppOrigin, Single(response, "Access-Control-Allow-Origin")),
+            () => Assert.Equal(AppOrigin, Single(response, AllowOriginHeader)),
             () => Assert.Contains("Origin", response.Headers.Vary)
         );
     }
@@ -54,14 +57,14 @@ public sealed class CorsTests : IDisposable
     {
         // Arrange
         using var client = ClientFor(o => o.AllowedOrigins = [AppOrigin]);
-        using var request = CrossOriginGet(ApiRoutes.Products, "https://evil.example.com");
+        using var request = CrossOriginGet(ApiRoutes.Products, EvilOrigin);
 
         // Act
         using var response = await client.SendAsync(request, CancellationToken.None);
 
         // Assert
         Assert.Multiple(
-            () => Assert.False(response.Headers.Contains("Access-Control-Allow-Origin")),
+            () => Assert.False(response.Headers.Contains(AllowOriginHeader)),
             () => Assert.True(response.Headers.Contains("X-Trace-Id"))
         );
     }
@@ -104,7 +107,7 @@ public sealed class CorsTests : IDisposable
         using var response = await client.SendAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.Equal(origin, Single(response, "Access-Control-Allow-Origin"));
+        Assert.Equal(origin, Single(response, AllowOriginHeader));
     }
 
     /// <summary>Verifies a PATCH preflight (merge-patch content type plus If-Match) is granted with no credentials, past the fallback authorization policy, and carries the trace id.</summary>
@@ -115,7 +118,7 @@ public sealed class CorsTests : IDisposable
         // Arrange
         using var client = ClientFor(o => o.AllowedOrigins = [AppOrigin], authenticated: false);
         using var preflight = Preflight(
-            $"{ApiRoutes.Products}/{Guid.NewGuid()}",
+            $"{ApiRoutes.Products}/{AnyProductId}",
             AppOrigin,
             "PATCH",
             "content-type,if-match"
@@ -129,7 +132,7 @@ public sealed class CorsTests : IDisposable
         // Assert
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode),
-            () => Assert.Equal(AppOrigin, Single(response, "Access-Control-Allow-Origin")),
+            () => Assert.Equal(AppOrigin, Single(response, AllowOriginHeader)),
             () => Assert.Contains("PATCH", Single(response, "Access-Control-Allow-Methods")),
             () =>
                 Assert.Contains(
@@ -196,7 +199,7 @@ public sealed class CorsTests : IDisposable
     {
         // Arrange
         using var client = ClientFor(o => o.AllowedOrigins = [AppOrigin]);
-        using var preflight = Preflight(ApiRoutes.Products, "https://evil.example.com", "GET");
+        using var preflight = Preflight(ApiRoutes.Products, EvilOrigin, "GET");
 
         // Act
         using var response = await client.SendAsync(preflight, CancellationToken.None);
@@ -272,7 +275,7 @@ public sealed class CorsTests : IDisposable
         // Assert
         Assert.Multiple(
             () => Assert.Equal("true", Single(response, "Access-Control-Allow-Credentials")),
-            () => Assert.Equal(AppOrigin, Single(response, "Access-Control-Allow-Origin"))
+            () => Assert.Equal(AppOrigin, Single(response, AllowOriginHeader))
         );
     }
 
@@ -292,7 +295,7 @@ public sealed class CorsTests : IDisposable
         // Assert
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.Created, response.StatusCode),
-            () => Assert.Equal(AppOrigin, Single(response, "Access-Control-Allow-Origin"))
+            () => Assert.Equal(AppOrigin, Single(response, AllowOriginHeader))
         );
     }
 

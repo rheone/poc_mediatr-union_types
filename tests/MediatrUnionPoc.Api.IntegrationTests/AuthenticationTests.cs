@@ -272,12 +272,12 @@ public sealed class AuthenticationTests : IDisposable
     [Fact]
     public void JwtBearerOptions_FrameworkDefaultMapsInboundClaims_Test()
     {
-        // Arrange / Act
+        // Arrange
+        var monitor = _factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>();
+
+        // Act
         var frameworkDefault = new JwtBearerOptions().MapInboundClaims;
-        var configured = _factory
-            .Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
-            .Get(JwtBearerDefaults.AuthenticationScheme)
-            .MapInboundClaims;
+        var configured = monitor.Get(JwtBearerDefaults.AuthenticationScheme).MapInboundClaims;
 
         // Assert
         Assert.Multiple(() => Assert.True(frameworkDefault), () => Assert.True(configured));

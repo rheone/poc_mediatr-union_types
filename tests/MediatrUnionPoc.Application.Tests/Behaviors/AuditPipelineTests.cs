@@ -85,8 +85,11 @@ public sealed class AuditPipelineTests : IDisposable
     [Fact]
     public async Task Send_ValidationFails_IsStillAudited_Test()
     {
+        // Arrange
+        var command = Command(reason: "short");
+
         // Act
-        var result = await SendAsync(Command(reason: "short"));
+        var result = await SendAsync(command);
 
         // Assert
         var auditEvent = Assert.Single(_log.Events);
@@ -108,8 +111,11 @@ public sealed class AuditPipelineTests : IDisposable
     [Fact]
     public async Task Send_TokenIssued_IsAuditedOnceWithTheTokenId_Test()
     {
+        // Arrange
+        var command = Command(ticket: "SUP-9");
+
         // Act
-        await SendAsync(Command(ticket: "SUP-9"));
+        await SendAsync(command);
 
         // Assert
         var auditEvent = Assert.Single(_log.Events);
@@ -127,9 +133,10 @@ public sealed class AuditPipelineTests : IDisposable
     {
         // Arrange
         _log.FailWith = new IOException("read-only");
+        var command = Command();
 
         // Act / Assert
-        return Assert.ThrowsAsync<AuditWriteFailedException>(() => SendAsync(Command()));
+        return Assert.ThrowsAsync<AuditWriteFailedException>(() => SendAsync(command));
     }
 
     private async Task<IssueImpersonationTokenResult> SendAsync(

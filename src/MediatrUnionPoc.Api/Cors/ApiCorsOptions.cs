@@ -45,7 +45,7 @@ public sealed class ApiCorsOptions
     /// <summary>
     /// Gets the response headers exposed to browser code when none are configured. A browser hides every
     /// response header that is not CORS-safelisted unless it is listed here, so this list is the contract
-    /// with a browser client: the table in `docs/operations.md` is checked against it by a test.
+    /// with a browser client: the table in <c>docs/operations.md</c> is checked against it by a test.
     /// </summary>
     public static IReadOnlyList<string> DefaultExposedHeaders { get; } =
     [

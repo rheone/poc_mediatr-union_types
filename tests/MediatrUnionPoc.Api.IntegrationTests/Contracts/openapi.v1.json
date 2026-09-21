@@ -11,9 +11,11 @@
         ],
         "properties": {
           "name": {
+            "description": "The display name. Must be unique across all products, ignoring case and surrounding whitespace.",
             "type": "string"
           },
           "price": {
+            "description": "The price. The application's validator decides the accepted range.",
             "format": "double",
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
             "type": [
@@ -430,9 +432,11 @@
         ],
         "properties": {
           "name": {
+            "description": "The new display name. Must not duplicate another product's name, ignoring case and surrounding whitespace.",
             "type": "string"
           },
           "price": {
+            "description": "The new price. The application's validator decides the accepted range.",
             "format": "double",
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
             "type": [

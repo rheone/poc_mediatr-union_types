@@ -44,16 +44,19 @@ public class IssueImpersonationTokenResultTests
     [Fact]
     public void Factories_Null_ThrowArgumentNullException_Test()
     {
-        // Act / Assert
+        // Arrange
+        // Act
+        var fromValidation = Record.Exception(() =>
+            IssueImpersonationTokenResult.FromValidationErrors(null!)
+        );
+        var fromAuthorization = Record.Exception(() =>
+            IssueImpersonationTokenResult.FromNotAuthorized(null!)
+        );
+
+        // Assert
         Assert.Multiple(
-            () =>
-                Assert.Throws<ArgumentNullException>(() =>
-                    IssueImpersonationTokenResult.FromValidationErrors(null!)
-                ),
-            () =>
-                Assert.Throws<ArgumentNullException>(() =>
-                    IssueImpersonationTokenResult.FromNotAuthorized(null!)
-                )
+            () => Assert.IsType<ArgumentNullException>(fromValidation),
+            () => Assert.IsType<ArgumentNullException>(fromAuthorization)
         );
     }
 
@@ -65,9 +68,9 @@ public class IssueImpersonationTokenResultTests
         var token = new ImpersonationToken(
             Secret,
             DateTimeOffset.UnixEpoch,
-            "alice",
-            ["Support"],
-            "root"
+            ImpersonationMother.TargetId,
+            [AuthorizationRoles.Support],
+            ImpersonationMother.AdminId
         );
 
         // Act
@@ -76,32 +79,38 @@ public class IssueImpersonationTokenResultTests
         // Assert
         Assert.Multiple(
             () => Assert.DoesNotContain(Secret, text, StringComparison.Ordinal),
-            () => Assert.Contains("alice", text, StringComparison.Ordinal),
-            () => Assert.Contains("root", text, StringComparison.Ordinal)
+            () => Assert.Contains(ImpersonationMother.TargetId, text, StringComparison.Ordinal),
+            () => Assert.Contains(ImpersonationMother.AdminId, text, StringComparison.Ordinal)
         );
     }
 
-    /// <summary>Verifies the command is gated by the <c>Impersonator</c> policy and rejects a null principal.</summary>
+    /// <summary>Verifies the command is gated by the <c>Impersonator</c> policy.</summary>
     [Fact]
-    public void Command_PolicyNameAndPrincipal_AreGuarded_Test()
+    public void Command_PolicyName_IsImpersonator_Test()
     {
-        // Act
+        // Arrange
         var command = ImpersonationMother.Command();
 
+        // Act
+        var policyName = command.PolicyName;
+
         // Assert
-        Assert.Multiple(
-            () => Assert.Equal(AuthorizationPolicies.Impersonator, command.PolicyName),
-            () =>
-                Assert.Throws<ArgumentNullException>(() =>
-                    new IssueImpersonationTokenCommand(
-                        "a",
-                        null,
-                        "r",
-                        null,
-                        null,
-                        (ClaimsPrincipal)null!
-                    )
-                )
+        Assert.Equal(AuthorizationPolicies.Impersonator, policyName);
+    }
+
+    /// <summary>Verifies the command rejects a null principal.</summary>
+    [Fact]
+    public void Ctor_NullPrincipal_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        var principal = (ClaimsPrincipal)null!;
+
+        // Act
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new IssueImpersonationTokenCommand("a", null, "r", null, null, principal)
         );
+
+        // Assert
+        Assert.Equal("Principal", ex.ParamName);
     }
 }

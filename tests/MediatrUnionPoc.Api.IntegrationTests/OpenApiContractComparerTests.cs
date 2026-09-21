@@ -157,7 +157,16 @@ public sealed class OpenApiContractComparerTests
         string? update,
         string? ci,
         OpenApiContractMode expected
-    ) => Assert.Equal(expected, OpenApiContract.ResolveMode(update, ci));
+    )
+    {
+        // Arrange (the parameters are the inputs)
+
+        // Act
+        var mode = OpenApiContract.ResolveMode(update, ci);
+
+        // Assert
+        Assert.Equal(expected, mode);
+    }
 
     private static JsonNode Baseline()
     {

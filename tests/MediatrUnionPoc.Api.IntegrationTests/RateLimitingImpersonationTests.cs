@@ -21,6 +21,11 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class RateLimitingImpersonationTests : IDisposable
 {
+    private const string AdministratorRole = "Administrator";
+    private const string TraceIdHeader = "X-Trace-Id";
+    private const string AnonymousAddress = "198.51.100.5";
+    private const int AuditWriteFailedEventId = 1301;
+
     private readonly ProductsApiFactory _factory = new(ApiAuthentication.RealJwt);
 
     /// <inheritdoc/>
@@ -35,7 +40,7 @@ public sealed class RateLimitingImpersonationTests : IDisposable
         using var factory = _factory.WithLimits(reads: 3, impersonation: 10);
         using var minter = ClientWithToken(
             factory,
-            JwtTestTokens.Create(_factory, AdminId, ["Administrator"])
+            JwtTestTokens.Create(_factory, AdminId, [AdministratorRole])
         );
         using var asAlice = ClientWithToken(
             factory,
@@ -68,7 +73,7 @@ public sealed class RateLimitingImpersonationTests : IDisposable
         using var factory = _factory.WithLimits(reads: 1, impersonation: 10);
         using var minter = ClientWithToken(
             factory,
-            JwtTestTokens.Create(_factory, AdminId, ["Administrator"])
+            JwtTestTokens.Create(_factory, AdminId, [AdministratorRole])
         );
         using var asAlice = ClientWithToken(
             factory,
@@ -99,7 +104,7 @@ public sealed class RateLimitingImpersonationTests : IDisposable
         using var factory = _factory.WithLimits(impersonation: 2);
         using var admin = ClientWithToken(
             factory,
-            JwtTestTokens.Create(_factory, AdminId, ["Administrator"])
+            JwtTestTokens.Create(_factory, AdminId, [AdministratorRole])
         );
         using var support = ClientWithToken(
             factory,
@@ -135,7 +140,7 @@ public sealed class RateLimitingImpersonationTests : IDisposable
         using var factory = _factory.WithLimits(impersonation: 1);
         using var admin = ClientWithToken(
             factory,
-            JwtTestTokens.Create(_factory, AdminId, ["Administrator"])
+            JwtTestTokens.Create(_factory, AdminId, [AdministratorRole])
         );
 
         // Act
@@ -156,7 +161,7 @@ public sealed class RateLimitingImpersonationTests : IDisposable
             () => Assert.Equal(ProductsApiFactory.TestRemoteAddress, (string?)refusal["sourceIp"]),
             () =>
                 Assert.Equal(
-                    refused.Headers.GetValues("X-Trace-Id").Single(),
+                    refused.Headers.GetValues(TraceIdHeader).Single(),
                     (string?)refusal["traceId"]
                 ),
             () => Assert.Equal("Impersonation", (string?)refusal["details"]!["policy"]),
@@ -178,13 +183,13 @@ public sealed class RateLimitingImpersonationTests : IDisposable
         using var first = await client.RequestAsync(
             HttpMethod.Post,
             TokensUri,
-            "198.51.100.5",
+            AnonymousAddress,
             content: Body()
         );
         using var refused = await client.RequestAsync(
             HttpMethod.Post,
             TokensUri,
-            "198.51.100.5",
+            AnonymousAddress,
             content: Body()
         );
 
@@ -195,7 +200,7 @@ public sealed class RateLimitingImpersonationTests : IDisposable
             () => Assert.Equal(HttpStatusCode.TooManyRequests, refused.StatusCode),
             () => Assert.Equal(RateLimitRejectionHandler.AuditOutcome, (string?)refusal["outcome"]),
             () => Assert.Null(refusal["actorId"]),
-            () => Assert.Equal("198.51.100.5", (string?)refusal["sourceIp"])
+            () => Assert.Equal(AnonymousAddress, (string?)refusal["sourceIp"])
         );
     }
 
@@ -235,7 +240,7 @@ public sealed class RateLimitingImpersonationTests : IDisposable
         );
         using var admin = ClientWithToken(
             factory,
-            JwtTestTokens.Create(_factory, AdminId, ["Administrator"])
+            JwtTestTokens.Create(_factory, AdminId, [AdministratorRole])
         );
 
         // Act
@@ -246,7 +251,7 @@ public sealed class RateLimitingImpersonationTests : IDisposable
         var body = await refused.ReadJsonAsync();
         var failure = Assert.Single(
             _factory.LogSink.Events,
-            logEvent => logEvent.EventIdNumber() == 1301
+            logEvent => logEvent.EventIdNumber() == AuditWriteFailedEventId
         );
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, issued.StatusCode),
@@ -279,6 +284,8 @@ public sealed class RateLimitingImpersonationTests : IDisposable
         Assert.Equal([401, 429], statuses);
     }
 
+    /// <summary>An audit log that throws for the rate-limit refusal event and delegates every other event to the real log, so only the refusal's write fails.</summary>
+    /// <param name="inner">The real audit log that receives every non-refusal event.</param>
     private sealed class FailingOnRefusalAuditLog(IAuditLog inner) : IAuditLog
     {
         public Task RecordAsync(

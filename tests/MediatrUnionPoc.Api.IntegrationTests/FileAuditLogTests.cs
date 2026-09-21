@@ -10,8 +10,11 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 /// one file per UTC day chosen by the event's timestamp, concurrent writers that never interleave,
 /// free text that cannot forge a line, and an IO failure that is thrown rather than swallowed.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class FileAuditLogTests : IDisposable
 {
+    private const string Day1File = "audit-20260304.jsonl";
+    private static readonly Guid AnyEventId = new("3b9d4c1a-7e52-4f08-a6d3-91c5e0b2f847");
     private static readonly DateTimeOffset Day1 = new(2026, 3, 4, 23, 59, 58, TimeSpan.Zero);
 
     private readonly string _directory = Path.Combine(
@@ -45,7 +48,7 @@ public sealed class FileAuditLogTests : IDisposable
         var file = Assert.Single(Directory.GetFiles(_directory));
         var lines = await File.ReadAllLinesAsync(file, CancellationToken.None);
         Assert.Multiple(
-            () => Assert.Equal("audit-20260304.jsonl", Path.GetFileName(file)),
+            () => Assert.Equal(Day1File, Path.GetFileName(file)),
             () => Assert.Equal(2, lines.Length),
             () => Assert.Equal("first", JsonNode.Parse(lines[0])!["action"]!.GetValue<string>()),
             () => Assert.Equal("second", JsonNode.Parse(lines[1])!["action"]!.GetValue<string>())
@@ -65,7 +68,7 @@ public sealed class FileAuditLogTests : IDisposable
 
         // Assert
         var bytes = await File.ReadAllBytesAsync(
-            Path.Combine(_directory, "audit-20260304.jsonl"),
+            Path.Combine(_directory, Day1File),
             CancellationToken.None
         );
         var text = new UTF8Encoding(false, true).GetString(bytes);
@@ -93,7 +96,7 @@ public sealed class FileAuditLogTests : IDisposable
 
         // Assert
         var files = Directory.GetFiles(_directory).Select(Path.GetFileName).Order().ToList();
-        Assert.Equal(["audit-20260304.jsonl", "audit-20260305.jsonl"], files);
+        Assert.Equal([Day1File, "audit-20260305.jsonl"], files);
     }
 
     /// <summary>Verifies the day is the UTC day of the event even when its offset says otherwise.</summary>
@@ -109,10 +112,7 @@ public sealed class FileAuditLogTests : IDisposable
         await sut.RecordAsync(Event("x", lateInTokyo), CancellationToken.None);
 
         // Assert
-        Assert.Equal(
-            "audit-20260304.jsonl",
-            Path.GetFileName(Assert.Single(Directory.GetFiles(_directory)))
-        );
+        Assert.Equal(Day1File, Path.GetFileName(Assert.Single(Directory.GetFiles(_directory))));
     }
 
     /// <summary>Verifies a hundred concurrent writers produce a hundred whole, parseable lines, none interleaved.</summary>
@@ -142,7 +142,7 @@ public sealed class FileAuditLogTests : IDisposable
 
         // Assert
         var lines = await File.ReadAllLinesAsync(
-            Path.Combine(_directory, "audit-20260304.jsonl"),
+            Path.Combine(_directory, Day1File),
             CancellationToken.None
         );
         var actions = lines.Select(line => JsonNode.Parse(line)!["action"]!.GetValue<string>());
@@ -169,7 +169,7 @@ public sealed class FileAuditLogTests : IDisposable
 
         // Assert
         var lines = await File.ReadAllLinesAsync(
-            Path.Combine(_directory, "audit-20260304.jsonl"),
+            Path.Combine(_directory, Day1File),
             CancellationToken.None
         );
         var line = Assert.Single(lines);
@@ -198,7 +198,7 @@ public sealed class FileAuditLogTests : IDisposable
 
         // Assert
         var lines = await File.ReadAllLinesAsync(
-            Path.Combine(_directory, "audit-20260304.jsonl"),
+            Path.Combine(_directory, Day1File),
             CancellationToken.None
         );
         Assert.Equal(2, lines.Length);
@@ -250,24 +250,43 @@ public sealed class FileAuditLogTests : IDisposable
 
         // Assert
         Assert.Single(
-            await File.ReadAllLinesAsync(
-                Path.Combine(_directory, "audit-20260304.jsonl"),
-                CancellationToken.None
-            )
+            await File.ReadAllLinesAsync(Path.Combine(_directory, Day1File), CancellationToken.None)
         );
     }
 
-    /// <summary>Verifies constructor and argument guards.</summary>
+    /// <summary>Verifies a whitespace-only directory is rejected by the constructor.</summary>
+    [Fact]
+    public void Constructor_BlankDirectory_ThrowsArgumentException_Test()
+    {
+        // Arrange
+        const string blank = " ";
+
+        // Act / Assert
+        var ex = Assert.Throws<ArgumentException>(() => Create(blank));
+        Assert.Equal("directory", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null directory is rejected by the constructor.</summary>
+    [Fact]
+    public void Constructor_NullDirectory_ThrowsArgumentNullException_Test()
+    {
+        // Arrange
+        string? directory = null;
+
+        // Act / Assert
+        var ex = Assert.Throws<ArgumentNullException>(() => Create(directory!));
+        Assert.Equal("directory", ex.ParamName);
+    }
+
+    /// <summary>Verifies a null event is rejected by <see cref="FileAuditLog.RecordAsync"/>.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public async Task Guards_NullOrBlankArguments_Throw_Test()
+    public async Task RecordAsync_NullEvent_ThrowsArgumentNullException_Test()
     {
         // Arrange
         using var sut = new FileAuditLog(_directory);
 
         // Act / Assert
-        Assert.Throws<ArgumentException>(() => Create(" "));
-        Assert.Throws<ArgumentNullException>(() => Create(null!));
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
             sut.RecordAsync(null!, CancellationToken.None)
         );
@@ -278,7 +297,7 @@ public sealed class FileAuditLogTests : IDisposable
     private static AuditEvent Event(string action, DateTimeOffset timestamp) =>
         new()
         {
-            Id = Guid.NewGuid(),
+            Id = AnyEventId,
             Timestamp = timestamp,
             Action = action,
             Outcome = "ok",

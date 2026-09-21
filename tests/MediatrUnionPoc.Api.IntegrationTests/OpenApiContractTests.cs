@@ -72,7 +72,7 @@ public sealed class OpenApiContractTests : IDisposable
     [Fact]
     public async Task LiveDocument_ListsVersionedPathsOnly_Test()
     {
-        // Act
+        // Arrange / Act
         var live = await FetchNormalizedAsync();
 
         // Assert

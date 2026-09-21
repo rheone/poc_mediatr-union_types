@@ -28,8 +28,9 @@ public sealed class RateLimitRejectionHandlerTests
     )
     {
         // Arrange
+        const string policy = "Reads";
         var (handler, _) = CreateHandler();
-        var context = ContextFor("Reads", TimeSpan.FromSeconds(hintSeconds));
+        var context = ContextFor(policy, TimeSpan.FromSeconds(hintSeconds));
 
         // Act
         await handler.OnRejectedAsync(context, CancellationToken.None);
@@ -121,6 +122,8 @@ public sealed class RateLimitRejectionHandlerTests
         );
     }
 
+    /// <summary>A rejected lease that offers a <c>RetryAfter</c> hint only when one is supplied, as a real limiter may not.</summary>
+    /// <param name="retryAfter">The hint to expose, or <see langword="null"/> for none.</param>
     private sealed class FakeLease(TimeSpan? retryAfter) : RateLimitLease
     {
         public override bool IsAcquired => false;
@@ -135,6 +138,7 @@ public sealed class RateLimitRejectionHandlerTests
         }
     }
 
+    /// <summary>An audit log that keeps every recorded event in memory for assertion.</summary>
     private sealed class RecordingAuditLog : IAuditLog
     {
         public List<AuditEvent> Events { get; } = [];
@@ -149,6 +153,7 @@ public sealed class RateLimitRejectionHandlerTests
         }
     }
 
+    /// <summary>A problem-details writer that writes nothing, so a test observes only the headers the handler sets.</summary>
     private sealed class NoOpProblemDetailsService : IProblemDetailsService
     {
         public ValueTask WriteAsync(ProblemDetailsContext context) => ValueTask.CompletedTask;

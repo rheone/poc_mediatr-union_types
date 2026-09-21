@@ -17,6 +17,12 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class JwtBearerAuthenticationTests : IDisposable
 {
     private const string ProductsUri = ApiRoutes.Products;
+    private const string ProblemJson = "application/problem+json";
+    private const string AliceId = "alice";
+    private const string BobId = "bob";
+    private const string CarolId = "carol";
+    private const string AdministratorRole = "Administrator";
+    private const string SupportRole = "Support";
     private const string OtherSigningKey =
         "a-completely-different-signing-key-of-sufficient-length";
 
@@ -25,6 +31,19 @@ public sealed class JwtBearerAuthenticationTests : IDisposable
     /// <summary>Gets the tokens for <see cref="Get_UnacceptableToken_Returns401Problem_Test"/>: expired, signed with another key, and issued for another audience.</summary>
     public static TheoryData<string> Get_UnacceptableToken_Returns401Problem_Test_Data =>
         new() { "expired", "wrong-signature", "wrong-audience", "malformed" };
+
+    /// <summary>Gets the role claims and expected delete status for <see cref="Delete_TokenRoleClaim_MapsToAdministratorPolicy_Test"/>: Administrator alone, Administrator among others, a non-qualifying role, and no roles.</summary>
+    public static TheoryData<
+        string[],
+        HttpStatusCode
+    > Delete_TokenRoleClaim_MapsToAdministratorPolicy_Test_Data =>
+        new()
+        {
+            { [AdministratorRole], HttpStatusCode.NoContent },
+            { [SupportRole, AdministratorRole], HttpStatusCode.NoContent },
+            { [SupportRole], HttpStatusCode.Forbidden },
+            { [], HttpStatusCode.Forbidden },
+        };
 
     /// <summary>Disposes the test's backing <see cref="ProductsApiFactory"/>.</summary>
     public void Dispose() => _factory.Dispose();
@@ -35,7 +54,7 @@ public sealed class JwtBearerAuthenticationTests : IDisposable
     public async Task Get_ValidToken_Returns200_Test()
     {
         // Arrange
-        using var client = ClientFor(JwtTestTokens.Create(_factory, "alice"));
+        using var client = ClientFor(JwtTestTokens.Create(_factory, AliceId));
 
         // Act
         using var response = await client.GetAsync(ProductsUri, CancellationToken.None);
@@ -54,13 +73,13 @@ public sealed class JwtBearerAuthenticationTests : IDisposable
         // Arrange
         var token = kind switch
         {
-            "expired" => JwtTestTokens.Create(_factory, "alice", lifetime: TimeSpan.FromHours(-1)),
+            "expired" => JwtTestTokens.Create(_factory, AliceId, lifetime: TimeSpan.FromHours(-1)),
             "wrong-signature" => JwtTestTokens.Create(
                 _factory,
-                "alice",
+                AliceId,
                 signingKey: OtherSigningKey
             ),
-            "wrong-audience" => JwtTestTokens.Create(_factory, "alice", audience: "someone-else"),
+            "wrong-audience" => JwtTestTokens.Create(_factory, AliceId, audience: "someone-else"),
             _ => "not.a.jwt",
         };
         using var client = ClientFor(token);
@@ -71,11 +90,7 @@ public sealed class JwtBearerAuthenticationTests : IDisposable
         // Assert
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode),
-            () =>
-                Assert.Equal(
-                    "application/problem+json",
-                    response.Content.Headers.ContentType?.MediaType
-                ),
+            () => Assert.Equal(ProblemJson, response.Content.Headers.ContentType?.MediaType),
             () =>
                 Assert.Contains(
                     response.Headers.WwwAuthenticate,
@@ -116,8 +131,8 @@ public sealed class JwtBearerAuthenticationTests : IDisposable
     public async Task Create_TokenSubject_BecomesOwner_Test()
     {
         // Arrange
-        using var alice = ClientFor(JwtTestTokens.Create(_factory, "alice"));
-        using var bob = ClientFor(JwtTestTokens.Create(_factory, "bob"));
+        using var alice = ClientFor(JwtTestTokens.Create(_factory, AliceId));
+        using var bob = ClientFor(JwtTestTokens.Create(_factory, BobId));
         var created = await CreateAsync(alice);
         using var updateAsAlice = UpdateRequest(created);
         using var updateAsBob = UpdateRequest(created);
@@ -138,19 +153,16 @@ public sealed class JwtBearerAuthenticationTests : IDisposable
     /// <param name="expected">The status the delete should return.</param>
     /// <returns>A task representing the asynchronous test.</returns>
     [Theory]
-    [InlineData(new[] { "Administrator" }, HttpStatusCode.NoContent)]
-    [InlineData(new[] { "Support", "Administrator" }, HttpStatusCode.NoContent)]
-    [InlineData(new[] { "Support" }, HttpStatusCode.Forbidden)]
-    [InlineData(new string[0], HttpStatusCode.Forbidden)]
+    [MemberData(nameof(Delete_TokenRoleClaim_MapsToAdministratorPolicy_Test_Data))]
     public async Task Delete_TokenRoleClaim_MapsToAdministratorPolicy_Test(
         string[] roles,
         HttpStatusCode expected
     )
     {
         // Arrange
-        using var owner = ClientFor(JwtTestTokens.Create(_factory, "alice"));
+        using var owner = ClientFor(JwtTestTokens.Create(_factory, AliceId));
         var created = await CreateAsync(owner);
-        using var caller = ClientFor(JwtTestTokens.Create(_factory, "carol", roles));
+        using var caller = ClientFor(JwtTestTokens.Create(_factory, CarolId, roles));
 
         // Act
         using var response = await caller.DeleteAsync(
@@ -180,11 +192,7 @@ public sealed class JwtBearerAuthenticationTests : IDisposable
         // Assert
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode),
-            () =>
-                Assert.Equal(
-                    "application/problem+json",
-                    response.Content.Headers.ContentType?.MediaType
-                )
+            () => Assert.Equal(ProblemJson, response.Content.Headers.ContentType?.MediaType)
         );
     }
 

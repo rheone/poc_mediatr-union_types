@@ -19,6 +19,9 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class ImpersonationEndpointTests : IDisposable
 {
     private const string ProblemJson = "application/problem+json";
+    private const string AdministratorRole = "Administrator";
+    private const string SupportRole = "Support";
+    private const string MintTicket = "SUP-9";
 
     private readonly ProductsApiFactory _factory = new(ApiAuthentication.RealJwt);
 
@@ -67,7 +70,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_SupportForPlainIdentity_Returns200WithToken_Test()
     {
         // Arrange
-        using var client = ClientAs(_factory, SupportId, "Support");
+        using var client = ClientAs(_factory, SupportId, SupportRole);
 
         // Act
         using var response = await PostAsync(client, Body(ticket: "SUP-1"));
@@ -81,6 +84,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
             () => Assert.Equal(SupportId, body["actorId"]!.GetValue<string>()),
             () => Assert.Equal("Bearer", body["tokenType"]!.GetValue<string>()),
             () => Assert.Empty(body["roles"]!.AsArray()),
+            // SWEEP-AMBIGUITY: compares against the real clock; the host has no injectable TimeProvider for token expiry.
             () => Assert.True(body["expiresAt"]!.GetValue<DateTimeOffset>() > DateTimeOffset.UtcNow)
         );
     }
@@ -91,17 +95,20 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_SupportGrantingSupportRole_Returns200_Test()
     {
         // Arrange
-        using var client = ClientAs(_factory, SupportId, "Support");
+        using var client = ClientAs(_factory, SupportId, SupportRole);
 
         // Act
-        using var response = await PostAsync(client, Body(roles: ["Support"]));
+        using var response = await PostAsync(client, Body(roles: [SupportRole]));
 
         // Assert
         var body = (await response.Content.ReadFromJsonAsync<JsonObject>(CancellationToken.None))!;
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, response.StatusCode),
             () =>
-                Assert.Equal("Support", Assert.Single(body["roles"]!.AsArray())!.GetValue<string>())
+                Assert.Equal(
+                    SupportRole,
+                    Assert.Single(body["roles"]!.AsArray())!.GetValue<string>()
+                )
         );
     }
 
@@ -111,10 +118,10 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_SupportGrantingAdministrator_Returns403WithReason_Test()
     {
         // Arrange
-        using var client = ClientAs(_factory, SupportId, "Support");
+        using var client = ClientAs(_factory, SupportId, SupportRole);
 
         // Act
-        using var response = await PostAsync(client, Body(roles: ["Administrator"]));
+        using var response = await PostAsync(client, Body(roles: [AdministratorRole]));
 
         // Assert
         using var problem = JsonDocument.Parse(
@@ -124,7 +131,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
             () => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode),
             () =>
                 Assert.Contains(
-                    "Administrator",
+                    AdministratorRole,
                     problem.RootElement.GetProperty("detail").GetString(),
                     StringComparison.Ordinal
                 )
@@ -137,10 +144,10 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_AdministratorGrantingAdministrator_Returns200_Test()
     {
         // Arrange
-        using var client = ClientAs(_factory, AdminId, "Administrator");
+        using var client = ClientAs(_factory, AdminId, AdministratorRole);
 
         // Act
-        using var response = await PostAsync(client, Body(roles: ["Administrator"]));
+        using var response = await PostAsync(client, Body(roles: [AdministratorRole]));
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -152,7 +159,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_AdministratorGrantingUnassignableRole_Returns403_Test()
     {
         // Arrange
-        using var client = ClientAs(_factory, AdminId, "Administrator");
+        using var client = ClientAs(_factory, AdminId, AdministratorRole);
 
         // Act
         using var response = await PostAsync(client, Body(roles: ["SuperUser"]));
@@ -173,7 +180,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_InvalidReason_Returns400WithReasonError_Test(string? reason)
     {
         // Arrange
-        using var client = ClientAs(_factory, AdminId, "Administrator");
+        using var client = ClientAs(_factory, AdminId, AdministratorRole);
 
         // Act
         using var response = await PostAsync(client, Body(reason: reason));
@@ -202,7 +209,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_LifetimeOutOfRange_Returns400WithLifetimeError_Test(int minutes)
     {
         // Arrange
-        using var client = ClientAs(_factory, AdminId, "Administrator");
+        using var client = ClientAs(_factory, AdminId, AdministratorRole);
 
         // Act
         using var response = await PostAsync(client, Body(lifetimeMinutes: minutes));
@@ -232,7 +239,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_MissingOrSelfTarget_Returns400WithTargetError_Test(string? target)
     {
         // Arrange
-        using var client = ClientAs(_factory, AdminId, "Administrator");
+        using var client = ClientAs(_factory, AdminId, AdministratorRole);
 
         // Act
         using var response = await PostAsync(client, Body(target: target));
@@ -256,7 +263,9 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_LifetimeRequestedOrDefaulted_ExpiresAccordingly_Test()
     {
         // Arrange
-        using var client = ClientAs(_factory, AdminId, "Administrator");
+        using var client = ClientAs(_factory, AdminId, AdministratorRole);
+
+        // SWEEP-AMBIGUITY: the issuer stamps expiry from the real clock (no injectable TimeProvider is wired into the host), so the assertion uses a one-minute tolerance around wall-clock time.
         var before = DateTimeOffset.UtcNow;
 
         // Act
@@ -285,7 +294,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
     public async Task Post_Response_IsNoStore_Test(string reason)
     {
         // Arrange
-        using var client = ClientAs(_factory, AdminId, "Administrator");
+        using var client = ClientAs(_factory, AdminId, AdministratorRole);
 
         // Act
         using var response = await PostAsync(client, Body(reason: reason));
@@ -313,7 +322,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
         );
         using var adminOnDisabled = ClientWithToken(
             disabled,
-            JwtTestTokens.Create(_factory, AdminId, ["Administrator"])
+            JwtTestTokens.Create(_factory, AdminId, [AdministratorRole])
         );
         using var userOnDisabled = ClientWithToken(
             disabled,
@@ -352,12 +361,12 @@ public sealed class ImpersonationEndpointTests : IDisposable
         // Arrange
         using var support = ClientWithToken(
             _factory,
-            JwtTestTokens.Create(_factory, SupportId, ["Support"])
+            JwtTestTokens.Create(_factory, SupportId, [SupportRole])
         );
-        var token = await MintAsync(support, Body(roles: ["Support"], ticket: "SUP-9"));
+        var token = await MintAsync(support, Body(roles: [SupportRole], ticket: MintTicket));
 
         // Act
-        using var denied = await PostAsync(support, Body(roles: ["Administrator"]));
+        using var denied = await PostAsync(support, Body(roles: [AdministratorRole]));
         using var withToken = ClientWithToken(_factory, token);
         using var listing = await withToken.GetAsync(ApiRoutes.Products, CancellationToken.None);
 
@@ -376,7 +385,7 @@ public sealed class ImpersonationEndpointTests : IDisposable
                     everything,
                     line =>
                         line.Contains(ValidReason, StringComparison.Ordinal)
-                        || line.Contains("SUP-9", StringComparison.Ordinal)
+                        || line.Contains(MintTicket, StringComparison.Ordinal)
                 )
         );
     }

@@ -53,8 +53,15 @@ public sealed class MarkdownSlugTests
         "shared-case-types-are-meaning-free"
     )]
     [InlineData("A raw <b>tag</b> and `Optional<T>` code", "a-raw-tag-and-optionalt-code")]
-    public void ForHeading_TrickyHeadings_MatchGitHub_Test(string heading, string expected) =>
-        Assert.Equal(expected, MarkdownSlug.ForHeading(heading));
+    public void ForHeading_TrickyHeadings_MatchGitHub_Test(string heading, string expected)
+    {
+        // Arrange
+        // Act
+        var slug = MarkdownSlug.ForHeading(heading);
+
+        // Assert
+        Assert.Equal(expected, slug);
+    }
 
     /// <summary>Verifies repeated headings get numeric suffixes in document order.</summary>
     [Fact]

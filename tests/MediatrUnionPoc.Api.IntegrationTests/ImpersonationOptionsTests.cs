@@ -54,7 +54,7 @@ public sealed class ImpersonationOptionsTests : IDisposable
         Assert.Null(exception);
     }
 
-    /// <summary>Verifies a key that is too short, the same as the ordinary key, or lifetimes that contradict each other stop the host starting.</summary>
+    /// <summary>Verifies a key that is too short, or lifetimes that are non-positive, above the ceiling or contradict each other, stop the host starting.</summary>
     /// <param name="key">The configuration key to set.</param>
     /// <param name="value">The invalid value.</param>
     [Theory]

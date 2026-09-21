@@ -15,8 +15,8 @@ namespace MediatrUnionPoc.Api.Http;
 public sealed class HttpMappingOptions
 {
     /// <summary>
-    /// Maps an <see cref="Error.Code"/> to the HTTP status an <see cref="Error"/> carrying that code
-    /// produces. Codes are compared ordinally. Ships with <see cref="Error.ValidationFailureCode"/>
+    /// Gets the map from an <see cref="Error.Code"/> to the HTTP status an <see cref="Error"/> carrying
+    /// that code produces. Codes are compared ordinally. Ships with <see cref="Error.ValidationFailureCode"/>
     /// mapped to 400; add or replace entries to give other codes their own status.
     /// </summary>
     public IDictionary<string, int> ErrorStatusCodes { get; } =
@@ -35,7 +35,7 @@ public sealed class HttpMappingOptions
     /// </summary>
     public bool IncludeTypeUris { get; set; } = true;
 
-    /// <summary>Status-to-<c>type</c>-URI table used when <see cref="IncludeTypeUris"/> is on; ships with the RFC references for 400, 401, 403, 404, 409, 412, 428, 429, 500 and 504. Add entries for other statuses, or replace these.</summary>
+    /// <summary>Gets the status-to-<c>type</c>-URI table used when <see cref="IncludeTypeUris"/> is on; ships with the RFC references for 400, 401, 403, 404, 409, 412, 428, 429, 500 and 504. Add entries for other statuses, or replace these.</summary>
     public IDictionary<int, string> TypeUris { get; } =
         new Dictionary<int, string>
         {

@@ -20,6 +20,8 @@ public sealed class DuplicateProductNameTests : IDisposable
 {
     private const string ProductsUri = ApiRoutes.Products;
     private const string ProblemJson = "application/problem+json";
+    private const string BlueWidget = "Blue Widget";
+    private const string RedWidget = "Red Widget";
 
     private readonly ProductsApiFactory _factory = new();
     private readonly HttpClient _client;
@@ -44,7 +46,7 @@ public sealed class DuplicateProductNameTests : IDisposable
         using var first = await SendAsync(
             HttpMethod.Post,
             ProductsUri,
-            ProductRequestMother.Named("Blue Widget")
+            ProductRequestMother.Named(BlueWidget)
         );
 
         // Act
@@ -77,8 +79,8 @@ public sealed class DuplicateProductNameTests : IDisposable
     public async Task UpdateAsync_RenameOntoAnotherProductsName_Returns409AndLeavesProductUnchanged_Test()
     {
         // Arrange
-        await CreateAsync("Blue Widget", ProductRequestMother.OwnerId);
-        var red = await CreateAsync("Red Widget", ProductRequestMother.OwnerId);
+        await CreateAsync(BlueWidget, ProductRequestMother.OwnerId);
+        var red = await CreateAsync(RedWidget, ProductRequestMother.OwnerId);
         var uri = $"{ProductsUri}/{red.Id.Value}";
 
         // Act
@@ -96,7 +98,7 @@ public sealed class DuplicateProductNameTests : IDisposable
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.Conflict, response.StatusCode),
             () => Assert.Equal(ProblemJson, response.Content.Headers.ContentType?.MediaType),
-            () => Assert.Equal("Red Widget", fetched.Name)
+            () => Assert.Equal(RedWidget, fetched.Name)
         );
     }
 
@@ -106,7 +108,7 @@ public sealed class DuplicateProductNameTests : IDisposable
     public async Task UpdateAsync_KeepingOwnNameWithDifferentCase_Returns204_Test()
     {
         // Arrange
-        var blue = await CreateAsync("Blue Widget", ProductRequestMother.OwnerId);
+        var blue = await CreateAsync(BlueWidget, ProductRequestMother.OwnerId);
 
         // Act
         using var response = await SendAsync(
@@ -157,8 +159,8 @@ public sealed class DuplicateProductNameTests : IDisposable
     }
 
     /// <summary>Verifies POST and PUT document a 409 response carrying a problem-details example that names the conflicting field.</summary>
-    /// <param name="path">The path.</param>
-    /// <param name="method">The HTTP method.</param>
+    /// <param name="path">The OpenAPI path key of the operation under test.</param>
+    /// <param name="method">The lower-case OpenAPI operation key (HTTP method).</param>
     /// <returns>A task representing the asynchronous test.</returns>
     [Theory]
     [InlineData(ApiRoutes.Products, "post")]

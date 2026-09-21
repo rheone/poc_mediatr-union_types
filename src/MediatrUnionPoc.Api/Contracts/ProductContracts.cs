@@ -3,9 +3,13 @@ using MediatrUnionPoc.Application.Common;
 namespace MediatrUnionPoc.Api.Contracts;
 
 /// <summary>Request body for <see cref="Controllers.ProductsController.CreateAsync"/>.</summary>
+/// <param name="Name">The display name. Must be unique across all products, ignoring case and surrounding whitespace.</param>
+/// <param name="Price">The price. The application's validator decides the accepted range.</param>
 public sealed record CreateProductRequest(string Name, decimal Price);
 
 /// <summary>Request body for <see cref="Controllers.ProductsController.UpdateAsync"/>.</summary>
+/// <param name="Name">The new display name. Must not duplicate another product's name, ignoring case and surrounding whitespace.</param>
+/// <param name="Price">The new price. The application's validator decides the accepted range.</param>
 public sealed record UpdateProductRequest(string Name, decimal Price);
 
 /// <summary>

@@ -23,6 +23,8 @@ namespace MediatrUnionPoc.Api.IntegrationTests;
 public sealed class AuditStreamTests : IDisposable
 {
     private const string ProductsUri = ApiRoutes.Products;
+    private const int AuditWriteFailedEventId = 1100;
+    private const int RequestAuditWriteFailedEventId = 1200;
 
     private readonly ProductsApiFactory _factory = new(ApiAuthentication.RealJwt);
 
@@ -410,7 +412,7 @@ public sealed class AuditStreamTests : IDisposable
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         var failure = Assert.Single(
             _factory.LogSink.Events,
-            e => e.EventIdNumber() == 1100 && e.Level == LogEventLevel.Error
+            e => e.EventIdNumber() == AuditWriteFailedEventId && e.Level == LogEventLevel.Error
         );
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode),
@@ -441,7 +443,7 @@ public sealed class AuditStreamTests : IDisposable
         // Assert
         var failure = Assert.Single(
             _factory.LogSink.Events,
-            e => e.EventIdNumber() == 1100 && e.Level == LogEventLevel.Error
+            e => e.EventIdNumber() == AuditWriteFailedEventId && e.Level == LogEventLevel.Error
         );
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.Created, response.StatusCode),
@@ -470,7 +472,9 @@ public sealed class AuditStreamTests : IDisposable
             () =>
                 Assert.Single(
                     _factory.LogSink.Events,
-                    e => e.EventIdNumber() == 1200 && e.Level == LogEventLevel.Error
+                    e =>
+                        e.EventIdNumber() == RequestAuditWriteFailedEventId
+                        && e.Level == LogEventLevel.Error
                 )
         );
     }

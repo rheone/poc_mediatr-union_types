@@ -28,6 +28,10 @@ public sealed class ProductsControllerTests : IDisposable
 {
     private const string ProductsUri = ApiRoutes.Products;
     private const string NameErrorKey = "Name";
+    private const string ProblemJson = "application/problem+json";
+    private const string IfMatchHeaderName = "If-Match";
+    private const string FirstETag = "W/\"1\"";
+    private const string SecondETag = "W/\"2\"";
 
     // FluentValidation's NotEmpty message ("'Name' must not be empty.") vs MVC's implicit
     // [Required] message ("The Name field is required."): the only evidence of which layer answered.
@@ -150,7 +154,7 @@ public sealed class ProductsControllerTests : IDisposable
         // Assert
         var dto = await response.Content.ReadFromJsonAsync<ProductDto>(CancellationToken.None);
         Assert.Multiple(
-            () => Assert.Equal("W/\"1\"", response.Headers.ETag?.ToString()),
+            () => Assert.Equal(FirstETag, response.Headers.ETag?.ToString()),
             () => Assert.Equal(1L, dto?.Version.Value)
         );
     }
@@ -170,7 +174,7 @@ public sealed class ProductsControllerTests : IDisposable
         );
 
         // Assert
-        Assert.Equal("W/\"1\"", response.Headers.ETag?.ToString());
+        Assert.Equal(FirstETag, response.Headers.ETag?.ToString());
     }
 
     /// <summary>Verifies an invalid create request returns 400 with per-field validation errors.</summary>
@@ -216,7 +220,7 @@ public sealed class ProductsControllerTests : IDisposable
         using var response = await _client.PostAsJsonAsync(
             ProductsUri,
             request,
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
@@ -253,7 +257,7 @@ public sealed class ProductsControllerTests : IDisposable
         using var response = await _client.PostAsJsonAsync(
             ProductsUri,
             request,
-            TestContext.Current.CancellationToken
+            CancellationToken.None
         );
 
         // Assert
@@ -318,7 +322,7 @@ public sealed class ProductsControllerTests : IDisposable
         using var document = JsonDocument.Parse(body);
 
         // Assert
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(ProblemJson, response.Content.Headers.ContentType?.MediaType);
         Assert.Multiple(
             () => Assert.Equal(404, document.RootElement.GetProperty("status").GetInt32()),
             () => Assert.Equal("NOT_FOUND", document.RootElement.GetProperty("code").GetString()),
@@ -597,7 +601,7 @@ public sealed class ProductsControllerTests : IDisposable
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode),
-            () => Assert.Contains("If-Match", body, StringComparison.Ordinal)
+            () => Assert.Contains(IfMatchHeaderName, body, StringComparison.Ordinal)
         );
     }
 
@@ -617,7 +621,7 @@ public sealed class ProductsControllerTests : IDisposable
             uri,
             ProductRequestMother.WidgetPro(),
             ProductRequestMother.OwnerId,
-            ifMatch: "W/\"1\""
+            ifMatch: FirstETag
         );
 
         // Act
@@ -626,7 +630,7 @@ public sealed class ProductsControllerTests : IDisposable
             uri,
             new UpdateProductRequest("Stale writer", 1m),
             ProductRequestMother.OwnerId,
-            ifMatch: "W/\"1\""
+            ifMatch: FirstETag
         );
 
         // Assert
@@ -657,15 +661,15 @@ public sealed class ProductsControllerTests : IDisposable
             uri,
             ProductRequestMother.WidgetPro(),
             ProductRequestMother.OwnerId,
-            ifMatch: "W/\"1\""
+            ifMatch: FirstETag
         );
 
         // Assert
         using var afterUpdate = await _client.GetAsync(uri, CancellationToken.None);
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode),
-            () => Assert.Equal("W/\"2\"", response.Headers.ETag?.ToString()),
-            () => Assert.Equal("W/\"2\"", afterUpdate.Headers.ETag?.ToString())
+            () => Assert.Equal(SecondETag, response.Headers.ETag?.ToString()),
+            () => Assert.Equal(SecondETag, afterUpdate.Headers.ETag?.ToString())
         );
     }
 
@@ -770,7 +774,7 @@ public sealed class ProductsControllerTests : IDisposable
     [Fact]
     public async Task CreateAsync_CallerWithoutSubject_Returns403AndCreatesNothing_Test()
     {
-        // Act
+        // Arrange / Act
         using var response = await SendAsync(
             HttpMethod.Post,
             ProductsUri,
@@ -785,11 +789,7 @@ public sealed class ProductsControllerTests : IDisposable
         );
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode),
-            () =>
-                Assert.Equal(
-                    "application/problem+json",
-                    response.Content.Headers.ContentType?.MediaType
-                ),
+            () => Assert.Equal(ProblemJson, response.Content.Headers.ContentType?.MediaType),
             () => Assert.Empty(page!.Items)
         );
     }
@@ -999,7 +999,7 @@ public sealed class ProductsControllerTests : IDisposable
         HttpResponseMessage response
     )
     {
-        var json = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var json = await response.Content.ReadAsStringAsync(CancellationToken.None);
         using var document = JsonDocument.Parse(json);
         if (
             !document.RootElement.TryGetProperty("errors", out var errors)
@@ -1066,7 +1066,7 @@ public sealed class ProductsControllerTests : IDisposable
 
         if (ifMatch is not null)
         {
-            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+            request.Headers.TryAddWithoutValidation(IfMatchHeaderName, ifMatch);
         }
 
         return await _client.SendAsync(request, CancellationToken.None);

@@ -23,6 +23,7 @@ namespace MediatrUnionPoc.Application.Tests.Behaviors;
 public sealed class AuditBehaviorTests
 {
     private const string Secret = "the-signed-token-value-that-must-never-be-audited";
+    private static readonly Guid DeletedProductId = new("c4a81f36-5d27-4e90-b3a6-7f2e19d08b54");
     private static readonly DateTimeOffset Now = new(2026, 3, 4, 5, 6, 7, TimeSpan.Zero);
 
     private readonly RecordingAuditLog _log = new();
@@ -61,8 +62,12 @@ public sealed class AuditBehaviorTests
     [Fact]
     public async Task Handle_AnyOutcome_StampsIdTimeActionAndCorrelation_Test()
     {
+        // Arrange
+        var command = Command();
+        var next = NextIssue(Token());
+
         // Act
-        await IssueSut().Handle(Command(), NextIssue(Token()), CancellationToken.None);
+        await IssueSut().Handle(command, next, CancellationToken.None);
 
         // Assert
         var auditEvent = Assert.Single(_log.Events);
@@ -382,7 +387,7 @@ public sealed class AuditBehaviorTests
     public async Task Handle_DeleteRefused_RecordsTheRequestedIdAndTheDenial_Test()
     {
         // Arrange
-        var id = Guid.NewGuid();
+        var id = DeletedProductId;
         var sut = new AuditBehavior<DeleteProductCommand, DeleteProductResult>(
             _log,
             new StubAuditRequestContext(),

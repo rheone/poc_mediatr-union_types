@@ -14,8 +14,8 @@ using NSubstitute;
 namespace MediatrUnionPoc.Application.Tests.Behaviors;
 
 /// <summary>
-/// Proves pipeline behavior order — asserted only in an XML comment on
-/// <see cref="MediatrUnionPoc.Application.DependencyInjection.AddApplication"/> until now — by
+/// Proves the pipeline behavior order documented on
+/// <see cref="MediatrUnionPoc.Application.DependencyInjection.AddApplication"/> by
 /// resolving the real, built <see cref="IServiceProvider"/> a request would actually get. A
 /// reordering that ran <see cref="TransactionBehavior{TRequest,TResponse}"/> before
 /// <see cref="ValidationBehavior{TRequest,TResponse}"/> would begin (and roll back) transactions

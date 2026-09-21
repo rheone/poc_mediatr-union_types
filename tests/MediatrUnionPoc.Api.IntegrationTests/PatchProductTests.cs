@@ -20,6 +20,11 @@ public sealed class PatchProductTests : IDisposable
     private const string ProductsUri = ApiRoutes.Products;
     private const string MergePatchJson = "application/merge-patch+json";
     private const string ProblemJson = "application/problem+json";
+    private const string TraceIdHeader = "X-Trace-Id";
+    private const string IfMatchHeaderName = "If-Match";
+    private const string WidgetName = "Widget";
+    private const string RenamedWidgetName = "Widget Pro";
+    private const decimal WidgetPrice = 9.99m;
 
     private readonly ProductsApiFactory _factory = new();
     private readonly HttpClient _client;
@@ -41,7 +46,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_NameOnly_Returns200WithNewETagAndPriceUnchanged_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -57,8 +62,8 @@ public sealed class PatchProductTests : IDisposable
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, response.StatusCode),
             () => Assert.Equal("W/\"2\"", response.Headers.ETag?.ToString()),
-            () => Assert.Equal("Widget Pro", patched.Name),
-            () => Assert.Equal(9.99m, patched.Price),
+            () => Assert.Equal(RenamedWidgetName, patched.Name),
+            () => Assert.Equal(WidgetPrice, patched.Price),
             () => Assert.Equal(2L, patched.Version.Value)
         );
     }
@@ -69,7 +74,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_PriceOnly_Returns200WithNameUnchanged_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -84,7 +89,7 @@ public sealed class PatchProductTests : IDisposable
         Assert.NotNull(patched);
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, response.StatusCode),
-            () => Assert.Equal("Widget", patched.Name),
+            () => Assert.Equal(WidgetName, patched.Name),
             () => Assert.Equal(19.99m, patched.Price),
             () => Assert.Equal(2L, patched.Version.Value)
         );
@@ -96,7 +101,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_NameAndPrice_ChangesBothBumpsVersionOnceAndKeepsCreatedAt_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -114,7 +119,7 @@ public sealed class PatchProductTests : IDisposable
         Assert.NotNull(stored);
         Assert.Multiple(
             () => Assert.Equal(HttpStatusCode.OK, response.StatusCode),
-            () => Assert.Equal("Widget Pro", stored.Name),
+            () => Assert.Equal(RenamedWidgetName, stored.Name),
             () => Assert.Equal(19.99m, stored.Price),
             () => Assert.Equal(2L, stored.Version.Value),
             () => Assert.Equal(product.CreatedAt, stored.CreatedAt)
@@ -127,7 +132,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_UnknownMembersAlongsideKnownOne_AreIgnored_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -161,7 +166,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_NoRecognisedMember_Returns400Problem_Test(string json)
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -190,7 +195,7 @@ public sealed class PatchProductTests : IDisposable
     )
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -218,7 +223,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_PriceOfWrongJsonType_Returns400Problem_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -238,7 +243,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_PlainJsonContentType_Returns415Problem_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -259,7 +264,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_NoIfMatch_Returns428Problem_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -278,7 +283,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_MalformedIfMatch_Returns400Problem_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -298,7 +303,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_StaleIfMatch_Returns412Problem_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
         using var first = await PatchAsync(
             product.Id.Value,
             """{"price":2}""",
@@ -329,7 +334,7 @@ public sealed class PatchProductTests : IDisposable
     public async Task PatchAsync_NonOwner_Returns403Problem_Test()
     {
         // Arrange
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
 
         // Act
         using var response = await PatchAsync(
@@ -345,7 +350,7 @@ public sealed class PatchProductTests : IDisposable
             $"{ProductsUri}/{product.Id.Value}",
             CancellationToken.None
         );
-        Assert.Equal("Widget", stored!.Name);
+        Assert.Equal(WidgetName, stored!.Name);
     }
 
     /// <summary>Verifies patching an unknown product is a 404 problem.</summary>
@@ -353,7 +358,7 @@ public sealed class PatchProductTests : IDisposable
     [Fact]
     public async Task PatchAsync_UnknownId_Returns404Problem_Test()
     {
-        // Act
+        // Arrange / Act
         using var response = await PatchAsync(
             ProductRequestMother.UnknownId,
             """{"name":"Widget Pro"}""",
@@ -418,7 +423,7 @@ public sealed class PatchProductTests : IDisposable
     {
         // Arrange
         const int attempts = 4;
-        var product = await CreateAsync("Widget", 9.99m);
+        var product = await CreateAsync(WidgetName, WidgetPrice);
         var etag = product.Version.ToETag();
 
         // Act
@@ -465,7 +470,7 @@ public sealed class PatchProductTests : IDisposable
             () => Assert.Equal((int)expected, body.RootElement.GetProperty("status").GetInt32()),
             () =>
                 Assert.Equal(
-                    response.Headers.GetValues("X-Trace-Id").Single(),
+                    response.Headers.GetValues(TraceIdHeader).Single(),
                     body.RootElement.GetProperty("traceId").GetString()
                 )
         );
@@ -503,7 +508,7 @@ public sealed class PatchProductTests : IDisposable
 
         if (ifMatch is not null)
         {
-            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+            request.Headers.TryAddWithoutValidation(IfMatchHeaderName, ifMatch);
         }
 
         return await _client.SendAsync(request, CancellationToken.None);

@@ -20,6 +20,7 @@ public sealed class RateLimitingOptionsTests : IDisposable
     [Fact]
     public void Defaults_AreBoundedAndOrdered_Test()
     {
+        // Arrange
         // Act
         var options = new RateLimitingOptions();
 
@@ -102,8 +103,17 @@ public sealed class RateLimitingOptionsTests : IDisposable
     [InlineData("Impersonation", 0, false)]
     [InlineData("Impersonation", 1_000_001, false)]
     [InlineData("Impersonation", 1, true)]
-    public void Validate_PermitLimit_IsBounded_Test(string policy, int limit, bool valid) =>
-        Assert.Equal(valid, Validate(With(policy, o => o.PermitLimit = limit)).Succeeded);
+    public void Validate_PermitLimit_IsBounded_Test(string policy, int limit, bool valid)
+    {
+        // Arrange
+        var options = With(policy, o => o.PermitLimit = limit);
+
+        // Act
+        var result = Validate(options);
+
+        // Assert
+        Assert.Equal(valid, result.Succeeded);
+    }
 
     /// <summary>Verifies each policy's window is 1 second to a day.</summary>
     /// <param name="policy">The policy under test.</param>
@@ -116,8 +126,17 @@ public sealed class RateLimitingOptionsTests : IDisposable
     [InlineData("Reads", 86_400, true)]
     [InlineData("Writes", 0, false)]
     [InlineData("Impersonation", 86_401, false)]
-    public void Validate_Window_IsBounded_Test(string policy, int seconds, bool valid) =>
-        Assert.Equal(valid, Validate(With(policy, o => o.WindowSeconds = seconds)).Succeeded);
+    public void Validate_Window_IsBounded_Test(string policy, int seconds, bool valid)
+    {
+        // Arrange
+        var options = With(policy, o => o.WindowSeconds = seconds);
+
+        // Act
+        var result = Validate(options);
+
+        // Assert
+        Assert.Equal(valid, result.Succeeded);
+    }
 
     /// <summary>Verifies each policy's queue is 0 to the maximum, and that a negative or huge queue fails.</summary>
     /// <param name="policy">The policy under test.</param>
@@ -129,13 +148,31 @@ public sealed class RateLimitingOptionsTests : IDisposable
     [InlineData("Reads", 0, true)]
     [InlineData("Writes", 1_000, true)]
     [InlineData("Impersonation", -1, false)]
-    public void Validate_QueueLimit_IsBounded_Test(string policy, int queue, bool valid) =>
-        Assert.Equal(valid, Validate(With(policy, o => o.QueueLimit = queue)).Succeeded);
+    public void Validate_QueueLimit_IsBounded_Test(string policy, int queue, bool valid)
+    {
+        // Arrange
+        var options = With(policy, o => o.QueueLimit = queue);
+
+        // Act
+        var result = Validate(options);
+
+        // Assert
+        Assert.Equal(valid, result.Succeeded);
+    }
 
     /// <summary>Verifies a missing policy object fails validation instead of throwing later.</summary>
     [Fact]
-    public void Validate_MissingPolicy_Fails_Test() =>
-        Assert.True(Validate(new RateLimitingOptions { Writes = null! }).Failed);
+    public void Validate_MissingPolicy_Fails_Test()
+    {
+        // Arrange
+        var options = new RateLimitingOptions { Writes = null! };
+
+        // Act
+        var result = Validate(options);
+
+        // Assert
+        Assert.True(result.Failed);
+    }
 
     /// <summary>Verifies a host configured with an invalid limit refuses to start.</summary>
     [Fact]
@@ -150,7 +187,8 @@ public sealed class RateLimitingOptionsTests : IDisposable
         var exception = Record.Exception(() => factory.CreateClient().Dispose());
 
         // Assert
-        Assert.IsType<OptionsValidationException>(exception);
+        var validation = Assert.IsType<OptionsValidationException>(exception);
+        Assert.NotEmpty(validation.Failures);
     }
 
     /// <summary>

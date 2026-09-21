@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 
 namespace MediatrUnionPoc.Api.Impersonation;
 
-/// <summary>Registration for impersonation.</summary>
+/// <summary>Registration of the impersonation options, token issuer and HTTP error mapping in the Api host.</summary>
 public static class ImpersonationServiceCollectionExtensions
 {
     /// <summary>
