@@ -22,7 +22,8 @@ the end is reference material, not required front-to-back reading.
 
 | Page | What it covers |
 | --- | --- |
-| [Adding a new command or query](adding-a-command.md) | Step by step: a new operation, its union, handler, validator and endpoint. |
+| [Adding a new API endpoint, step by step](adding-an-endpoint.md) | The hand-holding checklist: every file to add or touch, in order, with authorization, transactions, validation, tests and the OpenAPI snapshot. |
+| [Adding a new command or query](adding-a-command.md) | The short concept overview: a new operation, its union, handler, validator and endpoint. |
 | [Worked example: UpdateProductCommand](worked-example-update.md) | One command followed case by case through the pipeline and the controller. |
 | [Extending the pattern: syncing a search index](extending-search-index.md) | A sketch of MediatR notifications and eventual consistency. |
 | [Speculative shared case types](speculative-case-types.md) | Case types a larger API might add, and what each would mean. |

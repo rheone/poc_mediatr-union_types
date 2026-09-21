@@ -24,6 +24,11 @@ Details below.
 > could all work for a different team. Treat what follows as "one thing that works," not "the
 > correct answer."
 
+> [!TIP]
+> **Want to add an endpoint?** Follow [Adding a new API endpoint, step by step](docs/adding-an-endpoint.md):
+> every file to add or touch, in order, with the union, validation, authorization, transaction, tests and
+> the OpenAPI snapshot.
+
 ## Getting started
 
 ```bash
@@ -179,7 +184,7 @@ The rest of the documentation lives in [`docs/`](docs/index.md), whose index des
 | Group | Pages |
 | --- | --- |
 | The pattern | [Scope of the pattern and the POC](docs/scope.md) · [The C# `union` type](docs/union-type.md) · [Case types](docs/case-types.md) · [No exceptions for expected outcomes](docs/no-exceptions.md) · [Request lifecycle](docs/request-lifecycle.md) · [Transactions and Unit of Work](docs/transactions.md) · [Vogen value objects](docs/value-objects.md) |
-| Guides | [Adding a new command or query](docs/adding-a-command.md) · [Worked example: UpdateProductCommand](docs/worked-example-update.md) · [Extending the pattern: syncing a search index](docs/extending-search-index.md) · [Speculative shared case types](docs/speculative-case-types.md) · [Testing](docs/testing.md) |
+| Guides | **[Adding a new API endpoint, step by step](docs/adding-an-endpoint.md)** · [Adding a new command or query](docs/adding-a-command.md) · [Worked example: UpdateProductCommand](docs/worked-example-update.md) · [Extending the pattern: syncing a search index](docs/extending-search-index.md) · [Speculative shared case types](docs/speculative-case-types.md) · [Testing](docs/testing.md) |
 | HTTP API | [The HTTP contract and API versioning](docs/http-contract.md) · [Optimistic concurrency](docs/concurrency.md) · [Partial updates: PATCH](docs/patch.md) · [Listing products](docs/listing.md) |
 | Security | [Authorization](docs/authorization.md) · [Impersonation](docs/impersonation.md) · [Audit stream](docs/audit.md) |
 | Operations | [Trace id, unhandled exceptions and logging](docs/logging-and-errors.md) · [Health checks, CORS, rate limiting, timeouts and the OpenAPI check](docs/operations.md) |

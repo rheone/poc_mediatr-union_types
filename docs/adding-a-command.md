@@ -1,6 +1,6 @@
 # Adding a new command or query
 
-Part of the [documentation](index.md).
+Part of the [documentation](index.md). For a file-by-file checklist including tests, authorization and the OpenAPI snapshot, see [Adding a new API endpoint, step by step](adding-an-endpoint.md).
 
 MediatR is an in-process [mediator](glossary.md#architectural-patterns): instead of a controller calling a
 service directly, it sends a message object and MediatR routes it to exactly one handler. This is
