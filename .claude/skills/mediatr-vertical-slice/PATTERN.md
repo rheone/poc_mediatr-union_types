@@ -71,7 +71,7 @@ Each marker on the request demands members on the union; until they exist the fi
 **Search:** `AbstractValidator<`, `ValidationBehavior`, rule extension methods.
 
 - Validate shape: not empty, maximum length, range, allowlist. State-dependent rules (taken, missing) need the database and belong in the handler.
-- Share a rule several operations use as an extension member so limits cannot drift.
+- Share a rule several operations use as an extension member so limits cannot drift. Test a shared rule through each consumer's validator, since each wires it separately.
 - Bound every input a caller can make large or expensive.
 - `ValidationBehavior` short-circuits before the handler through `FromValidationErrors`. Two designs: a `ValidationErrors` case (per-field messages), or an `Error` with a validation code mapped to `400` (single input).
 - Authorization runs before validation: a refused caller gets `403` even when the input is also invalid.
@@ -117,7 +117,7 @@ Every endpoint already requires an authenticated caller; this decides which ones
 
 - When a record's existence is sensitive, return `NotFound` to a caller who may not see it.
 - Several handlers for one requirement: any one succeeding is enough (owner or administrator). Several requirements on one policy: all must succeed.
-- Reads need authorization too: gate the query, or filter in the repository query so it returns only what the caller may see.
+- Reads need authorization too: gate the query, or filter in the repository query so it returns only what the caller may see. A scope taken from the caller's identity that is missing must yield an empty result or a refusal, never an unscoped query (a null owner criterion means every owner).
 - An anonymous endpoint needs an explicit allow-anonymous marker and a deliberate review.
 - Confirm a group or scope claim actually arrives under the mapped claim type before depending on it.
 
@@ -193,7 +193,7 @@ Tests, in the domain test project: a valid value, each invalid value with its me
 
 **Search:** the `DbContext`, `ValueConverter`, repository interfaces and implementations, unit of work, migrations folder.
 
-- Domain behavior is a method on the entity that guards its own invariants; a mutation advances the entity's version.
+- Domain behavior is a method on the entity that guards its own invariants; a mutation advances the entity's version, and only when state actually changes (a repeated mutation is a no-op).
 - A new repository method needs its implementation and a test against a real database. The interface speaks in domain terms and never exposes `IQueryable`.
 - Every uniqueness rule has a unique index as well as the up-front check.
 - Each value object the entity stores needs a converter (see [Value objects](#value-objects)).

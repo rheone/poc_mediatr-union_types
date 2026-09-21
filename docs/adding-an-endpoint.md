@@ -32,6 +32,7 @@ overview; this page is the long version.
 - [Step 9: the request contract and the controller action](#step-9-the-request-contract-and-the-controller-action)
 - [Step 10: tests](#step-10-tests)
 - [Step 11: the contract and the docs](#step-11-the-contract-and-the-docs)
+- [Changing an existing operation](#changing-an-existing-operation)
 - [Also consider](#also-consider)
 - [Common mistakes](#common-mistakes)
 - [Final checklist](#final-checklist)
@@ -268,6 +269,13 @@ A handler **returns a case**; it never throws for an expected outcome ([No excep
   is the race backstop that [Step 7](#step-7-the-transaction) translates.
 - **Every `Async` method takes `CancellationToken cancellationToken = default`**, except `Handle`,
   whose signature MediatR fixes.
+- **An operation on something already in the target state returns it unchanged**, and the entity's
+  version advances only when state actually changed. Decide this with the requester before you write it
+  (idempotent success, or a `Conflict`).
+- **The Application layer has no ASP.NET helpers.** Read a claim with `principal.FindFirst(...)?.Value`,
+  as the existing handlers do; `FindFirstValue` is an ASP.NET extension the layer cannot reference.
+- **A scope taken from the caller's identity** ("my products") must never fall back to unscoped when
+  the claim is missing: a null owner criterion means every owner. Return an empty page or refuse.
 
 **See:** an add, [`CreateProductHandler`](../src/MediatrUnionPoc.Application/Features/Products/Create/CreateProductHandler.cs);
 a read, [`GetProductByIdHandler`](../src/MediatrUnionPoc.Application/Features/Products/GetById/GetProductByIdHandler.cs);
@@ -479,7 +487,7 @@ Add a `sealed record` to [`Contracts/ProductContracts.cs`](../src/MediatrUnionPo
 (or a new contracts file for a new area). Keep it to shape only: every rule belongs in the validator, so
 it also applies to callers that do not come through HTTP. **Do not put fields on it that the caller must
 not set** (owner, id, version, created-at); the handler assigns those. Otherwise a caller can set them by
-adding a member to the body (mass assignment). An operation with only a route id needs no type.
+adding a member to the body (mass assignment). An operation with only a route id needs no type. Name each member as the nearest sibling names the same concept on the wire: the existing list binds `pageNumber`, so a new list uses `pageNumber`, not `page`.
 
 ### 9b. The action
 
@@ -585,6 +593,36 @@ dotnet test --filter "FullyQualifiedName~{Operation}"   # what you touched
 dotnet test                                             # everything
 ```
 
+### Getting an honest red
+
+A test that fails for the wrong reason, or that never failed at all, proves nothing. Six cases come up
+on almost every endpoint:
+
+- **Assert the status before you read the body.** A test that deserializes a problem body first fails
+  with a null reference, which looks like red but is a broken test.
+- **A not-found HTTP test also passes before the route exists**, because an unmapped route answers a
+  problem-shaped `404`. Assert the problem's `code` member (`NOT_FOUND`) as well.
+- **Union and audit members the compiler forces** (`ShouldCommit`, `FromCommitFailure`,
+  `FromValidationErrors`, `FromNotAuthorized`, `DescribeAudit`) exist as soon as the union compiles, so
+  their tests are green on arrival. Prove them by mutation: flip one arm, watch the test fail, revert.
+- **Tests over a handler you have already written** (HTTP tests over a read handler are the usual case)
+  are green on arrival too. Break the exact line that should make each fail (drop the filter, flip the
+  sort) and record which mutation covered which test.
+- **A boundary the old behavior already satisfied** ("3 characters passes" after adding a minimum) is
+  green on arrival; prove it by changing `>=` to `>`.
+- **A new mapped column round-trips with no code** because the ORM's conventions map it. Get a red from
+  a model-metadata test (required, default), or by mutation.
+
+Reds that are independent may share one test run.
+
+### Members added to a shared type
+
+A new member on a shared DTO or entity breaks every place that builds one, including target-typed
+`new(...)` calls in other test projects. Prefer a required member to a default that leaks into the API
+description, and expect the OpenAPI snapshot to change. After the first HTTP test is green, run the
+**whole** test project of each layer you touched, not one class: a test that enumerates every operation
+(`ApiVersioningTests.OpenApiV1_DocumentsEachOperationOnce_Test`) and the snapshot test fail only there.
+
 ## Step 11: the contract and the docs
 
 These changes live outside your feature folder, and a test fails if you skip them.
@@ -608,6 +646,33 @@ These changes live outside your feature folder, and a test fails if you skip the
    footnote in any `*.md`, printing `file:line -> target`. Renaming a heading means fixing every link to it.
 5. **The READMEs** that list features: [Application](../src/MediatrUnionPoc.Application/README.md) and
    [Api](../src/MediatrUnionPoc.Api/README.md); and [`docs/index.md`](index.md) if you add a page.
+6. **Every statement of what exists.** Search the whole repo, including `CLAUDE.md` and the READMEs,
+   for the names of the sibling operations, for prose counts ("all six operations", "the four
+   mutations"), and for tables that enumerate operations, routes or headers. A new operation makes
+   each of those stale.
+7. **Formatting.** Run every formatter the repo uses: `dotnet format whitespace`, and CSharpier (run
+   `dotnet tool restore` first; it is configured in `.config/dotnet-tools.json` and the pre-commit
+   hook, not in `CLAUDE.md`).
+
+## Changing an existing operation
+
+Most work on a mature API changes an existing operation instead of adding one: a tighter rule, a new
+field, a different status. The steps above still describe the layers, but a change skips the skeleton
+and most of the checklist. Do this instead.
+
+1. **Find every consumer of what you are changing.** A validation rule in a shared extension reaches
+   every operation that uses it (the product-name rule serves create, update and patch). Decide with the
+   requester which of them the change covers; covering only one leaves a way around it.
+2. **Find what the change would now break.** Search fixtures, seed data and existing tests for values
+   the new rule rejects. Existing rows in the database are not re-validated: decide whether they are
+   left alone (usually right, and say what happens the next time one is edited) or migrated.
+3. **Test through each consumer.** Each consumer wires a shared rule separately, so give each its own
+   validator test. Add an HTTP test for a consumer when no existing test covers that outcome for it.
+4. **Get red, then green.** Extend the existing HTTP test for the behavior until it fails for the right
+   reason. Cases the old rule already satisfied are green on arrival; prove them by mutation
+   ([Getting an honest red](#getting-an-honest-red)).
+5. **Search for the old rule's wording and numbers** ("at most 200", "non-empty") in docs and XML doc
+   comments. The parameter documentation on the commands is often the only place a rule is written down.
 
 ## Also consider
 
@@ -628,6 +693,8 @@ Things a first endpoint often leaves out. Most do not apply to every endpoint; d
 | **Versioning** | Adding an endpoint to v1 is additive. Changing or removing what a shipped endpoint returns is a breaking change and needs a new version, not an edit | [API versioning](http-contract.md#api-versioning) |
 | **Personal or sensitive data** | It must stay out of logs, audit events, error messages and the OpenAPI examples | [Audit stream](audit.md#audit-stream-a-separate-record-of-security-relevant-actions) |
 | **Time** | Use the injected `TimeProvider`, and store UTC in a form the database can order | [Listing](listing.md) |
+| **Idempotent and repeated requests** | Acting on something already in the target state should return it unchanged without advancing the version, unless the requester wants a `Conflict` | [Optimistic concurrency](concurrency.md) |
+| **Follow-up operations** | A change to what a record means (deactivated, hidden) usually reaches other operations (list, get). Each is its own slice: finish this one and list the rest by name | [Listing products](listing.md) |
 | **Trying it by hand** | Mint a token or use the development identity and call the endpoint through Scalar, the `.http` file or the helper script | [README, getting started](../README.md#getting-started) |
 
 ## Common mistakes
@@ -647,6 +714,9 @@ Things a first endpoint often leaves out. Most do not apply to every endpoint; d
 | `OpenApiContractTests` fails | The API changed and the snapshot did not | Regenerate ([Step 11](#step-11-the-contract-and-the-docs)) |
 | An architecture test fails | Application referenced an ASP.NET or JWT type, or Domain referenced another layer | Move the code down a layer or behind an interface |
 | A claim you expected is missing in Application | Inbound claim mapping changed | Leave `MapInboundClaims` `true`; see [Where the identity comes from](authorization.md#where-the-identity-comes-from) |
+| A test passes before the endpoint exists | A `404` problem body from an unmapped route satisfies it | Assert the problem `code`, and the status before the body ([Getting an honest red](#getting-an-honest-red)) |
+| Nine tests fail to compile after adding a DTO member | Every construction of the type, including target-typed `new(...)`, needs the new argument | Fix them all, in every test project ([Members added to a shared type](#members-added-to-a-shared-type)) |
+| The suite fails on an endpoint-list or snapshot test only when the whole project runs | A per-class run never executes them | Run each touched layer's whole test project after the first green |
 | `NETSDK1045` | Visual Studio ignored `global.json` | Use the pinned preview SDK |
 
 ## Final checklist

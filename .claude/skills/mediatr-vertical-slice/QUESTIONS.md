@@ -10,11 +10,11 @@ One question at a time, in this order. Each names what it decides and how to rec
 
 **3. Which verb, route and success status?** Recommend from the project's routes and [PATTERN.md](PATTERN.md#http-layer). Typical: create is `POST` on the collection (`201`, `Location`); read `GET` (`200`); replace `PUT`; partial change `PATCH`; remove `DELETE` (`204`); an action on one record `POST` on a sub-route.
 
-**4. What does the caller send?** Each input with its source (route, query, body, header), type and whether required. Confirm the list. Fields the caller must not set (owner, id, version, timestamps) are left off; the handler assigns them. Say so when the caller might expect otherwise.
+**4. What does the caller send?** Each input with its source (route, query, body, header), type and whether required. Name each input as the nearest sibling names the same concept on the wire (`pageNumber`, not `page`); recommend the sibling's names and say so. Confirm the list. Fields the caller must not set (owner, id, version, timestamps) are left off; the handler assigns them. Say so when the caller might expect otherwise.
 
 **5. What are the rules for each input?** One input at a time. Options come from its type: not empty, maximum length, range, format, allowlist. Recommend a finite bound for every string, number and list; an unbounded input is a storage and denial-of-service risk.
 
-**6. Should this input be a value object?** Per input that is an identity, a measure or a constrained string. Options: reuse an existing one (named from the survey), create one, keep the primitive. Recommend reuse when one wraps the same concept; a new one when the value has an invariant or must not be swapped with another value of the same primitive type; the primitive for free text with no rule. See [PATTERN.md](PATTERN.md#value-objects).
+**6. Should this input be a value object?** Per input that is an identity, a measure or a constrained string. Options: reuse an existing one (named from the survey), create one, keep the primitive. Recommend reuse when one wraps the same concept (the command still carries the primitive; the handler converts it with the existing type); a new one when the value has an invariant or must not be swapped with another value of the same primitive type; the primitive for free text with no rule. See [PATTERN.md](PATTERN.md#value-objects).
 
 **7. Must a business rule keep a value unique?** Only for a command that writes. Yes adds an up-front check, a unique index and a conflict outcome that also covers a lost race. Recommend from the entity's existing rules.
 
@@ -25,9 +25,11 @@ One question at a time, in this order. Each names what it decides and how to rec
 - callers holding certain roles or groups (decided from the caller alone, in the pipeline); list the roles and policies the survey found;
 - callers related to the record: its owner, a member of a group it belongs to, a role that permits this action on this kind of record, the same tenant (decided in the handler after the load).
 
-Recommend the least the operation needs. A read that returns records is not exempt: ask whether every caller may see every record returned. When a record's existence is itself sensitive, a refused caller gets not-found instead of not-authorized.
+Recommend the least the operation needs. When the scope comes from the caller's identity ("mine", "my tenant"), also ask what happens when the caller has no value for that claim; recommend an empty result or a refusal, never an unscoped result. A read that returns records is not exempt: ask whether every caller may see every record returned. When a record's existence is itself sensitive, a refused caller gets not-found instead of not-authorized.
 
-**10. Which outcomes can it produce?** The union as a checklist built from the answers so far, each case with its HTTP status: success, not found, validation errors (per-field, or folded into an error case for a single input), conflict, stale version, not authorized, unexpected error. Recommend exactly the cases the answers imply; every declared case must be reachable.
+**10. Which outcomes can it produce?** Ask also whether a state exists that the operation cannot act on (already done, wrong status): options are an idempotent success returning the record unchanged (recommended: safe to retry, no extra outcome) or a conflict. The union as a checklist built from the answers so far, each case with its HTTP status: success, not found, validation errors (per-field, or folded into an error case for a single input), conflict, stale version, not authorized, unexpected error. Recommend exactly the cases the answers imply; every declared case must be reachable.
+
+**10b. Does this change what other operations should return, hide or accept?** Reads, lists, DTOs and other consumers of the changed data. Each affected operation is its own slice. Recommend finishing this slice first and recording the others as named follow-up slices in the spec, so none is forgotten. Ask which, if any, belong in this piece.
 
 **11. Does it need a schema change?** Table, column, index, constraint or value converter. Recommend from questions 4 to 7. Where the project uses migrations, a migration is part of it.
 
@@ -52,6 +54,7 @@ Write it after the last question and ask the user to confirm.
 | Inputs and rules | source, type, required, bounds |
 | Value objects | reused, new (primitive, invariant), or primitive kept |
 | Union cases | each case, its meaning here, its HTTP status |
+| Follow-up slices | operations affected by this change, deferred by name |
 | Validation representation | per-field case, or folded into an error case |
 | Authorization | none; role or group in the pipeline; relationship in the handler; policy names |
 | Uniqueness | the rule, or none |
