@@ -488,3 +488,10 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Local dev helper state (manage-api.ps1: API log)
+.dev/
+
+# Per-developer, reloadable API settings (copy appsettings.Development.local.example.json)
+src/MediatrUnionPoc.Api/appsettings.Development.local.json
+src/MediatrUnionPoc.Api/appsettings.Development.devuser.json

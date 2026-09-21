@@ -38,7 +38,12 @@ stored in the static `Log.Logger`, so several hosts in one process do not replac
 **Configuration** is the `Serilog` section of `appsettings*.json`, so levels and sinks change without
 code. The default level is `Information` with `Microsoft.AspNetCore` and `Microsoft.EntityFrameworkCore`
 at `Warning`. The old `Logging:LogLevel` section is not used; Serilog's `MinimumLevel` is the one
-place levels are set.
+place levels are set. Serilog re-reads `MinimumLevel` when a watched settings file changes, so in Development
+you can raise the detail without a restart: put `{ "Serilog": { "MinimumLevel": { "Default": "Debug" } } }` in the
+git-ignored `appsettings.Development.local.json` (see
+[Local development settings](operations.md#local-development-settings-per-developer-overrides)) and save. Health probe
+lines are written at `Debug` by `Serilog.AspNetCore`, so they appear only at a `Default` (or a `Serilog.AspNetCore`
+override) of `Debug`, not with an override for `MediatrUnionPoc` alone.
 
 | Sink | Format | Where |
 | --- | --- | --- |

@@ -11,6 +11,8 @@ Part of the [documentation](index.md).
   - [Resource-based: `ResourceAuthorizationService` + `OwnerAuthorizationHandler<TResource>`](#resource-based-resourceauthorizationservice--ownerauthorizationhandlertresource)
   - [Zero-to-many handlers, and multiple requirements](#zero-to-many-handlers-and-multiple-requirements)
   - [Where the identity comes from](#where-the-identity-comes-from)
+  - [Local users and roles](#local-users-and-roles)
+  - [The development identity: skipping the token in Development](#the-development-identity-skipping-the-token-in-development)
   - [Configuring role-based authorization for a new command](#configuring-role-based-authorization-for-a-new-command)
   - [Configuring resource-based authorization for a new command](#configuring-resource-based-authorization-for-a-new-command)
   - [Why not `IAuthorizationRequirementData` attributes](#why-not-iauthorizationrequirementdata-attributes)
@@ -294,6 +296,51 @@ curl -i -X DELETE http://localhost:5233/api/v1/products/<id> -H "Authorization: 
 # 204 No Content — the token carries role Administrator
 curl -i -X DELETE http://localhost:5233/api/v1/products/<id> -H "Authorization: Bearer $ADMIN"
 ```
+
+## Local users and roles
+
+There is no user directory, no login endpoint and no password: an identity is whatever `sub` and `role` claims a signed
+token carries. For local work the [helper scripts](../README.md#the-manage-api-helper-scripts) (`manage-api.ps1`,
+`manage-api.sh`) sign tokens for four conventional users; nothing stops a token from naming anyone else.
+
+| User | Roles | Administrator policy (`DELETE`) | Impersonator policy (mint an impersonation token) | `PUT` / `PATCH` |
+| --- | --- | --- | --- | --- |
+| `alice` | none | no (`403`) | no (`403`) | only products she created |
+| `bob` | none | no (`403`) | no (`403`) | only products he created |
+| `root` | `Administrator` | yes | yes | only products he created (an administrator is not an owner) |
+| `sam` | `Support` | no (`403`) | yes | only products he created |
+
+Every user may list, get and create; the creator's `sub` becomes the product's owner. Role names are case-sensitive.
+The scripts' defaults are `alice` for reads and writes and `root` for `DELETE`.
+
+## The development identity: skipping the token in Development
+
+`Authentication:DevIdentity` (`DevIdentityOptions`) lets the API sign a tokenless request in as one configured user, so
+Scalar, `curl` or a browser work with no token at all:
+
+| Setting | Meaning |
+| --- | --- |
+| `UserId` | The id (the `sub`, so the product owner) requests are signed in as. `null` or blank, the default, leaves the feature **off** |
+| `Roles` | The roles that user holds, for example `["Administrator"]` or `["Support"]`. `null`, the default, means none |
+
+- **Where it applies.** `ConfigureDevIdentity` wraps the JWT bearer handler's `OnMessageReceived`: when the request has no
+  `Authorization` header and `UserId` is set, the handler succeeds with a principal carrying `ClaimTypes.NameIdentifier`
+  and `ClaimTypes.Role`, exactly the claim types a real token's `sub` and `role` map to. The rest of the pipeline (the
+  fallback policy, the `Administrator` and owner checks, the audit stream) sees an ordinary authenticated caller.
+- **A real token always wins.** A request that sends any `Authorization` header is judged as before, so an expired or
+  invalid token is still a `401` and a valid one is the user the token says.
+- **Live changes.** The options are read through `IOptionsMonitor` on every request. Edit a watched settings file
+  (the git-ignored `appsettings.Development.local.json`, or `appsettings.Development.json`) and the next request uses the
+  new user and roles, or none: no restart. `manage-api.ps1 set-user -User root` and `manage-api.sh set-user --user root`
+  do the edit for you (into the git-ignored `appsettings.Development.devuser.json`, loaded last so it wins), and
+  `clear-user` undoes it.
+- **Development only, twice.** `DevIdentityEnvironmentValidator` refuses to start a host in any other environment that
+  has `UserId` set, and the sign-in itself checks the environment on each request, so a value that appears after start
+  in Production is ignored.
+- **Visible.** Every tokenless sign-in logs a warning (event id 1500, `DevIdentitySignedIn`) naming the user, and the
+  audit stream records the development user like any other caller.
+
+See [Local development settings](operations.md#local-development-settings-per-developer-overrides) for the local file.
 
 ## Configuring role-based authorization for a new command
 

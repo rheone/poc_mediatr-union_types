@@ -27,6 +27,7 @@ Part of the [documentation](index.md).
   - [The `504` response](#the-504-response)
   - [Cancellation: what is and is not interrupted](#cancellation-what-is-and-is-not-interrupted)
   - [Debugger caveat](#debugger-caveat)
+- [Local development settings: per-developer overrides](#local-development-settings-per-developer-overrides)
 - [OpenAPI contract check: no accidental drift](#openapi-contract-check-no-accidental-drift)
   - [How it works](#how-it-works)
   - [When it fails](#when-it-fails)
@@ -443,6 +444,30 @@ thing and one that retries a `POST` should check the resource first.
 The framework's timeout middleware does nothing while a debugger is attached, so the deadlines never fire in a
 debug session and the timeout tests, which assume no debugger, fail if run under one. Run them with
 `dotnet test`, not with the debugger attached.
+
+# Local development settings: per-developer overrides
+
+In the Development environment the API also loads `src/MediatrUnionPoc.Api/appsettings.Development.local.json` after
+the other settings files, if it exists. It is git-ignored, optional and **watched for changes**, so it is the place for
+values you tweak on your own machine; copy
+[`appsettings.Development.local.example.json`](../src/MediatrUnionPoc.Api/appsettings.Development.local.example.json)
+to start. A second git-ignored file, `appsettings.Development.devuser.json`, is loaded after it (so it wins) and is
+written and deleted only by the `set-user` and `clear-user` commands of the
+[helper scripts](../README.md#the-manage-api-helper-scripts); it holds nothing but `Authentication:DevIdentity`. The
+integration-test host loads neither file, so a local file cannot change what a test sees.
+
+| Setting | Why set it locally |
+| --- | --- |
+| `Authentication:DevIdentity:UserId` and `Roles` | Sign tokenless requests in as a user and roles, live; see [The development identity](authorization.md#the-development-identity-skipping-the-token-in-development). The [users and roles](authorization.md#local-users-and-roles) are documented there |
+| `ConnectionStrings:Products` | For example `Data Source=products.db`, so data survives a restart (unset, the API keeps a private in-memory database that is empty on every start) |
+| `RequestTimeouts:Default` | A longer deadline, for example `00:10:00`, so stopping at a breakpoint does not end in a `504` (see [Debugger caveat](#debugger-caveat)) |
+| `RateLimiting:Reads:PermitLimit`, `RateLimiting:Writes:PermitLimit` | Higher limits, so scripted testing does not meet a `429` |
+| `Serilog:MinimumLevel:Default` or `Override` | A lower level for local tracing: `"Default": "Debug"` shows everything, including health probe lines (written by `Serilog.AspNetCore`) and the health check service; `"Override": { "MediatrUnionPoc": "Debug" }` shows only this project's Debug events. Levels are picked up live |
+
+`Authentication:DevIdentity` (read on every request) and the Serilog `MinimumLevel` (Serilog re-reads it when the file
+changes) take effect the moment you save the file. Every other options class is validated and read at startup, so change
+those and restart the API (see
+[Starting, finding and stopping the API](../README.md#starting-finding-and-stopping-the-api)).
 
 # OpenAPI contract check: no accidental drift
 

@@ -49,9 +49,160 @@ same paths on `https://localhost:7070`):
 | `http://localhost:5233/health/live` | Liveness probe; no checks, `200` while the process responds | Anonymous |
 | `http://localhost:5233/health/ready` | Readiness probe; a database round trip, `200` or `503` | Anonymous |
 
-There is no `/health` route; the two probe paths are configurable under `HealthEndpoints`
-(see [Health checks and options](docs/operations.md#health-checks-and-options)). Mint a local token as described in
-[Authorization](docs/authorization.md#where-the-identity-comes-from).
+> [!NOTE]
+> There is no `/health` route; only the two probe paths above exist, and they are configurable under `HealthEndpoints`
+> (see [Health checks and options](docs/operations.md#health-checks-and-options)). The Scalar UI and OpenAPI document are
+> mapped only when `ASPNETCORE_ENVIRONMENT` is `Development` (the launch profiles set it).
+
+Mint a local token as described in [Authorization](docs/authorization.md#where-the-identity-comes-from), or use the
+[helper scripts](#the-manage-api-helper-scripts) below, or skip tokens with the [development identity](#the-development-identity-no-token-at-all).
+
+### The manage-api helper scripts
+
+[`manage-api.ps1`](manage-api.ps1) (PowerShell 5.1 or 7) and [`manage-api.sh`](manage-api.sh) (bash: Git Bash, WSL,
+macOS, Linux; needs `curl` and `openssl`) are equivalent. They wrap the everyday local loop: start and stop the API,
+check its health, and list, get, create and delete products as a chosen user. Both need the .NET SDK from `global.json`.
+
+```powershell
+./manage-api.ps1 start                                   # run the API on http://localhost:5233 in the background, wait until healthy
+./manage-api.ps1 health                                  # GET /health/live and /health/ready
+./manage-api.ps1 list                                    # first page (page 1, 10 per page) as alice
+./manage-api.ps1 list  -Page 2 -PageSize 5               # any page; prints X-Total-Count and the Link header
+./manage-api.ps1 write -User bob -Name "Gadget" -Price 12.5   # POST /api/v1/products as bob (bob becomes the owner)
+./manage-api.ps1 get                                     # the product the last write created (or -Id <guid>)
+./manage-api.ps1 delete                                  # DELETE it; -User defaults to root (Administrator)
+./manage-api.ps1 token -User root                        # print a bearer token, e.g. to paste into the Scalar UI
+./manage-api.ps1 set-user -User root                     # tokenless requests become root, live (see the development identity below)
+./manage-api.ps1 clear-user                              # tokenless requests are refused (401) again
+./manage-api.ps1 status                                  # is something listening, and which process
+./manage-api.ps1 stop                                    # stop whatever listens on the port
+./manage-api.ps1 restart
+```
+
+The bash script takes the same commands, with `--user`, `--id`, `--page`, `--page-size`, `--name`, `--price`, `--port`
+and `--token-minutes` instead of the PowerShell parameters:
+
+```bash
+./manage-api.sh start
+./manage-api.sh write --user bob --name Gadget --price 12.5
+./manage-api.sh list --page 2 --page-size 5
+./manage-api.sh delete            # the last written product, as root
+./manage-api.sh set-user --user root
+./manage-api.sh clear-user
+./manage-api.sh stop
+```
+
+| Command | What it does |
+| --- | --- |
+| `start` | Runs `dotnet run` in the background, logging to `.dev/api.log` (git-ignored), and returns once `/health/live` answers (up to 120 s while it builds) |
+| `stop` | Finds the process listening on the port and ends it with its `dotnet run` parent |
+| `restart`, `status` | Stop then start; report whether the port is in use and by which process |
+| `health` | Calls `/health/live` and `/health/ready` and prints each status |
+| `list` (alias `read`) | Lists products, paged |
+| `get` | Fetches one product; prints the `ETag` too |
+| `write` | Creates a product; prints `201`, the `ETag` and `Location`, and remembers the new id |
+| `delete` | Deletes a product; needs `Administrator`, so the default user is `root` (`-User bob` shows the `403`) |
+| `token` | Prints a bearer token for the user |
+| `set-user` | Switches the [development identity](#the-development-identity-no-token-at-all) to `-User` (`alice`, `bob`, `root` or `sam`), so requests with no token are that user; needs the user named explicitly |
+| `clear-user` | Removes it, so requests with no token are `401` again |
+
+**Defaults**, so a bare command does something useful:
+
+| Option | Default |
+| --- | --- |
+| user (`-User` / `--user`) | `alice`; `root` for `delete` |
+| page, page size (`-Page`, `-PageSize`) | `1` and `10` (page size 1 to 100) |
+| id (`-Id` / `--id`) for `get` and `delete` | the product the last `write` created (saved in `.dev/last-product-id`) |
+| name, price for `write` | `Widget-<time>` and `9.99` |
+| port (`-Port` / `--port`) | `5233`; applies to every command, so a second instance can run on another port |
+| token lifetime (`-TokenMinutes` / `--token-minutes`) | 60 minutes |
+
+**The users.** There is no user directory: these four names are only what the scripts put in a token, and any name
+works in a token you sign yourself.
+
+| User | Roles | Can |
+| --- | --- | --- |
+| `alice` | none | list, get, create; change (`PUT`/`PATCH`) only products she owns |
+| `bob` | none | the same as `alice`, with his own products |
+| `root` | `Administrator` | everything a plain user can, plus `DELETE`, plus minting an impersonation token |
+| `sam` | `Support` | everything a plain user can, plus minting an impersonation token, but not `DELETE` |
+
+> [!WARNING]
+> The tokens are signed with the **development-only** key in `src/MediatrUnionPoc.Api/appsettings.Development.json`.
+> That is why they work at once, with no `dotnet user-jwts` step and no restart, and why they are accepted by a
+> Development host only. Never use this key, or these scripts, against a shared or production deployment.
+
+To try the ownership rules: `./manage-api.ps1 write -User bob`, then `PUT` or `PATCH` that product as `alice` (`403`) and as
+`bob` (allowed), or `./manage-api.ps1 delete -User bob` (`403`) versus `./manage-api.ps1 delete` as `root` (`204`). The
+scripts cover list, get, create and delete; use the Scalar UI or `curl` (with `./manage-api.ps1 token -User <name>`) for
+`PUT` and `PATCH`. If PowerShell blocks the script, run `powershell -ExecutionPolicy Bypass -File ./manage-api.ps1 <command>`.
+
+### The development identity: no token at all
+
+For quick testing you can skip tokens entirely. In Development, when `Authentication:DevIdentity:UserId` names a
+user, a request that sends no `Authorization` header is signed in as that user with `Authentication:DevIdentity:Roles`.
+Scalar, `curl` and a browser then just work.
+
+```json
+{
+  "Authentication": {
+    "DevIdentity": { "UserId": "root", "Roles": ["Administrator"] }
+  }
+}
+```
+
+Both settings default to `null`, which leaves it off. Put your values in the git-ignored
+`src/MediatrUnionPoc.Api/appsettings.Development.local.json` (copy
+[`appsettings.Development.local.example.json`](src/MediatrUnionPoc.Api/appsettings.Development.local.example.json)).
+The API watches that file, so **saving a change applies to the next request with no restart**: set `"alice"` with no
+roles to test as a plain user, `"root"` with `["Administrator"]` to test as an administrator, or remove the values to
+turn it off again. The quickest way to switch is the scripts: `./manage-api.ps1 set-user -User root` (or
+`./manage-api.sh set-user --user root`) writes those two values for you, and `clear-user` removes them. They use their own
+git-ignored file, `appsettings.Development.devuser.json`, loaded after the local file so it wins, which lets a script replace
+or delete it whole without touching your hand-edited settings. The same user and role names as [the users above](#the-manage-api-helper-scripts) apply, and role
+names are case-sensitive.
+
+> [!WARNING]
+> This is a second way to sign in, so it is fenced in. It only ever works in the Development environment: a host in any
+> other environment **refuses to start** with `UserId` set and ignores a value that appears later. A request that
+> does send an `Authorization` header is judged as usual, so a real, expired or invalid token is never replaced. Every
+> tokenless sign-in is logged as a warning (event id 1500). See
+> [Authorization](docs/authorization.md#the-development-identity-skipping-the-token-in-development).
+
+The local file can also hold other per-developer settings (a persistent `ConnectionStrings:Products`, a longer
+`RequestTimeouts:Default` for debugging, higher `RateLimiting` limits, a `Debug` log level that applies live); see
+[Health checks and options](docs/operations.md#local-development-settings-per-developer-overrides) and [logging](docs/logging-and-errors.md).
+
+### Starting, finding and stopping the API
+
+Start it in a terminal you keep open (`dotnet run --project src/MediatrUnionPoc.Api`) and stop it with
+**Ctrl+C** in that terminal, or with **Stop** (Shift+F5) if you started it from Visual Studio or VS Code, or use
+`./manage-api.ps1 start` and `stop` (`./manage-api.sh` on bash).
+
+> [!IMPORTANT]
+> The API reads its configuration once at startup. **Restart it after** minting your first `dotnet user-jwts` token
+> or changing any setting; a running instance does not know a signing key created after it started, and answers
+> `401` with `The signature key was not found`. (Tokens from the helper scripts and the development identity do not have this problem.)
+
+If a port is already in use, or you cannot find the terminal, discover the process that owns it (`5233` is the
+`http` profile, `7070` the `https` one):
+
+```powershell
+# PowerShell: which process listens on 5233, then stop it
+Get-NetTCPConnection -LocalPort 5233 -State Listen | Select-Object LocalPort, OwningProcess
+Stop-Process -Id <OwningProcess>
+```
+
+```bash
+# Git Bash / WSL / macOS / Linux
+netstat -ano | grep :5233        # Windows (Git Bash): the last column is the PID; stop it with: taskkill //F //PID <pid>
+lsof -i :5233 && kill <pid>      # macOS / Linux
+```
+
+To check that the instance you reach is the one you expect, call `http://localhost:5233/health/live` (anonymous,
+`200` while it responds). For a `401`, run the request with `curl -i` and read the `WWW-Authenticate` header: it
+names the reason, for example `The signature key was not found` (the API started before the token was minted, so
+restart it) or an expired token.
 
 ### Roles and impersonation
 
@@ -75,9 +226,14 @@ earlier response into their `If-Match` header (for example `W/"1"`). To act as a
 returned token into the same field.
 
 Role names are case-sensitive. `Administrator` is required for `DELETE /api/v1/products/{id}`; either
-`Administrator` or `Support` is required to mint an impersonation token. Impersonation is enabled in
-every environment and is a controlled authentication bypass, so it has its own signing key
-(`Impersonation:SigningKey`, which must differ from the JWT key) and a mandatory reason. Every attempt is audited:
+`Administrator` or `Support` is required to mint an impersonation token.
+
+> [!WARNING]
+> Impersonation is enabled in **every** environment and is a controlled authentication bypass: whoever can call it can
+> become anyone. It has its own signing key (`Impersonation:SigningKey`, which must differ from the JWT key), a mandatory
+> reason, and every attempt is audited. Set `Impersonation:Enabled=false` to remove it.
+
+A request looks like this:
 
 ```bash
 curl -i -X POST http://localhost:5233/api/v1/impersonation/tokens \
@@ -179,18 +335,75 @@ The full lists are in [What this POC demonstrates, and what it leaves out](docs/
 
 ## Documentation
 
-The rest of the documentation lives in [`docs/`](docs/index.md), whose index describes every page.
+The full documentation lives in [`docs/`](docs/index.md), whose index describes every page. The groups below follow
+a suggested reading order: each builds on the ones above it, so read top to bottom the first time, then jump to
+what you need.
 
-| Group | Pages |
-| --- | --- |
-| The pattern | [Scope of the pattern and the POC](docs/scope.md) · [The C# `union` type](docs/union-type.md) · [Case types](docs/case-types.md) · [No exceptions for expected outcomes](docs/no-exceptions.md) · [Request lifecycle](docs/request-lifecycle.md) · [Transactions and Unit of Work](docs/transactions.md) · [Vogen value objects](docs/value-objects.md) |
-| Guides | **[Adding a new API endpoint, step by step](docs/adding-an-endpoint.md)** · [Adding a new command or query](docs/adding-a-command.md) · [Worked example: UpdateProductCommand](docs/worked-example-update.md) · [Extending the pattern: syncing a search index](docs/extending-search-index.md) · [Speculative shared case types](docs/speculative-case-types.md) · [Testing](docs/testing.md) |
-| HTTP API | [The HTTP contract and API versioning](docs/http-contract.md) · [Optimistic concurrency](docs/concurrency.md) · [Partial updates: PATCH](docs/patch.md) · [Listing products](docs/listing.md) |
-| Security | [Authorization](docs/authorization.md) · [Impersonation](docs/impersonation.md) · [Audit stream](docs/audit.md) |
-| Operations | [Trace id, unhandled exceptions and logging](docs/logging-and-errors.md) · [Health checks, CORS, rate limiting, timeouts and the OpenAPI check](docs/operations.md) |
-| Reference | [Notes and gotchas](docs/notes-and-gotchas.md) · [Glossary](docs/glossary.md) |
-| Projects | Each project has its own README: [Domain](src/MediatrUnionPoc.Domain/README.md) · [Application](src/MediatrUnionPoc.Application/README.md) · [Infrastructure](src/MediatrUnionPoc.Infrastructure/README.md) · [Api](src/MediatrUnionPoc.Api/README.md) · [Domain.Tests](tests/MediatrUnionPoc.Domain.Tests/README.md) · [Application.Tests](tests/MediatrUnionPoc.Application.Tests/README.md) · [Infrastructure.IntegrationTests](tests/MediatrUnionPoc.Infrastructure.IntegrationTests/README.md) · [Api.IntegrationTests](tests/MediatrUnionPoc.Api.IntegrationTests/README.md) · [ArchitectureTests](tests/MediatrUnionPoc.ArchitectureTests/README.md) · [CompileTimeChecks](tests/CompileTimeChecks/README.md) |
-| Other | [Features](docs/Features.md) · [Hardening plan](docs/Hardening-Plan.md) · [Documentation split plan](docs/README-Split-Plan.md) · [Research notes](docs/research/) |
+**On this page:** [The pattern](#the-pattern) · [Guides](#guides) · [HTTP API](#http-api) · [Security](#security) · [Operations](#operations) · [Reference](#reference) · [Project documentation](#project-documentation) · [Other documents](#other-documents)
+
+### The pattern
+
+1. [Scope of the pattern and the POC](docs/scope.md)
+2. [The C# `union` type](docs/union-type.md)
+3. [Case types](docs/case-types.md)
+4. [No exceptions for expected outcomes](docs/no-exceptions.md)
+5. [Request lifecycle](docs/request-lifecycle.md)
+6. [Transactions and Unit of Work](docs/transactions.md)
+7. [Vogen value objects](docs/value-objects.md)
+
+### Guides
+
+1. **[Adding a new API endpoint, step by step](docs/adding-an-endpoint.md)**: the start-here checklist for a new endpoint
+2. [Adding a new command or query](docs/adding-a-command.md)
+3. [Worked example: UpdateProductCommand](docs/worked-example-update.md)
+4. [Extending the pattern: syncing a search index](docs/extending-search-index.md)
+5. [Speculative shared case types](docs/speculative-case-types.md)
+6. [Testing](docs/testing.md)
+
+### HTTP API
+
+1. [The HTTP contract and API versioning](docs/http-contract.md)
+2. [Optimistic concurrency](docs/concurrency.md)
+3. [Partial updates: PATCH](docs/patch.md)
+4. [Listing products](docs/listing.md)
+
+### Security
+
+1. [Authorization](docs/authorization.md)
+2. [Impersonation](docs/impersonation.md)
+3. [Audit stream](docs/audit.md)
+
+### Operations
+
+1. [Trace id, unhandled exceptions and logging](docs/logging-and-errors.md)
+2. [Health checks, CORS, rate limiting, timeouts and the OpenAPI check](docs/operations.md)
+
+### Reference
+
+1. [Notes and gotchas](docs/notes-and-gotchas.md)
+2. [Glossary](docs/glossary.md)
+
+### Project documentation
+
+Each project has its own README, in dependency order (source projects first, then their tests):
+
+1. [Domain](src/MediatrUnionPoc.Domain/README.md)
+2. [Application](src/MediatrUnionPoc.Application/README.md)
+3. [Infrastructure](src/MediatrUnionPoc.Infrastructure/README.md)
+4. [Api](src/MediatrUnionPoc.Api/README.md)
+5. [Domain.Tests](tests/MediatrUnionPoc.Domain.Tests/README.md)
+6. [Application.Tests](tests/MediatrUnionPoc.Application.Tests/README.md)
+7. [Infrastructure.IntegrationTests](tests/MediatrUnionPoc.Infrastructure.IntegrationTests/README.md)
+8. [Api.IntegrationTests](tests/MediatrUnionPoc.Api.IntegrationTests/README.md)
+9. [ArchitectureTests](tests/MediatrUnionPoc.ArchitectureTests/README.md)
+10. [CompileTimeChecks](tests/CompileTimeChecks/README.md)
+
+### Other documents
+
+1. [Features](docs/Features.md)
+2. [Hardening plan](docs/Hardening-Plan.md)
+3. [Documentation split plan](docs/README-Split-Plan.md)
+4. [Research notes](docs/research/)
 
 [^mediatr-license]: MediatR's own license changed starting with v10 — free for individuals and
     small organizations, commercial licensing applies above a revenue threshold. See
