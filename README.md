@@ -32,6 +32,67 @@ dotnet test
 dotnet run --project src/MediatrUnionPoc.Api
 ```
 
+Once the API is running, these are the addresses to know (the `https` launch profile also serves the
+same paths on `https://localhost:7070`):
+
+| URL | What it is | Auth |
+| --- | --- | --- |
+| `http://localhost:5233/scalar` | Scalar API UI; paste a bearer token in its Authentication panel to call endpoints (Development only) | Anonymous page |
+| `http://localhost:5233/openapi/v1.json` | OpenAPI document for API version 1 (Development only) | Anonymous |
+| `http://localhost:5233/api/v1/products` | The Products API (`GET` list, `POST`); `/api/v1/products/{id}` for `GET`, `PUT`, `PATCH`, `DELETE` | Bearer token |
+| `http://localhost:5233/api/v1/impersonation/tokens` | `POST` mints a short-lived token that acts as another user (see [Roles and impersonation](#roles-and-impersonation)) | Bearer token with role `Administrator` or `Support` |
+| `http://localhost:5233/health/live` | Liveness probe; no checks, `200` while the process responds | Anonymous |
+| `http://localhost:5233/health/ready` | Readiness probe; a database round trip, `200` or `503` | Anonymous |
+
+There is no `/health` route; the two probe paths are configurable under `HealthEndpoints`
+(see [Health checks and options](docs/operations.md#health-checks-and-options)). Mint a local token as described in
+[Authorization](docs/authorization.md#where-the-identity-comes-from).
+
+### Roles and impersonation
+
+There is no user directory or login endpoint: a role exists only as a `role` claim inside a token you
+sign yourself. In Development, `dotnet user-jwts` does that with no extra configuration; its `--name`
+becomes the token's `sub` (the product owner) and `--role` adds a `role` claim (repeat it for several):
+
+```bash
+dotnet user-jwts create --project src/MediatrUnionPoc.Api --name alice                          # a plain user
+dotnet user-jwts create --project src/MediatrUnionPoc.Api --name root --role Administrator      # may DELETE, may impersonate
+dotnet user-jwts create --project src/MediatrUnionPoc.Api --name sam  --role Support            # may impersonate only
+```
+
+To call the API from the Scalar UI (`http://localhost:5233/scalar`, Development only), mint a token as above,
+then open **Authentication**, choose **Bearer** (the API declares an HTTP `Bearer` JWT scheme) and paste the
+token alone, with no "Bearer" prefix; Scalar sends it on every request. The page itself loads anonymously, but every
+call it makes needs the token, and a `401` means the token is missing or expired. Use the same `--name` for
+`PUT` and `PATCH`, since only the product's owner (the token's `sub`) may change it, and copy the `ETag` from the
+earlier response into their `If-Match` header (for example `W/"1"`). To act as another user, call
+`POST /api/v1/impersonation/tokens` from the UI with a `Support` or `Administrator` token, then paste the
+returned token into the same field.
+
+Role names are case-sensitive. `Administrator` is required for `DELETE /api/v1/products/{id}`; either
+`Administrator` or `Support` is required to mint an impersonation token. Impersonation is enabled in
+every environment and is a controlled authentication bypass, so it has its own signing key
+(`Impersonation:SigningKey`, which must differ from the JWT key) and a mandatory reason. Every attempt is audited:
+
+```bash
+curl -i -X POST http://localhost:5233/api/v1/impersonation/tokens \
+  -H "Authorization: Bearer $SUPPORT" -H "Content-Type: application/json" \
+  -d '{"targetUserId":"alice","roles":[],"reason":"Reproducing the error alice reported","lifetimeMinutes":15}'
+# 200: {"token":"...","expiresAt":"...","userId":"alice",...}; send it as "Authorization: Bearer <token>"
+```
+
+An impersonation token lives 15 minutes by default (`Impersonation:DefaultLifetimeMinutes`). A request may ask
+for another lifetime with `lifetimeMinutes`, up to `Impersonation:MaxLifetimeMinutes` (60 by default); a larger
+value is a `400`. The response's `expiresAt` is the token's exact expiry. Tokens from `dotnet user-jwts` are
+separate: the tool sets their expiry (about 90 days by default), not this API.
+
+The target must differ from the caller, `reason` needs 10 to 500 characters, the requested roles must be in
+`Impersonation:AssignableRoles` (`Support` and `Administrator` by default), and a `Support` caller cannot
+mint a role they do not hold. An impersonation token cannot be used to mint another. Set
+`Impersonation:Enabled=false` to turn the endpoint into a `404`. See
+[Impersonation](docs/impersonation.md#impersonation-acting-as-another-identity) and
+[Authorization](docs/authorization.md#where-the-identity-comes-from).
+
 `dotnet run` uses the first launch profile, so the API listens on `http://localhost:5233` (the
 `https` profile adds `https://localhost:7070`). In the Development environment it serves the
 OpenAPI document of API version 1 at `/openapi/v1.json` (one document per version) and a Scalar UI at `/scalar`. With no
@@ -61,18 +122,18 @@ reopen the solution so it re-resolves.
 
 | Project                          | Responsibility                                                            |
 | --------------------------------- | --------------------------------------------------------------------------- |
-| `MediatrUnionPoc.Domain`          | Entities, [Vogen](docs/value-objects.md#vogen-avoiding-primitive-obsession) [value objects](docs/glossary.md#vogen-vocabulary) (`ProductId`, `Money`, `ProductVersion`), the listing vocabulary (`ProductCriteria`, `ProductSort`, `PagedResult`), `CommitResult`, repository/UoW interfaces |
-| `MediatrUnionPoc.Application`     | Commands, queries, handlers, union result types, validators, pipeline behaviors, authorization |
-| `MediatrUnionPoc.Infrastructure`  | EF Core `DbContext` over SQLite, repository + unit-of-work implementations; the only place criteria and sort become a database query |
-| `MediatrUnionPoc.Api`             | The controllers that map each union to an `IActionResult`, the `Http/` extension members, URL-segment API versioning, JWT authentication, impersonation token signing, the file-backed audit stream and its middleware, trace id middleware, exception handler and OpenAPI transformers |
-| `MediatrUnionPoc.Domain.Tests`    | Unit tests for the value objects, `Product`, `ProductNames`, `PagedResult` and the sort vocabulary |
-| `MediatrUnionPoc.Application.Tests` | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators, authorization |
-| `MediatrUnionPoc.Infrastructure.IntegrationTests` | Real EF Core SQLite provider (in-memory database), end to end |
-| `MediatrUnionPoc.Api.IntegrationTests` | `WebApplicationFactory`-based Api integration tests against real SQLite |
-| `MediatrUnionPoc.ArchitectureTests` | `NetArchTest.Rules` assertions enforcing the layering above               |
+| [`MediatrUnionPoc.Domain`](src/MediatrUnionPoc.Domain/README.md)          | Entities, [Vogen](docs/value-objects.md#vogen-avoiding-primitive-obsession) [value objects](docs/glossary.md#vogen-vocabulary) (`ProductId`, `Money`, `ProductVersion`), the listing vocabulary (`ProductCriteria`, `ProductSort`, `PagedResult`), `CommitResult`, repository/UoW interfaces |
+| [`MediatrUnionPoc.Application`](src/MediatrUnionPoc.Application/README.md)     | Commands, queries, handlers, union result types, validators, pipeline behaviors, authorization |
+| [`MediatrUnionPoc.Infrastructure`](src/MediatrUnionPoc.Infrastructure/README.md)  | EF Core `DbContext` over SQLite, repository + unit-of-work implementations; the only place criteria and sort become a database query |
+| [`MediatrUnionPoc.Api`](src/MediatrUnionPoc.Api/README.md)             | The controllers that map each union to an `IActionResult`, the `Http/` extension members, URL-segment API versioning, JWT authentication, impersonation token signing, the file-backed audit stream and its middleware, trace id middleware, exception handler and OpenAPI transformers |
+| [`MediatrUnionPoc.Domain.Tests`](tests/MediatrUnionPoc.Domain.Tests/README.md)    | Unit tests for the value objects, `Product`, `ProductNames`, `PagedResult` and the sort vocabulary |
+| [`MediatrUnionPoc.Application.Tests`](tests/MediatrUnionPoc.Application.Tests/README.md) | xUnit v3 + NSubstitute — union mechanics, pipeline behaviors, handlers, validators, authorization |
+| [`MediatrUnionPoc.Infrastructure.IntegrationTests`](tests/MediatrUnionPoc.Infrastructure.IntegrationTests/README.md) | Real EF Core SQLite provider (in-memory database), end to end |
+| [`MediatrUnionPoc.Api.IntegrationTests`](tests/MediatrUnionPoc.Api.IntegrationTests/README.md) | `WebApplicationFactory`-based Api integration tests against real SQLite |
+| [`MediatrUnionPoc.ArchitectureTests`](tests/MediatrUnionPoc.ArchitectureTests/README.md) | `NetArchTest.Rules` assertions enforcing the layering above               |
 
 Four one-file probe projects under `tests/CompileTimeChecks/` are deliberately not in the solution;
-see [Testing](docs/testing.md#testing).
+see [Testing](docs/testing.md#testing) and the [CompileTimeChecks README](tests/CompileTimeChecks/README.md).
 
 Application code is organized as **[vertical slices](docs/glossary.md#architectural-patterns)** under
 `Features/Products/<Operation>/` (`Create`, `Update`, `Patch`, `Delete`, `GetById`, `GetPaged`) and
@@ -123,6 +184,7 @@ The rest of the documentation lives in [`docs/`](docs/index.md), whose index des
 | Security | [Authorization](docs/authorization.md) · [Impersonation](docs/impersonation.md) · [Audit stream](docs/audit.md) |
 | Operations | [Trace id, unhandled exceptions and logging](docs/logging-and-errors.md) · [Health checks, CORS, rate limiting, timeouts and the OpenAPI check](docs/operations.md) |
 | Reference | [Notes and gotchas](docs/notes-and-gotchas.md) · [Glossary](docs/glossary.md) |
+| Projects | Each project has its own README: [Domain](src/MediatrUnionPoc.Domain/README.md) · [Application](src/MediatrUnionPoc.Application/README.md) · [Infrastructure](src/MediatrUnionPoc.Infrastructure/README.md) · [Api](src/MediatrUnionPoc.Api/README.md) · [Domain.Tests](tests/MediatrUnionPoc.Domain.Tests/README.md) · [Application.Tests](tests/MediatrUnionPoc.Application.Tests/README.md) · [Infrastructure.IntegrationTests](tests/MediatrUnionPoc.Infrastructure.IntegrationTests/README.md) · [Api.IntegrationTests](tests/MediatrUnionPoc.Api.IntegrationTests/README.md) · [ArchitectureTests](tests/MediatrUnionPoc.ArchitectureTests/README.md) · [CompileTimeChecks](tests/CompileTimeChecks/README.md) |
 | Other | [Features](docs/Features.md) · [Hardening plan](docs/Hardening-Plan.md) · [Documentation split plan](docs/README-Split-Plan.md) · [Research notes](docs/research/) |
 
 [^mediatr-license]: MediatR's own license changed starting with v10 — free for individuals and

@@ -18,6 +18,17 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Git-ignored, per-developer overrides files, watched for changes so a value such as
+// Authentication:DevIdentity can be edited while the API runs. Development only; see
+// appsettings.Development.local.example.json for what it may hold.
+if (builder.Environment.IsDevelopment())
+{
+    foreach (var file in LocalSettingsFile.All)
+    {
+        builder.Configuration.AddJsonFile(file, optional: true, reloadOnChange: true);
+    }
+}
+
 builder.Host.UseApiLogging();
 
 // This project's async methods keep their "Async" suffix by convention; ASP.NET Core's default

@@ -11,7 +11,8 @@ public static class AuthenticationServiceCollectionExtensions
     /// Registers <see cref="JwtAuthOptions"/> (bound from <c>Authentication:Jwt</c>, validated on
     /// start), the JWT bearer scheme configured from them as the default scheme, the fallback
     /// authorization policy that makes every endpoint require an authenticated caller unless it opts
-    /// out with <c>AllowAnonymous</c>, and <see cref="ProblemDetailsAuthorizationResultHandler"/> so
+    /// out with <c>AllowAnonymous</c>, the opt-in Development-only <see cref="DevIdentityOptions"/>
+    /// sign-in for tokenless requests, and <see cref="ProblemDetailsAuthorizationResultHandler"/> so
     /// the middleware's 401 and 403 are problem responses.
     /// </summary>
     /// <remarks>
@@ -37,6 +38,17 @@ public static class AuthenticationServiceCollectionExtensions
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         services.AddSingleton<IConfigureOptions<JwtBearerOptions>, ConfigureJwtBearerOptions>();
+
+        services
+            .AddOptions<DevIdentityOptions>()
+            .BindConfiguration(DevIdentityOptions.SectionName)
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<DevIdentityOptions>, DevIdentityOptionsValidator>();
+        services.AddSingleton<
+            IValidateOptions<DevIdentityOptions>,
+            DevIdentityEnvironmentValidator
+        >();
+        services.AddSingleton<IConfigureOptions<JwtBearerOptions>, ConfigureDevIdentity>();
 
         services.AddAuthorization(options =>
             options.FallbackPolicy = new AuthorizationPolicyBuilder()

@@ -31,7 +31,8 @@
       "Bash(gh issue list *)",
       "Bash(gh run list *)",
       "Bash(gh run view *)",
-      "Bash(gh repo view *)"
+      "Bash(gh repo view *)",
+      "mcp__codegraph__*"
     ]
   },
   "hooks": {
@@ -54,6 +55,16 @@
             "type": "command",
             "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/format-cs.sh",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "codegraph.cmd prompt-hook"
           }
         ]
       }

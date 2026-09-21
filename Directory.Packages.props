@@ -8,14 +8,11 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0-rc.1.26425.128" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0-rc.1.26425.128" />
     <!-- JWT bearer authentication: not part of the shared framework. Same rc.1 build as the other ASP.NET Core packages -->
-    <PackageVersion
-      Include="Microsoft.AspNetCore.Authentication.JwtBearer"
-      Version="11.0.0-rc.1.26425.128"
-    />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0-rc.1.26425.128" />
     <!-- URL-segment API versioning: the MVC integration plus the ApiExplorer that groups actions per version for the built-in OpenAPI generator. Asp.Versioning.OpenApi is not used: it needs Microsoft.OpenApi 2.x while Microsoft.AspNetCore.OpenApi 11 needs 3.x (NU1107) -->
     <PackageVersion Include="Asp.Versioning.Mvc" Version="10.2.1" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.5" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.6" />
     <!-- Logging: Serilog behind ILogger, wired only in the Api host. AspNetCore brings the console sink, request logging and Serilog.Formatting.Compact -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Settings.Configuration" Version="10.0.1" />
@@ -39,23 +36,11 @@
     <!-- SQLite: the relational provider for runtime and tests, so transactions, constraints and concurrency behave for real -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- Readiness probe (AddDbContextCheck). Tracks EF Core: the 11.x line depends on EF Core 11, which would conflict with the 10.0.12 pin above -->
-    <PackageVersion
-      Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"
-      Version="10.0.12"
-    />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.12" />
     <!-- DI / logging (explicit pins so non-Web projects get a consistent version, not whatever the framework happens to carry) -->
-    <PackageVersion
-      Include="Microsoft.Extensions.DependencyInjection"
-      Version="11.0.0-rc.1.26425.128"
-    />
-    <PackageVersion
-      Include="Microsoft.Extensions.DependencyInjection.Abstractions"
-      Version="11.0.0-rc.1.26425.128"
-    />
-    <PackageVersion
-      Include="Microsoft.Extensions.Logging.Abstractions"
-      Version="11.0.0-rc.1.26425.128"
-    />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="11.0.0-rc.1.26425.128" />
     <!--
       Analyzers — see .editorconfig for severities. SonarAnalyzer.CSharp.Styling and
       Roslynator.Testing.CSharp.MSTest are deliberately NOT included: the former is SonarSource's
@@ -70,7 +55,7 @@
     <PackageVersion Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
-    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />

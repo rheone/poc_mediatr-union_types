@@ -1,9 +1,11 @@
 using System.Text.Json.Nodes;
+using MediatrUnionPoc.Api.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog.Core;
 
@@ -64,6 +66,22 @@ public sealed class ProductsApiFactory(
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        // A developer's git-ignored local settings file must never change what a test sees.
+        builder.ConfigureAppConfiguration(
+            (_, configuration) =>
+            {
+                foreach (
+                    var source in configuration
+                        .Sources.OfType<JsonConfigurationSource>()
+                        .Where(json => LocalSettingsFile.All.Contains(json.Path))
+                        .ToList()
+                )
+                {
+                    configuration.Sources.Remove(source);
+                }
+            }
+        );
 
         builder.UseSetting("Audit:Directory", AuditDirectory);
         builder.UseSetting("Serilog:WriteTo:File:Args:restrictedToMinimumLevel", "Fatal");

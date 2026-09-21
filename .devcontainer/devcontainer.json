@@ -1,0 +1,49 @@
+{
+	"name": "C# (.NET)",
+	"image": "mcr.microsoft.com/devcontainers/dotnet:2-11.0-preview",
+	"features": {
+		"ghcr.io/devcontainers/features/dotnet:2": {
+			// Newest .NET 11 build incl. previews/RCs. Must be >= the SDK pinned in global.json (rollForward never goes older).
+			"version": "11.0-preview"
+		},
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/devcontainers/features/powershell:2": {},
+		"ghcr.io/devcontainers/features/python:1": {},
+		"ghcr.io/jsburckhardt/devcontainer-features/zoxide:1": {},
+		"ghcr.io/nils-geistmann/devcontainers-features/zsh:0": {},
+		"ghcr.io/nikiforovall/devcontainer-features/dotnet-csharpier:1": {},
+		"ghcr.io/devcontainers-extra/features/claude-code:2": {},
+		"ghcr.io/devcontainers-extra/features/npm-package:1": {},
+		"ghcr.io/devcontainer-community/devcontainer-features/lazygit:1": {},
+		"ghcr.io/daniellindemann/dev-container-features/dotnet-usersecrets-persistence:0": {},
+		"ghcr.io/iambipinpaul/devcontainer-features/oh-my-posh:1": {},
+		"ghcr.io/devcontainers-extra/features/node-asdf:0": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"anthropic.claude-code",
+				"csharpier.csharpier-vscode",
+				"davidanson.vscode-markdownlint",
+				"eamodio.gitlens",
+				"editorconfig.editorconfig",
+				"esbenp.prettier-vscode",
+				"github.vscode-github-actions",
+				"gruntfuggly.todo-tree",
+				"humao.rest-client",
+				"ms-azuretools.vscode-docker",
+				"ms-dotnettools.csdevkit",
+				"ms-dotnettools.csharp",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-vscode.powershell",
+        "shd101wyy.markdown-preview-enhanced",
+				"oderwat.indent-rainbow",
+				"sst-dev.opencode",
+				"streetsidesoftware.code-spell-checker",
+				"tyriar.sort-lines",
+				"yzhang.markdown-all-in-one"
+			]
+    }
+  }
+}

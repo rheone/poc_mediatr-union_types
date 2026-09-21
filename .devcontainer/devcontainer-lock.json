@@ -1,0 +1,77 @@
+{
+  "features": {
+    "ghcr.io/daniellindemann/dev-container-features/dotnet-usersecrets-persistence:0": {
+      "version": "0.0.1",
+      "resolved": "ghcr.io/daniellindemann/dev-container-features/dotnet-usersecrets-persistence@sha256:8a5214a74316bb86100cb45d2047cf8ec41486b34c239cf2b93f0e9053635bee",
+      "integrity": "sha256:8a5214a74316bb86100cb45d2047cf8ec41486b34c239cf2b93f0e9053635bee"
+    },
+    "ghcr.io/devcontainer-community/devcontainer-features/lazygit:1": {
+      "version": "1.0.2",
+      "resolved": "ghcr.io/devcontainer-community/devcontainer-features/lazygit@sha256:a9a4b920a615d869bd12149f0430957d496883415b3b436d8948c487e4eb3567",
+      "integrity": "sha256:a9a4b920a615d869bd12149f0430957d496883415b3b436d8948c487e4eb3567"
+    },
+    "ghcr.io/devcontainers-extra/features/claude-code:2": {
+      "version": "2.0.3",
+      "resolved": "ghcr.io/devcontainers-extra/features/claude-code@sha256:e119fb3524e9e55d47b84ee32b20085dbeae66f08d8e298e59c57a94f02d5b35",
+      "integrity": "sha256:e119fb3524e9e55d47b84ee32b20085dbeae66f08d8e298e59c57a94f02d5b35"
+    },
+    "ghcr.io/devcontainers-extra/features/node-asdf:0": {
+      "version": "0.0.2",
+      "resolved": "ghcr.io/devcontainers-extra/features/node-asdf@sha256:413daa93c0bb7ae76a924f51283a65eca3af3a141984f42fe798b3fe445ece71",
+      "integrity": "sha256:413daa93c0bb7ae76a924f51283a65eca3af3a141984f42fe798b3fe445ece71"
+    },
+    "ghcr.io/devcontainers-extra/features/npm-package:1": {
+      "version": "1.0.4",
+      "resolved": "ghcr.io/devcontainers-extra/features/npm-package@sha256:ee315c064588643e1178eec33275efa55739f43761fc965b95a5d05eed70c76d",
+      "integrity": "sha256:ee315c064588643e1178eec33275efa55739f43761fc965b95a5d05eed70c76d"
+    },
+    "ghcr.io/devcontainers/features/dotnet": {
+      "version": "2.5.0",
+      "resolved": "ghcr.io/devcontainers/features/dotnet@sha256:0fc16547ed4db6d7ff2a9f5981d2b93eb314e568affb9958029ad794f1f9a093",
+      "integrity": "sha256:0fc16547ed4db6d7ff2a9f5981d2b93eb314e568affb9958029ad794f1f9a093"
+    },
+    "ghcr.io/devcontainers/features/dotnet:2": {
+      "version": "2.5.0",
+      "resolved": "ghcr.io/devcontainers/features/dotnet@sha256:0fc16547ed4db6d7ff2a9f5981d2b93eb314e568affb9958029ad794f1f9a093",
+      "integrity": "sha256:0fc16547ed4db6d7ff2a9f5981d2b93eb314e568affb9958029ad794f1f9a093"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "1.1.2",
+      "resolved": "ghcr.io/devcontainers/features/github-cli@sha256:7c409bf6316ffd85f04fd92fba85a744282639e603417dd4796409866bdb6805",
+      "integrity": "sha256:7c409bf6316ffd85f04fd92fba85a744282639e603417dd4796409866bdb6805"
+    },
+    "ghcr.io/devcontainers/features/powershell:2": {
+      "version": "2.0.3",
+      "resolved": "ghcr.io/devcontainers/features/powershell@sha256:460fb241f4f9e098a30f9e1ea4a6ac8cac8cdf5df89ba2edfcf177f66e17d8b7",
+      "integrity": "sha256:460fb241f4f9e098a30f9e1ea4a6ac8cac8cdf5df89ba2edfcf177f66e17d8b7"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "1.8.0",
+      "resolved": "ghcr.io/devcontainers/features/python@sha256:fbcad6955caeecc5ad3f7886baf652e25cba5225a6c4c2287c536de2e5607511",
+      "integrity": "sha256:fbcad6955caeecc5ad3f7886baf652e25cba5225a6c4c2287c536de2e5607511"
+    },
+    "ghcr.io/iambipinpaul/devcontainer-features/oh-my-posh:1": {
+      "version": "1.1.0",
+      "resolved": "ghcr.io/iambipinpaul/devcontainer-features/oh-my-posh@sha256:f54d39807e44c7b554ce6eeadfe1c5f83f12425afc77d9c653b917cbd4d5db74",
+      "integrity": "sha256:f54d39807e44c7b554ce6eeadfe1c5f83f12425afc77d9c653b917cbd4d5db74"
+    },
+    "ghcr.io/jsburckhardt/devcontainer-features/zoxide:1": {
+      "version": "1.0.0",
+      "resolved": "ghcr.io/jsburckhardt/devcontainer-features/zoxide@sha256:3c6f1dce190622c5a53f33a04bb7c0bf5dfbdf2c55603e704661986a62672d2e",
+      "integrity": "sha256:3c6f1dce190622c5a53f33a04bb7c0bf5dfbdf2c55603e704661986a62672d2e"
+    },
+    "ghcr.io/nikiforovall/devcontainer-features/dotnet-csharpier:1": {
+      "version": "1.0.0",
+      "resolved": "ghcr.io/nikiforovall/devcontainer-features/dotnet-csharpier@sha256:e9938510ef18155c356480544dcb8b4fcb61e259099a917f09280dced3a756e4",
+      "integrity": "sha256:e9938510ef18155c356480544dcb8b4fcb61e259099a917f09280dced3a756e4",
+      "dependsOn": [
+        "ghcr.io/devcontainers/features/dotnet"
+      ]
+    },
+    "ghcr.io/nils-geistmann/devcontainers-features/zsh:0": {
+      "version": "0.0.8",
+      "resolved": "ghcr.io/nils-geistmann/devcontainers-features/zsh@sha256:fd57a61a5187480b5e73f8041be5b67005be48f06503736df6cfdd8d0f38f3c4",
+      "integrity": "sha256:fd57a61a5187480b5e73f8041be5b67005be48f06503736df6cfdd8d0f38f3c4"
+    }
+  }
+}

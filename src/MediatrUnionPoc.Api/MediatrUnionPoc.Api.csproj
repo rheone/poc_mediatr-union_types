@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <!--
       AV0029/AV0030 steer toward the Asp.Versioning.OpenApi package, which cannot be installed here: it
@@ -8,6 +8,7 @@
       generator's output, which .editorconfig does not reach.
     -->
     <NoWarn>$(NoWarn);AV0029;AV0030</NoWarn>
+    <UserSecretsId>7bb37efe-f3a6-47e5-b5e0-2842b6264437</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
